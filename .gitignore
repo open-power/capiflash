@@ -1,0 +1,15 @@
+#Ignore all .o or .a files
+*.[oa]
+#Ignore all files with ~ at the end
+*~
+#Ignore all files with .flc suffix
+*.flc
+#Ignore files starting with #, which are the 
+# emergency saved emacs files.
+\#*
+#Ignore obj subdirectory
+obj/
+#Ignore img subdirectory
+img/
+#Ignore pkg
+pkg

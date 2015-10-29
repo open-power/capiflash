@@ -1,0 +1,52 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/postinstall $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+set -e #halt on error
+USERNAME=cxl
+GROUPNAME=$USERNAME
+CAPIKV_ROOT=/opt/ibm/capikv
+ETC_DIR=$CAPIKV_ROOT/etc
+SIO_FILE=$ETC_DIR/sioluntable.ini
+#Creating empty SIO lun table and etc dir
+echo "INFO: Ensuring SIO LUN Table exists..."
+echo "INFO: Creating system cxl user / group..."
+adduser --system --group $USERNAME
+if ! egrep -i "^$GROUPNAME" /etc/group >/dev/null; then
+    echo "INFO: Creating cxl group..."
+    groupadd -r $GROUPNAME
+fi
+echo "INFO: setting permissions on cxl and cxlflash device nodes."
+udevadm trigger -s cxl
+udevadm trigger -s cxlflash
+
+chown $USERNAME:$GROUPNAME $ETC_DIR
+chmod 770 $ETC_DIR
+touch $SIO_FILE
+chown $USERNAME:$GROUPNAME $SIO_FILE
+chmod 660 $SIO_FILE
+
+echo "INFO: enabling cxlfd service for LUN Management"
+systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+systemctl start cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."

@@ -1,0 +1,15 @@
+#Constants
+FLASH_ALL=flash_all_adapters
+FLASH_ROOT=/opt/ibm/capikv/afu
+
+#Globals
+factory=""
+
+#allow us to die with a specific error code
+die()
+{
+    echo "$1" 1>&2;
+    exit $2;
+}
+
+$FLASH_ROOT/$FLASH_ALL --factory || die "ERROR: Unable to flash factory image for at least one adapter." 1

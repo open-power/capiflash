@@ -1,0 +1,20 @@
+#this works for systems with 64mb of RAM
+#for systems with 128mb or greater, echo "400" for afu1.0
+
+export FVT_ARK_IO_MIN=30
+
+cd /opt/ibm/capikv/test
+
+FVT_DEV=/dev/cxl/afu0.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu0.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu0.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu0.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu0.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu0.0s; echo "400" | ./fvt_ark_mc_aio&
+
+FVT_DEV=/dev/cxl/afu1.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu1.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu1.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu1.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu1.0s; ./fvt_ark_io&
+FVT_DEV=/dev/cxl/afu1.0s; echo "100" | ./fvt_ark_mc_aio&

@@ -1,0 +1,105 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/tools/build_be_mem_nomc $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+if [[ $1 = "help" ]]
+then
+  echo "options: cleanall tests run_unit run_fvt"
+  echo "default: build only shipped targets"
+  exit 0
+fi
+
+if [[ $(uname) = "Linux" ]]
+then
+  LINUX=1
+  MAKE=make
+else
+  LINUX=0
+  MAKE=gmake
+  SURELOCKROOT=
+  echo "NOT LINUX"
+fi
+
+if [[ $LINUX -eq 1  ]]
+then
+  if [[ $(basename $PWD) = "surelock-sw" ]]
+  then
+    source env.bash
+  else
+    if [[ -z $SURELOCKROOT ]]
+    then
+      echo "set SURELOCKROOT or source env.bash before running"
+      exit 1
+    fi
+  fi
+  cd $SURELOCKROOT
+else
+  if [[ $(basename $PWD) != "surelock-sw" ]]
+  then
+    echo "must be in surelock-sw dir to execute"
+    exit 1
+  fi
+fi
+
+unset CUSTOMFLAGS
+unset BLOCK_FILEMODE_ENABLED
+unset BLOCK_MC_ENABLED
+unset TARGET_PLATFORM
+
+if [[ -e customrc ]]
+then
+  rm -f customrc
+fi
+
+if [[ $1 = "cleanall" && -z $2 ]]
+then
+  $MAKE cleanall
+  $MAKE -j12
+fi
+
+if [[ $1 = "cleanall" || $2 = "cleanall" || $3 = "cleanall" ]]
+then
+  $MAKE cleanall
+fi
+
+if [[ $1 = "tests" || $2 = "tests" || $3 = "tests" ]]
+then
+  $MAKE tests -j12
+fi
+
+if [[ $1 = "run_unit" || $2 = "run_unit" || $3 = "run_unit" ]]
+then
+  $MAKE run_unit -j12
+fi
+
+if [[ $1 = "run_fvt" || $2 = "run_fvt" || $3 = "run_fvt" ]]
+then
+  $MAKE run_fvt -j12
+fi
+
+if [[ -z $1 ]]
+then
+  $MAKE -j12
+fi

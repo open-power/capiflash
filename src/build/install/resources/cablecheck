@@ -1,0 +1,89 @@
+#!/bin/bash -e
+#  IBM_PROLOG_BEGIN_TAG
+#  This is an automatically generated prolog.
+#
+#  $Source: src/build/install/resources/cxlfrefreshluns $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+CAPIKV=/opt/ibm/capikv
+source $CAPIKV/bin/capikvutils.sh
+
+KERNELMOD=cxlflash
+
+rmmod_invoked=0
+
+showhelp()
+{
+    echo "Usage: $0"
+    echo "    Perform a connectivty and cable check for all present IBM Data Engine for NoSQL accelerators."
+}
+
+disablemodule()
+{
+    echo "INFO: Ensuring $KERNELMOD is unloaded to guarantee that all accelerators are idle."
+    if lsmod | grep cxlflash
+    then     
+        echo "INFO: Temporarily unloading ${KERNELMOD}..."
+        rmmod_invoked=1;
+        rmmod $KERNELMOD || 
+        #multipath typically causes rmmod to fail for cxlflash
+        if pgrep "multipathd" > /dev/null
+        then
+            die "ERROR: Linux multipathing is enabled, and must be disabled prior to running this tool as it typically prevents the unloading of the $KERNELMOD driver. Please temporarily flush the multipath tables by running \"multipath -F\" and try again." 4
+        else
+            die "Unable to remove the $KERNELMOD driver. Please ensure that all applications that exploit $KERNELMOD or ibmcapikv are terminated."
+        fi;
+    fi;
+    echo "INFO: $KERNELMOD unloaded."
+}
+
+enablemodule()
+{
+    echo "INFO: re-enabling cxlflash"
+    modprobe $KERNELMOD;
+}
+
+doloopback()
+{
+    echo "INFO: Performing cable checks for all present accelerators."
+    $CAPIKV/bin/provtool --loopback
+}
+#show help if we haven't gotten a correct # of args
+if [ "$#" -ne 0 ]; then
+    showhelp;
+    exit $EINVAL;
+fi
+
+echo "INFO: Performing diagnostic cable check for all present IBM Data Engine for NoSQL accelerators."
+disablemodule;
+
+if ! doloopback
+then
+    echo "ERROR: Cable verification checks failed. Please check all cables and SFPs between this system's accelerators and the FlashSystem."
+else
+    echo "Cable verification check result: PASS"
+    if [[ $rmmod_invoked -eq "1" ]]; then
+        enablemodule
+    else
+        echo "INFO: $KERNELMOD was not loaded on invocation of this script, so this script will not automatically reload it. You may manually reload it by running \"sudo modprobe cxlflash\""
+    fi
+fi

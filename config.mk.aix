@@ -1,0 +1,278 @@
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: config.mk.aix $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+all:
+	${MAKE} gen_pass
+	${MAKE} code_pass
+
+## output libs, objs for userdetails parsers
+UD_DIR = ${ROOTPATH}/obj/modules/userdetails
+UD_OBJS = ${UD_DIR}*.o ${UD_DIR}/*.so ${UD_DIR}/*.a
+
+ifdef MODULE
+OBJDIR = ${ROOTPATH}/obj/modules/${MODULE}
+BEAMDIR = ${ROOTPATH}/obj/beam/${MODULE}
+GENDIR = ${ROOTPATH}/obj/genfiles
+TESTDIR = ${ROOTPATH}/obj/tests
+IMGDIR = ${ROOTPATH}/img
+PKGDIR = ${ROOTPATH}/pkg
+#GTESTFDIR=${ROOTPATH}/src/test
+
+EXTRACOMMONFLAGS += -fPIC -Bsymbolic -Bsymbolic-functions 
+ifdef STRICT
+        EXTRACOMMONFLAGS += -Weffc++
+endif
+#CUSTOMFLAGS += -D__SURELOCK_MODULE=${MODULE}
+#For AIX use the following istead.
+CUSTOMFLAGS += -D_AIX -D__SURELOCK_MODULE=${MODULE}
+LIBS += $(addsuffix .so, $(addprefix lib, ${MODULE}))
+EXTRAINCDIR += ${GENDIR} ${CURDIR}
+else
+OBJDIR = ${ROOTPATH}/obj/surelock
+BEAMDIR = ${ROOTPATH}/obj/beam/surelock
+GENDIR = ${ROOTPATH}/obj/genfiles
+IMGDIR = ${ROOTPATH}/img
+PKGDIR = ${ROOTPATH}/pkg
+TESTDIR = ${ROOTPATH}/obj/tests
+EXTRAINCDIR += ${GENDIR} ${CURDIR}
+#GTESTFDIR=${ROOTPATH}/src/test
+endif
+
+__internal__comma= ,
+__internal__empty=
+__internal__space=$(__internal__empty) $(__internal__empty)
+MAKE_SPACE_LIST = $(subst $(__internal__comma),$(__internal__space),$(1))
+
+ifdef SURELOCK_DEBUG
+ifeq ($(SURELOCK_DEBUG),1)
+    CUSTOMFLAGS += -DHOSTBOOT_DEBUG=1
+else
+ifndef MODULE
+ifneq (,$(filter kernel,$(call MAKE_SPACE_LIST, $(HOSTBOOT_DEBUG))))
+    CUSTOMFLAGS += -DHOSTBOOT_DEBUG=kernel
+endif
+else
+ifneq (,$(filter $(MODULE), $(call MAKE_SPACE_LIST, $(HOSTBOOT_DEBUG))))
+    CUSTOMFLAGS += -DHOSTBOOT_DEBUG=$(MODULE)
+endif
+endif
+endif
+endif
+
+
+ifeq ($(USE_ADVANCED_TOOLCHAIN),yes)
+	CC_RAW = gcc 
+	CXX_RAW = g++ 
+	CC = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/${CC_RAW}
+	CXX = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/${CXX_RAW}
+	LD = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/ld
+	#OBJDUMP = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/objdump
+else
+	CC_RAW = gcc 
+	CXX_RAW = g++ 
+	CC = ${CC_RAW}
+	CXX = ${CXX_RAW}
+	LD = ld
+	#OBJDUMP = objdump
+endif
+
+#TODO:  need to figure out if we can run beam... MCH
+BEAMVER = beam-3.5.2
+BEAMPATH = /afs/rch/projects/esw/beam/${BEAMVER}
+BEAMCMD = i686-mcp6-jail ${BEAMPATH}/bin/beam_compile
+BEAMFLAGS = \
+    --beam::source=${BEAMPATH}/tcl/beam_default_parms.tcl \
+    --beam::source=${ROOTPATH}/src/build/beam/compiler_c_config.tcl \
+    --beam::source=${ROOTPATH}/src/build/beam/compiler_cpp_config.tcl \
+    --beam::exit0 \
+    -o /dev/null
+
+
+#TODO: Find correct flags for surelock - copied from POWER7 Hostboot for now
+COMMONFLAGS = -O3 ${EXTRACOMMONFLAGS}
+CFLAGS = ${COMMONFLAGS} -g \
+	 -Wall -Werror ${CUSTOMFLAGS}
+ASMFLAGS = ${COMMONFLAGS} 
+CXXFLAGS = ${CFLAGS} -fno-rtti -fno-exceptions -Wall
+#LDFLAGS = --sort-common ${COMMONFLAGS}
+LDFLAGS = -bnoentry -bM:SRE -bexpall -lc
+
+
+ifdef USE_PYTHON
+    TESTGEN = ${ROOTPATH}/src/usr/cxxtest/cxxtestgen.py
+else
+    TESTGEN = ${ROOTPATH}/src/usr/cxxtest/cxxtestgen.pl
+endif
+
+INCDIR = ${ROOTPATH}/src/include/
+_INCDIRS = ${INCDIR} ${EXTRAINCDIR}
+INCFLAGS = $(addprefix -I, ${_INCDIRS} )
+ASMINCFLAGS = $(addprefix $(lastword -Wa,-I), ${_INCDIRS})
+
+OBJECTS = $(addprefix ${OBJDIR}/, ${OBJS})
+T_OBJECTS = $(addprefix ${TESTDIR}/, ${TESTS})
+LIBRARIES = $(addprefix ${IMGDIR}/, ${LIBS})
+
+ifdef IMGS
+IMGS_ = $(addprefix ${IMGDIR}/, ${IMGS})
+LIDS = $(foreach lid,$(addsuffix _LIDNUMBER, $(IMGS)),$(addprefix ${IMGDIR}/,$(addsuffix .ruhx, $($(lid)))))
+IMAGES = $(addsuffix .bin, ${IMGS_}) $(addsuffix .elf, ${IMGS_}) ${LIDS}
+#$(addsuffix .ruhx, ${IMGS_})
+IMAGE_EXTRAS = $(addprefix ${IMGDIR}/, hbotStringFile)
+endif
+
+
+${OBJDIR}/%.o ${OBJDIR}/%.list : %.C
+	mkdir -p ${OBJDIR}
+	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote .
+	#${OBJDUMP} -dCS $@ > $(basename $@).list	
+
+${OBJDIR}/%.o ${OBJDIR}/%.list : %.c
+	mkdir -p ${OBJDIR}
+	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote .
+	#${OBJDUMP} -dCS $@ > $(basename $@).list
+
+${OBJDIR}/%.o : %.S
+	mkdir -p ${OBJDIR}
+	${CC} -c ${ASMFLAGS} $< -o $@ ${ASMINCFLAGS} ${INCFLAGS} -iquote .
+
+${OBJDIR}/%.dep : %.C
+	mkdir -p ${OBJDIR}; \
+	rm -f $@; \
+	${CXX} -M ${CXXFLAGS} $< -o $@.$$$$ ${INCFLAGS} -iquote .; \
+	sed 's,\($*\)\.o[ :]*,${OBJDIR}/\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+${OBJDIR}/%.dep : %.c
+	mkdir -p ${OBJDIR}; \
+	rm -f $@; \
+	${CC} -M ${CFLAGS} $< -o $@.$$$$ ${INCFLAGS} -iquote .; \
+	sed 's,\($*\)\.o[ :]*,${OBJDIR}/\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+${OBJDIR}/%.dep : %.S
+	mkdir -p ${OBJDIR}; \
+	rm -f $@; \
+	${CC} -M ${ASMFLAGS} $< -o $@.$$$$ ${ASMINCFLAGS} ${INCFLAGS} -iquote .; \
+	sed 's,\($*\)\.o[ :]*,${OBJDIR}/\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+${IMGDIR}/%.so : ${OBJECTS}
+	mkdir -p ${IMGDIR}
+	${LD} ${LDFLAGS} -o $@ $(OBJECTS)
+
+ifdef TESTS
+${TESTDIR}/% : %.c
+	mkdir -p ${TESTDIR}
+	${CC} ${CFLAGS} $< -o $@ ${INCFLAGS} ${LIBPATHS} ${LINKLIBS} -iquote .
+endif
+
+%.d: ${OBJECTS}
+	cd ${basename $@} && ${MAKE} code_pass
+
+%.gen_pass:
+	cd ${basename $@} && ${MAKE} gen_pass
+
+%.test:
+	cd ${basename $@} && ${MAKE} test
+
+#packaging generally requires the code pass to be complete
+%.packaging: 
+	cd ${basename $@} && ${MAKE} packaging
+
+#install generally requires the code pass to be complete
+%.install: all
+	cd ${basename $@} && ${MAKE} install
+%.clean:
+	cd ${basename $@} && ${MAKE} clean
+
+%.beamdir:
+	cd ${basename $@} && ${MAKE} beam
+
+code_pass: ${OBJECTS} ${SUBDIRS} ${LIBRARIES} ${EXTRA_PARTS} ${T_OBJECTS}
+ifdef IMAGES
+	${MAKE} ${IMAGES} ${IMAGE_EXTRAS}
+endif
+
+gen_pass:
+	mkdir -p ${GENDIR}
+	${MAKE} GEN_PASS
+
+_GENFILES = $(addprefix ${GENDIR}/, ${GENFILES})
+GEN_PASS: ${_GENFILES} ${SUBDIRS:.d=.gen_pass}
+
+GENTARGET = $(addprefix %/, $(1))
+
+${BEAMDIR}/%.beam : %.C
+	mkdir -p ${BEAMDIR}
+	${BEAMCMD} -I ${INCDIR} ${CXXFLAGS} ${BEAMFLAGS} $< \
+	    --beam::complaint_file=$@ --beam::parser_file=/dev/null
+
+${BEAMDIR}/%.beam : %.c
+	mkdir -p ${BEAMDIR}
+	${BEAMCMD} -I ${INCDIR} ${CXXFLAGS} ${BEAMFLAGS} $< \
+	    --beam::complaint_file=$@ --beam::parser_file=/dev/null
+
+${BEAMDIR}/%.beam : %.S
+	echo Skipping ASM file.
+
+BEAMOBJS = $(addprefix ${BEAMDIR}/, ${OBJS:.o=.beam})
+beam: ${SUBDIRS:.d=.beamdir} ${BEAMOBJS}
+
+cleanud :
+	rm -f ${UD_OBJS}
+
+test: ${SUBDIRS:.d=.test}
+
+
+.PHONY: install
+install: ${SUBDIRS:.d=.install}
+
+
+.PHONY: packaging
+packaging: ${SUBDIRS:.d=.packaging}
+
+clean: cleanud ${SUBDIRS:.d=.clean}
+	(rm -f ${OBJECTS} ${OBJECTS:.o=.dep} ${OBJECTS:.o=.list} \
+	       ${OBJECTS:.o=.o.hash} ${BEAMOBJS} ${LIBRARIES} \
+	       ${IMAGES} ${IMAGES:.bin=.list} ${IMAGES:.bin=.syms} \
+	       ${IMAGES:.bin=.bin.modinfo} ${IMAGES:.ruhx=.lid} \
+	       ${IMAGES:.ruhx=.lidhdr} ${IMAGES:.bin=_extended.bin} \
+	       ${IMAGE_EXTRAS} \
+	       ${EXTRA_OBJS} ${_GENFILES} ${EXTRA_PARTS} ${EXTRA_CLEAN}\
+	       $gtest.a gtest_main.a *.o *unit_test-kv_results* *~* )
+
+cscope: ${SUBDIRS}
+	mkdir -p ${ROOTPATH}/obj/cscope
+	(cd ${ROOTPATH}/obj/cscope ; rm -f cscope.* ; \
+	    find ../../ -name '*.[CHchS]' -type f -fprint cscope.files; \
+	    cscope -bqk)
+
+ctags: ${SUBDIRS}
+	mkdir -p ${ROOTPATH}/obj/cscope
+	(cd ${ROOTPATH}/obj/cscope ; rm -f tags ; \
+	    ctags --recurse=yes --fields=+S ../../src)
+
+

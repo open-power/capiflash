@@ -1,0 +1,169 @@
+#!/bin/ksh
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/block/test/block_perf_check $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+if [[ $1 = "-h" ]]
+then
+    echo "Usage: block_perf_check [libpath] [binpath]"
+    echo " ex:   block_perf_check"
+    echo " ex:   block_perf_check /.../surelock-sw/img /.../surelock-sw/obj/tests"
+    exit
+fi
+
+if [[ $3 == int* || $3 == INT* ]]
+then
+   _intrps="-i"
+fi
+
+_uname=$(uname -a|awk '{print $1}')
+if [[ $(whoami) != root ]];
+then
+   echo "must be run as root"
+   exit
+fi
+
+######## Set these DEVx vars to the correct luns for the best results ##########
+######## 1 lun per FC port, across two cards                          ##########
+DEVS=4
+if [[ $_uname = "AIX" ]]
+then
+    DEV1=/dev/hdisk0
+    DEV2=/dev/hdisk1
+    DEV3=/dev/hdisk2
+    DEV4=/dev/hdisk4
+    _64=64
+    for d in 0 1 2 3
+    do
+      if [[ $(lsmpio -l hdisk$d|grep hdisk$d|wc -l) -ne 2 ]];
+      then
+        echo "running to only one port for hdisk$d"
+      fi
+    done
+else
+    # use only /dev/sg* devices
+    if [[ $(hostname) == cougar* ]]
+    then
+     DEV1=/dev/sg14
+     DEV2=/dev/sg15
+     DEV3=/dev/sg19
+     DEV4=/dev/sg20
+    elif [[ $(hostname) == p8tul2* ]]
+    then
+     DEV1=/dev/sg34
+     DEV2=/dev/sg38
+     DEV3=/dev/sg39
+     DEV4=/dev/sg43
+    fi
+    _64=
+fi
+
+if [[ ! -z $1 ]]
+then
+   if [[ $_uname = "AIX" ]]
+   then
+      export LIBPATH=$1
+      cmd="$2"
+   else
+      cmd="LD_LIBRARY_PATH=$1 $2"
+   fi
+   cmd_dir=$cmd
+else
+   cmd_dir="/opt/ibm/capikv/test"
+fi
+
+function blockio
+{
+  cmd="$cmd_dir/blockio$_64 -d $DEV1 -s 15 $_intrps > /tmp/out_p"
+  eval $cmd
+  iops=$(cat /tmp/out_p|grep iops|awk  '{print $10}'|awk -F : '{print $2}')
+  echo "blockio:                  $iops"
+
+  cmd="$cmd_dir/blockio$_64 -d $DEV1 -s 15 -q 1 $_intrps > /tmp/out_p"
+  eval $cmd
+  iops=$(cat /tmp/out_p|grep iops|awk  '{print $10}'|awk -F : '{print $2}')
+  echo "blockio:            QD=1: $iops"
+
+   rm -f /tmp/out_p
+   c=0
+   while [ $c -lt 25 ]
+   do
+     cmd="$cmd_dir/blockio$_64 -d $DEV1 -q 1 -s 15 $_intrps >> /tmp/out_p"
+     eval $cmd&
+     cmd="$cmd_dir/blockio$_64 -d $DEV2 -q 1 -s 15 $_intrps >> /tmp/out_p"
+     eval $cmd&
+     cmd="$cmd_dir/blockio$_64 -d $DEV3 -q 1 -s 15 $_intrps >> /tmp/out_p"
+     eval $cmd&
+     cmd="$cmd_dir/blockio$_64 -d $DEV4 -q 1 -s 15 $_intrps >> /tmp/out_p"
+     eval $cmd&
+     let c=c+1
+     PID=$!
+   done
+   wait
+   iops=0
+   for d in $(cat /tmp/out_p|grep iops|awk  '{print $10}'|awk -F : '{print $2}')
+   do
+      ((iops+=$d))
+   done
+   printf "blockio:      100P: QD=1: %-6d\n" $iops
+}
+
+function blockplistio
+{
+  cmd="$cmd_dir/blockplistio$_64 -d $DEV1 -s 15 $_intrps > /tmp/out_p"
+  eval $cmd
+  iops=$(cat /tmp/out_p|grep iops|awk  '{print $9}'|awk -F : '{print $2}')
+  echo "blockplistio:             $iops"
+
+  cmd="$cmd_dir/blockplistio$_64 -d $DEV1 -s 15 -l 1 -c 1 $_intrps > /tmp/out_p"
+  eval $cmd
+  iops=$(cat /tmp/out_p|grep iops|awk  '{print $9}'|awk -F : '{print $2}')
+  echo "blockplistio:       QD=1: $iops"
+
+  rm -f /tmp/out_p
+  c=0
+  while [ $c -lt 25 ]
+  do
+     cmd="$cmd_dir/blockplistio$_64 -d $DEV1 -l 1 -c 1 -s 15 $_intrps >> /tmp/out_p"
+     eval "$cmd"&
+     cmd="$cmd_dir/blockplistio$_64 -d $DEV2 -l 1 -c 1 -s 15 $_intrps >> /tmp/out_p"
+     eval "$cmd"&
+     cmd="$cmd_dir/blockplistio$_64 -d $DEV3 -l 1 -c 1 -s 15 $_intrps >> /tmp/out_p"
+     eval "$cmd"&
+     cmd="$cmd_dir/blockplistio$_64 -d $DEV4 -l 1 -c 1 -s 15 $_intrps >> /tmp/out_p"
+     eval "$cmd"&
+     let c=c+1
+     PID=$!
+  done
+  wait
+  iops=0
+  for d in $(cat /tmp/out_p|grep iops|awk  '{print $9}'|awk -F : '{print $2}')
+  do
+      ((iops+=$d))
+  done
+  printf "blockplistio: 100P: QD=1: %-6d\n" $iops
+}
+
+echo "BLOCK Performance"
+blockio
+blockplistio

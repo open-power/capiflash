@@ -1,0 +1,160 @@
+#!/bin/bash -e
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/flash_all_adapters $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+#Constants
+KERNEL_MOD="cxlflash"
+FLASH_ROOT=/opt/ibm/capikv/afu
+RELOADDELAY=0.5
+MAXRELOADCOUNT=120 #120 .5 second intervals
+MODPROBEDIR=/etc/modprobe.d
+BLACKLISTFILE=blacklist-${KERNEL_MOD}.conf
+
+#allow us to die with a specific error code
+die()
+{
+    echo "AFUFLASHERR$2: $1" 1>&2;
+    exit $2;
+}
+
+checkidle()
+{
+    echo "INFO: Checking for CAPI Master Context..."
+    master_offline=true
+    lsmod | grep $KERNEL_MOD && master_offline=false #if the cxlflash module is found, we set the master_offline flag to false
+#otherwise, shows the module info
+
+    if $master_offline ; then
+        echo "INFO: CXL Flash Module is not running. Device is assumed to be idle.";
+    else
+        die "CXL Flash is running (see above). Cannot flash while the device is active. Run \"rmmod cxlflash\" to unload it." 1;
+    fi
+}
+
+disablemodule()
+{
+    if [ ! -e $MODPROBEDIR/$BLACKLISTFILE ]; then
+        echo "INFO: Temporarily blacklisting ${KERNEL_MOD}"
+        cp $FLASH_ROOT/$BLACKLISTFILE $MODPROBEDIR/$BLACKLISTFILE
+    fi
+}
+
+enablemodule()
+{
+    if [ -e $MODPROBEDIR/$BLACKLISTFILE ]; then
+        echo "INFO: Removing ${KERNEL_MOD} from blacklist"
+        rm $MODPROBEDIR/$BLACKLISTFILE
+    fi
+}
+
+
+findloc()
+{
+    devspecpath="/sys/bus/pci/devices/$1/devspec"
+    if [[ ! -f "$devspecpath" ]]; then
+        die "Unable to find devspec for device $1. Could not find '$devspecpath'" 3;
+    fi
+    local devspec=`cat $devspecpath`
+    local loccodepath="/proc/device-tree$devspec/ibm,loc-code"
+    if [[ ! -f "$loccodepath" ]]; then
+        die "Unable to find device tree special file path for PCI device $1: $loccodepath" 4;
+    fi
+    local loccode=`cat $loccodepath`;
+    if [[ -z "$loccode" ]]; then
+        die "Location code is invalid for PCI device $1" 5;
+    fi
+    echo $loccode;
+ }
+
+writeTo_perst_reloads_same_image()
+{
+    local cxlsysfs="/sys/class/cxl"
+    local val=$1
+
+    for adapter in `ls $cxlsysfs | grep card`; do
+        echo "Writing $val to perst_reloads_same_image for $adapter"
+        echo "$val" > $cxlsysfs/$adapter/perst_reloads_same_image;
+    done
+}
+
+reloadadapters()
+{
+    local rebootrequired="false"
+    local cxlsysfs="/sys/class/cxl"
+
+    # Disable perst_reloads_same_image for all cards
+    writeTo_perst_reloads_same_image "0";
+    
+    #Disable the cxlflash module temporarily
+    disablemodule;
+
+    #enumerate all cxl cards, and issue a PERST to each one
+    #should result in card0 card1 card2.. etc.
+    for adapter in `ls $cxlsysfs | grep card`; do
+        if [[ (-f $cxlsysfs/$adapter/load_image_on_perst) && (-f $cxlsysfs/$adapter/reset) ]]; then
+            echo "Attempting to reload $adapter"
+            echo "user" > $cxlsysfs/$adapter/load_image_on_perst;
+            echo "1" > $cxlsysfs/$adapter/reset;
+            local pollcount=0;
+            while [ ! -f $cxlsysfs/$adapter/image_loaded ]
+            do
+                if [[ "$pollcount" -eq "$MAXRELOADCOUNT" ]]; then
+                    #re-enable the cxlflash module
+                    enablemodule;
+                    # Re-enable perst_reloads_same_image for all cards
+                    writeTo_perst_reloads_same_image "1";
+                    die "Unable to reload $adapter" 100;
+                fi
+                pollcount=$((pollcount+1))
+                echo -n ".";
+                sleep $RELOADDELAY;
+            done
+            echo "done"
+
+            local imgselected=`cat $cxlsysfs/$adapter/image_loaded`;
+            if [[ "$imgselected" -ne "user" ]]; then
+                echo "Card $adapter did not boot on the user image. Image selected was $imgselected.";
+                rebootrequired="true";
+            fi
+        else
+            rebootrequired="true";
+        fi
+    done
+
+    #re-enable the cxlflash module
+    enablemodule;
+    # Re-enable perst_reloads_same_image for all cards
+    writeTo_perst_reloads_same_image "1";
+
+    if [[ "$rebootrequired" == "true" ]]; then
+        echo "WARNING: This kernel does not support a warm reload of the CAPI adapter firmware. A cold restart of the system is required to reinitialize the adapter. Please power off, then power on (do not \"reboot\")."
+    else
+        echo "INFO: All present IBM DataEngine for NoSQL adapters have reloaded on this image."
+    fi
+
+}
+
+#Main Code
+checkidle;
+reloadadapters;

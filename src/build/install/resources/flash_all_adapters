@@ -1,0 +1,130 @@
+#!/bin/bash -e
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/flash_all_adapters $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+#Constants
+KERNEL_MOD="cxlflash"
+CAPI_FLASH=capi_flash.pl
+CAPI_IMAGE=corsa_surelock.150930D1.bin
+IMAGES_DIR=images #relative to the cwd of the script
+FLASH_ROOT=/opt/ibm/capikv/afu
+
+MINCAPMASK="0003"
+CAPABILITYKW="V3"
+#Globals
+factory=""
+
+#allow us to die with a specific error code
+die()
+{
+    echo "AFUFLASHERR$2: $1" 1>&2;
+    exit $2;
+}
+
+if [ "$1" == "--factory" ]; then
+    factory="-p0"
+fi
+
+
+checkidle()
+{
+    echo "INFO: Checking for CAPI Master Context..."
+    master_offline=true
+    lsmod | grep $KERNEL_MOD && master_offline=false #if the cxlflash module is found, we set the master_offline flag to false
+#otherwise, shows the module info
+
+    if $master_offline ; then
+        echo "INFO: CXL Flash Module is not running. Device is assumed to be idle.";
+    else
+        die "CXL Flash is running (see above). Cannot flash while the device is active. Run \"rmmod cxlflash\" to unload it." 1;
+    fi
+}
+
+readvpd()
+{
+    local pciid=$1
+    local keyword=$2
+    local value=`lspci -s $pciid -vv | sed -n -e '/Vital Product Data/,/End/ p' | grep $keyword | awk -F": " '{print $2}'`
+    if [[ -z "$value" ]]; then
+        die "Unable to read PCI device $pciid, VPD keyword $keyword. This afu image is not compatible with this adapter." 2;
+    fi
+    echo $value
+}
+
+findloc()
+{
+    devspecpath="/sys/bus/pci/devices/$1/devspec"
+    if [[ ! -f "$devspecpath" ]]; then
+        die "Unable to find devspec for device $1. Could not find '$devspecpath'" 3;
+    fi
+    local devspec=`cat $devspecpath`
+    local loccodepath="/proc/device-tree$devspec/ibm,loc-code"
+    if [[ ! -f "$loccodepath" ]]; then
+        die "Unable to find device tree special file path for PCI device $1: $loccodepath" 4;
+    fi
+    local loccode=`cat $loccodepath`;
+    if [[ -z "$loccode" ]]; then
+        die "Location code is invalid for PCI device $1" 5;
+    fi
+    echo $loccode;
+ } 
+
+checkcompat()
+{
+    echo "INFO: Checking card / image compatibility for image $CAPI_IMAGE"
+    #enumerate all adapters, get the PCI id (e.g. "0000:01:00.0" from below)
+    #parse something like "Found CAPI Adapter : /sys/bus/pci/devices/0000:01:00.0"
+    for adapter in `$FLASH_ROOT/$CAPI_FLASH -l | awk -F/ '{print $NF}'`;
+    do
+        echo "INFO: Checking adapter / firmware compatibility for $(findloc $adapter)";
+        adaptermask=$(readvpd $adapter $CAPABILITYKW);
+        local resultmask=$(($MINCAPMASK & $adaptermask))
+        if [[ "$resultmask" -ne "$MINCAPMASK" ]]; then
+            die "Adapter $(findloc $adapter) firmware is incompatible with this adapter. Please use a different firmware image. Minimum capability mask for this firmware is 0x$MINCAPMASK and adapter VPD capability is 0x$adaptermask." 6;
+        fi
+    done
+    echo "INFO: All present IBM DataEngine for NoSQL adapters are capable of loading this image."
+    
+}
+
+
+flashadapters()
+{
+    echo "INFO: Now flashing all CAPI devices..."
+
+    #enumerate all adapters, get the path (item #5 from the awk command)
+    #parse something like "Found CAPI Adapter : /sys/bus/pci/devices/0000:01:00.0"
+    for adapter in `$FLASH_ROOT/$CAPI_FLASH -l | awk '{print $5}'`;
+    do
+        echo "INFO: Flashing adapter: $adapter";
+        $FLASH_ROOT/$CAPI_FLASH $factory -t $adapter -f $FLASH_ROOT/$IMAGES_DIR/$CAPI_IMAGE || die "Unable to flash. Halting script." 2;
+    done
+}
+
+#Main Code
+checkidle; 
+checkcompat;
+flashadapters;
+
+echo "INFO: Adapter update complete. To restart the adapters on the new image, please run ${FLASH_ROOT}/reload_all_adapters"

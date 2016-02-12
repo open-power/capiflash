@@ -30,29 +30,36 @@
 void *pool_function(void *arg);
 
 int ark_enq_cmd(int cmd, _ARK *_arkp,uint64_t klen,void *key,uint64_t vbuflen,void *vbuf,uint64_t voff,
-		void (*cb)(int errcode, uint64_t dt,int64_t res), uint64_t dt, int32_t pthr, int *ptag);
+                void (*cb)(int errcode, uint64_t dt,int64_t res), uint64_t dt, int32_t pthr, int *ptag);
 
 int ark_wait_tag(_ARK *_arkp, int tag, int *errcode, int64_t *res);
 
-int ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_set_process_inb(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_process_inb(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp);
 
-int ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_get_process(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_get_process(_ARK *_arkp, int tid, tcb_t *tcbp);
 
-int ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp);
+void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp);
 
-int ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
 
-extern int ea_async_io_schedule(_ARK *_arkp, int32_t tid, tcb_t *tcbp, iocb_t *iocbp);
-extern int ea_async_io_harvest(_ARK *_arkp, int32_t tid, tcb_t *tcbp, iocb_t *iocbp);
+int ea_async_io_schedule(_ARK   *_arkp,
+                         int32_t tid,
+                         tcb_t  *tcbp,
+                         iocb_t *iocbp);
+int ea_async_io_harvest(_ARK   *_arkp,
+                        int32_t tid,
+                        tcb_t  *tcbp,
+                        iocb_t *iocbp,
+                        rcb_t  *iorcbp);
 
 
 #endif

@@ -2768,7 +2768,7 @@ int  cblk_mc_clone(cflsh_chunk_t *chunk,int mode, int flags)
 
 
 #ifndef _AIX
-#ifdef DK_CXLFLASH_CLONE
+#ifdef DK_CXLFLASH_VLUN_CLONE
    disk_clone.hdr.flags = mode & O_ACCMODE;
 #else
    disk_clone.flags = mode & O_ACCMODE;
@@ -3283,6 +3283,8 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 
 	if (eeh_event) {
 
+	    CBLK_TRACE_LOG_FILE(7,"EEH rcovery");
+
 	    cblk_check_os_adap_err(chunk,path_index);
 
 	}
@@ -3638,6 +3640,8 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 
 	    chunk->stats.num_capi_adap_resets++;
 
+	    CBLK_TRACE_LOG_FILE(7,"possible UE rcovery cmd = 0x%llx",(uint64_t)*cmd);
+
 	    cblk_check_os_adap_err(chunk,path_index);
 	}
 
@@ -3826,6 +3830,12 @@ void cblk_check_os_adap_err_failure_cleanup(cflsh_chunk_t *chunk, cflsh_afu_t *a
 
 	CFLASH_BLOCK_LOCK(tmp_chunk->lock);
 
+	if (tmp_chunk == chunk) {
+
+	    
+	    chunk->flags &= ~CFLSH_CHNK_RECOV_AFU;
+	}
+
 	path_index = path->path_index;
 
 
@@ -3894,6 +3904,23 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
     }
     
 
+    if (chunk->flags & CFLSH_CHNK_RECOV_AFU) {
+
+	/*
+	 * If a RECOV AFU is being done from this
+	 * chunk now, then there is nothing further
+	 * to do here.
+	 */
+
+	CBLK_TRACE_LOG_FILE(9,"AFU recovery is already active, for chunk->index = %d, chunk->dev_name = %s, path_index = %d,chunk->flags = 0x%x",
+			chunk->index,chunk->dev_name,path_index,chunk->flags);
+	return;
+
+    } else {
+
+	chunk->flags |= CFLSH_CHNK_RECOV_AFU;
+    }
+
     /*
      * Set the halted flag for this chunk, since
      * we're about to unlock.
@@ -3940,7 +3967,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 	
 	CBLK_TRACE_LOG_FILE(5,"afu recovery done via another path to this shared AFU");
 
-	chunk->flags &= ~CFLSH_CHNK_HALTED;
+	chunk->flags &= ~(CFLSH_CHNK_HALTED|CFLSH_CHNK_RECOV_AFU);
 
 	chunk->path[path_index]->flags &= ~CFLSH_PATH_A_RST;
 
@@ -4085,7 +4112,6 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
     } else {
 
 
-
 	if (disk_recover.return_flags & DK_RF_REATTACHED) {
 	
 	    /*
@@ -4122,6 +4148,14 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 		cblk_halt_all_cmds(tmp_chunk,tmp_path_index, FALSE);
 
 		path->flags |= CFLSH_PATH_A_RST;
+
+
+		/*
+		 * Clear any poison bits we can for this
+		 * chunk.
+		 */
+
+		cblk_clear_poison_bits_chunk(tmp_chunk,tmp_path_index,FALSE);
 
 		CFLASH_BLOCK_UNLOCK(tmp_chunk->lock);
 
@@ -4390,6 +4424,11 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
      */
 
     chunk->path[path_index]->flags &= ~CFLSH_PATH_A_RST;
+
+    
+    chunk->flags &= ~CFLSH_CHNK_RECOV_AFU;
+
+
     return;
 }
 

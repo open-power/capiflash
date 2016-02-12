@@ -210,7 +210,7 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
                               uint32_t *p_ops,
                               uint32_t *p_ios)
 {
-    run_multi_ctxt(num_ctxt, num_pth, 20, vlen, LEN, secs, p_ops, p_ios);
+    run_multi_ctxt(num_ctxt, num_pth, 1, vlen, LEN, secs, p_ops, p_ios);
 }
 
 /**

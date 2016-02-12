@@ -45,54 +45,54 @@ int cl_parse(int argc, char **argv, CL *ar, char **anon, int echo) {
     for(j=0; j<arn; j++) {
       if (strcmp(argv[i],"--help")==0) goto help_exit;
       if (strcmp(argv[i], ar[j].str)==0) { 
-	//printf(">>>> %s\n", argv[i]);
-	found = 1;
-	switch (ar[j].typ) {
-	case AR_INT: 	
-	case AR_INT32: {
-	  if (++i==argc) goto help_exit;
-	  *((int*)ar[j].val) = atoi(argv[i]); 
-	  break;
-	}
-	case AR_INT64: {
-	  if (++i==argc) goto help_exit;
-	  *((int64_t*)ar[j].val) = atoll(argv[i]); 
-	  break;
-	}
-	case AR_FLT: {
-	  if (++i==argc) goto help_exit;
-	  *((float*)ar[j].val) = atof(argv[i]); 
-	  break;
-	}
-	case AR_DBL: {
-	  if (++i==argc) goto help_exit;
-	  *((double*)ar[j].val) = strtod(argv[i],0); 
-	  break;
-	}
-	case AR_STR: {
-	  if (++i==argc) goto help_exit;
-	  *((char**)ar[j].val) = argv[i]; 
-	  break;
-	}
-	case AR_FLG: {
-	  *((int*)ar[j].val) -= 1;
-	  break;
-	}
-	default : goto help_exit;
-	}
+        //printf(">>>> %s\n", argv[i]);
+        found = 1;
+        switch (ar[j].typ) {
+        case AR_INT:
+        case AR_INT32: {
+          if (++i==argc) goto help_exit;
+          *((int*)ar[j].val) = atoi(argv[i]);
+          break;
+        }
+        case AR_INT64: {
+          if (++i==argc) goto help_exit;
+          *((int64_t*)ar[j].val) = atoll(argv[i]);
+          break;
+        }
+        case AR_FLT: {
+          if (++i==argc) goto help_exit;
+          *((float*)ar[j].val) = atof(argv[i]);
+          break;
+        }
+        case AR_DBL: {
+          if (++i==argc) goto help_exit;
+          *((double*)ar[j].val) = strtod(argv[i],0);
+          break;
+        }
+        case AR_STR: {
+          if (++i==argc) goto help_exit;
+          *((char**)ar[j].val) = argv[i];
+          break;
+        }
+        case AR_FLG: {
+          *((int*)ar[j].val) -= 1;
+          break;
+        }
+        default : goto help_exit;
+        }
       }
     }
     if (!found) { 
       if (argv[i][0]=='-')
-	goto help_exit;
+        goto help_exit;
       else {
-	if (acnt < amax) {
-	  //printf("###### %s\n", argv[i]);
-	  found = 1;
-	  anon[acnt++] = argv[i];
-	} else {
-	  goto help_exit;
-	}
+        if (acnt < amax) {
+          //printf("###### %s\n", argv[i]);
+          found = 1;
+          anon[acnt++] = argv[i];
+        } else {
+          goto help_exit;
+        }
       } // end anonymous
     }
   }
@@ -103,28 +103,28 @@ int cl_parse(int argc, char **argv, CL *ar, char **anon, int echo) {
       switch (ar[j].typ) {
       case AR_INT:
       case AR_INT32: {
-	printf("    %s %d : %s\n", ar[j].str, *(int32_t*)ar[j].val, ar[j].des);
-	break;
+        printf("    %s %d : %s\n", ar[j].str, *(int32_t*)ar[j].val, ar[j].des);
+        break;
       }
       case AR_INT64: {
-	printf("    %s %"PRIi64" : %s\n", ar[j].str, *(int64_t*)ar[j].val, ar[j].des);
-	break;
+        printf("    %s %"PRIi64" : %s\n", ar[j].str, *(int64_t*)ar[j].val, ar[j].des);
+        break;
       }
       case AR_FLT: {
-	printf("    %s %g : %s\n", ar[j].str, *(float*)ar[j].val, ar[j].des);
-	break;
+        printf("    %s %g : %s\n", ar[j].str, *(float*)ar[j].val, ar[j].des);
+        break;
       }
       case AR_DBL: {
-	printf("    %s %g : %s\n", ar[j].str, *(double*)ar[j].val, ar[j].des);
-	break;
+        printf("    %s %g : %s\n", ar[j].str, *(double*)ar[j].val, ar[j].des);
+        break;
       }
       case AR_STR: {
-	printf("    %s %s : %s\n", ar[j].str, *(char**)ar[j].val, ar[j].des);
-	break;
+        printf("    %s %s : %s\n", ar[j].str, *(char**)ar[j].val, ar[j].des);
+        break;
       }
       case AR_FLG: {
-	printf("    %s <%s> : %s\n", ar[j].str, (*(int*)ar[j].val) ? "true" : "false" , ar[j].des);
-	break;
+        printf("    %s <%s> : %s\n", ar[j].str, (*(int*)ar[j].val) ? "true" : "false" , ar[j].des);
+        break;
       }
       }
     }
@@ -153,20 +153,20 @@ int csv_parse(char *buf, char **val, int *len, int n) {
     int mark = buf[i]=='"';
     if (instring) {
       if (mark) {
-	buf[i] = 0;
-	len[m] = cnt;
-	m++;
-	instring = 0;
+        buf[i] = 0;
+        len[m] = cnt;
+        m++;
+        instring = 0;
       } else {
-	cnt++;
+        cnt++;
       }
     } else {
       if (mark) {
-	val[m] = buf+i+1;
-	cnt=0;
-	instring = 1;
+        val[m] = buf+i+1;
+        cnt=0;
+        instring = 1;
       }/*  else { */
-      /* 	1; */
+      /*         1; */
       /* } */
     }
     i++;

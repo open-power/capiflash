@@ -1,4 +1,4 @@
-resources contains various external tools and applications needed by surelock.
+The resources directory contains various external tools and applications needed by the IBM Data Engine for NoSQL.
 
 80-cxl.rules
 Purpose: udev rules for /dev/cxl/afuX.0s and X.0m that enable members of the cxl group to access the slave device(s)
@@ -29,7 +29,7 @@ flash_factory_image
 Purpose: Wrapper script for capi_flash.pl, used by CSC manufacturing to write factory image prior to shipmnet
 
 license/*
-Purpose: License terms / conditions for Surelock
+Purpose: License terms / conditions for IBM Data Engine for NoSQL User Libraries
 
 postinstall
 Purpose: initial setup of system - used by clients or ssrs

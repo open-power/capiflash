@@ -568,11 +568,6 @@ TEST(Cflash_FVT_Suite, G_sp_io_vlun_plun_altr)
     ASSERT_EQ(0,mc_test_engine(TEST_SPIO_VLUN_PLUN));
 }
 
-TEST(Cflash_FVT_Suite, G_sp_io_size_regress)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_MC_SIZE_REGRESS));
-}
-
 TEST(Cflash_FVT_Suite, G_mc_ctx_crt_dstr_rgrs)
 {
     ASSERT_EQ(0,mc_test_engine(TEST_MC_REGRESS_CTX_CRT_DSTR));
@@ -580,10 +575,6 @@ TEST(Cflash_FVT_Suite, G_mc_ctx_crt_dstr_rgrs)
 TEST(Cflash_FVT_Suite, G_mc_ctx_crt_dstr_rgrs_io)
 {
     ASSERT_EQ(0,mc_test_engine(TEST_MC_REGRESS_CTX_CRT_DSTR_IO));
-}
-TEST(Cflash_FVT_Suite, G_mc_regress_resource)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_MC_REGRESS_RESOURCE));
 }
 
 TEST(Cflash_FVT_Suite, G_mc_two_ctx_rd_wrthrd)
@@ -614,16 +605,6 @@ TEST(Cflash_FVT_Suite, G_max_res_handl_one_ctx)
 TEST(Cflash_FVT_Suite, G_one_unit_chunk)
 {
     ASSERT_EQ(0,mc_test_engine(TEST_ONE_UNIT_SIZE));
-}
-
-TEST(Cflash_FVT_Suite, G_max_ctx_res_unit_lun)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_MAX_CTX_RES_UNIT));
-}
-
-TEST(Cflash_FVT_Suite, G_max_ctx_res_lun_capacity)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_MAX_CTX_RES_LUN_CAP));
 }
 
 TEST(Cflash_FVT_Suite, G_mc_lun_cap_incremnt)
@@ -741,7 +722,11 @@ TEST(Cflash_FVT_Suite, E_bad_ioasa_address)
 #ifdef _AIX
     ASSERT_EQ(255, test_mc_invalid_ioarcb(101));
 #else
-    ASSERT_EQ(10, test_mc_invalid_ioarcb(101));
+    int res = test_mc_invalid_ioarcb(101);
+    if ( res == 10 || res == 255 )
+        res = 1; 
+        
+    ASSERT_EQ(1, res);
 #endif
 }
 
@@ -828,13 +813,14 @@ TEST(Cflash_FVT_Suite, E_Test_mc_rw_close_ctx)
 {
 #ifdef _AIX
 	int res=mc_test_engine(TEST_MC_RW_CLOSE_CTX);
-	if(res == 10 || res == 0x5 || res == 0x13)
+	if(res == 10 || res == 0x5 || res == 0x13 || res == 0)
 		res=1;
 	ASSERT_EQ(1,res);
 #else
-    ASSERT_EQ(0x13,mc_test_engine(TEST_MC_RW_CLOSE_CTX));
+    ASSERT_NE(0,mc_test_engine(TEST_MC_RW_CLOSE_CTX));
 #endif
 }
+#ifndef _AIX
 TEST(Cflash_FVT_Suite, E_Test_mc_rw_close_disk_fd)
 {
     int res=mc_test_engine(TEST_MC_RW_CLOSE_DISK_FD);
@@ -842,7 +828,6 @@ TEST(Cflash_FVT_Suite, E_Test_mc_rw_close_disk_fd)
 		res=1;
     ASSERT_EQ(1,res);
 }
-#ifndef _AIX
 TEST(Cflash_FVT_Suite, E_Test_mc_rw_unmap_mmio)
 {
     ASSERT_EQ(10,mc_test_engine(TEST_MC_RW_UNMAP_MMIO));
@@ -1028,10 +1013,6 @@ TEST(Cflash_FVT_Suite, E_test_CHN_CTX_ID_DIF_PRC)
     ASSERT_EQ(0,mc_test_engine(E_ioctl_7_1_198));
 }
 
-TEST(Cflash_FVT_Suite, G_7_1_203)
-{
-    ASSERT_EQ(0,mc_test_engine(G_ioctl_7_1_203));
-}
 #ifdef _AIX
 TEST(Cflash_FVT_Suite, E_test_VG_V_PLUN)
 {
@@ -1068,7 +1049,31 @@ TEST(Cflash_FVT_Suite, G_test_max_ctx_io_noflg)
 {
     ASSERT_EQ(0,mc_test_engine(G_TEST_MAX_CTX_IO_NOFLG));
 }
+TEST(Cflash_FVT_Suite, G_sp_io_size_regress)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_MC_SIZE_REGRESS));
+}
+TEST(Cflash_FVT_Suite, G_mc_regress_resource)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_MC_REGRESS_RESOURCE));
+}
+TEST(Cflash_FVT_Suite, E_test_max_ctx_crss_limit)
+{
+    ASSERT_EQ(0,mc_test_engine(E_TEST_MAX_CTX_CRSS_LIMIT));
+}
+TEST(Cflash_FVT_Suite, G_max_ctx_res_unit_lun)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_MAX_CTX_RES_UNIT));
+}
 
+TEST(Cflash_FVT_Suite, G_max_ctx_res_lun_capacity)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_MAX_CTX_RES_LUN_CAP));
+}
+TEST(Cflash_FVT_Suite, G_7_1_203)
+{
+    ASSERT_EQ(0,mc_test_engine(G_ioctl_7_1_203));
+}
 #ifdef MANUAL
 
 TEST(Cflash_FVT_Suite, M_7_5_13_1)

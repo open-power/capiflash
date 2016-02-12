@@ -353,7 +353,7 @@ kv_db_create_mixed(uint32_t num, uint32_t key_max, uint32_t value_max)
  ******************************************************************************/
 uint32_t kv_db_fixed_regen_values(kv_t *db, uint32_t num, uint32_t vlen)
 {
-    uint32_t rc = NULL;
+    uint32_t rc = 0;
     uint32_t i  = 0;
 
     for (i=0; i<num; i++)
@@ -379,7 +379,7 @@ uint32_t kv_db_fixed_regen_values(kv_t *db, uint32_t num, uint32_t vlen)
  ******************************************************************************/
 uint32_t kv_db_mixed_regen_values(kv_t *db, uint32_t num, uint32_t value_max)
 {
-    uint32_t rc   = NULL;
+    uint32_t rc   = 0;
     uint32_t i    = 0;
     uint32_t vlen = 0;
 

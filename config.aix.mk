@@ -81,7 +81,8 @@ endif
 #CUSTOMFLAGS += -D__SURELOCK_MODULE=${MODULE}
 #For AIX use the following istead.
 #Suppress infinite loop warnings on AIX (1500-010)
-CUSTOMFLAGS += -qcpluscmt -Dinline=__inline -D_AIX -D__SURELOCK_MODULE=${MODULE} -qsuppress=1500-010
+CUSTOMFLAGS += -qcpluscmt -Dinline=__inline -D_AIX \
+-D__SURELOCK_MODULE=${MODULE} -qsuppress=1500-010 -D_REENTRANT
 CUSTOMFLAGS64 += -q 64 ${CUSTOMFLAGS}
 LIBS += $(addsuffix .so, $(addprefix lib, ${MODULE}))
 LIBS64 += $(addsuffix .64so, $(addprefix lib, ${MODULE}))
@@ -159,7 +160,7 @@ BEAMFLAGS = \
 COMMONFLAGS = ${EXTRACOMMONFLAGS}
 
 ifndef NO_O3
-COMMONFLAGS += -O3
+#COMMONFLAGS += -O3
 endif
 
 #add support for the rev ID header
@@ -167,11 +168,11 @@ GITREVISION:=$(shell git rev-list HEAD | wc -l | sed -e 's/^ *//')-$(shell git r
 CUSTOMFLAGS += -DGITREVISION='"${GITREVISION}"'
 
 
-CFLAGS += ${COMMONFLAGS} -g \
+CFLAGS += ${COMMONFLAGS} \
 	 ${CUSTOMFLAGS} \
 	  ${ARCHFLAGS} \
 	${INCFLAGS}
-CFLAGS64 += ${COMMONFLAGS} -g \
+CFLAGS64 += ${COMMONFLAGS} \
 	 ${CUSTOMFLAGS64} \
 	  ${ARCHFLAGS} \
 	${INCFLAGS}

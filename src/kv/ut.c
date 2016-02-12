@@ -44,7 +44,6 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
-#include <errno.h>
 
 #include "am.h"
 #include "ut.h"
@@ -59,26 +58,16 @@ uint64_t divceil(uint64_t n, uint64_t m) {
 
 char *rndalpha(int n, int m) {
   int i;
-  char *ret = am_malloc(n + 1);
+  char *ret = malloc(n + 1);
   if (ret) {
     for (i=0; i<n; i++) {
       ret[i] = 'a' + lrand48()%m;
     }
     ret[n] = 0;
   }
+  free(ret);
   return ret;
 }
-
-void expandif(void **buf, uint64_t *len, uint64_t req) {
-  if (req < *len) { 
-    void *newp = am_realloc(*buf, req);
-    if (newp) {
-      *buf = newp;
-      *len = req;
-    }
-  }
-}
-
 
 double time_diff(struct timeval x , struct timeval y)
 {
@@ -96,8 +85,8 @@ double time_diff(struct timeval x , struct timeval y)
 double time_per_tick(int n, int del) {
   int i;
 
-  double *td = am_malloc(n * sizeof(double));
-  double *tv = am_malloc(n * sizeof(double));
+  double *td = malloc(n * sizeof(double));
+  double *tv = malloc(n * sizeof(double));
 
   struct timeval tvs;
   struct timeval tve;
@@ -128,6 +117,8 @@ double time_per_tick(int n, int del) {
     //printf("ticks, %15g, time, %15g, ticks/usec, %15g, nsec/tick, %15g\n", td[i], tv[i], td[i] / tv[i], 1000.0 * tv[i] / td[i]);
     
   }
+  free(td);
+  free(tv);
   return sum / n ;
 
 }  

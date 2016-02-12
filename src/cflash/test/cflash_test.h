@@ -176,6 +176,9 @@ typedef __u64 dev64_t; //no use in Linux, its dummy
 #define debug_2\
         if(DEBUG ==2) printf
 
+#define TESTCASE_SKIP(_reason) \
+        printf("[  SKIPPED ] %s\n", _reason);
+
 // all required for EEH automation  
 
 #define MAXBUFF 400
@@ -575,6 +578,7 @@ E_CAPI_LINK_DOWN,
 G_ioctl_7_1_203,
 G_TEST_MAX_VLUNS,
 G_TEST_MAX_CTX_IO_NOFLG,
+E_TEST_MAX_CTX_CRSS_LIMIT,
 }mc_test_t;
 
 int validateFunction(struct validatePckt *);
@@ -755,6 +759,8 @@ bool check_afu_reset(struct ctx *p_ctx);
 #ifdef _AIX
 int ioctl_dk_capi_query_path_check_flag(struct ctx *p_ctx,
                                         int flag1, int flag2);
+int setRUnlimited();
+char * diskWithoutDev(char * source , char * destination );
 #endif
 int test_spio_vlun(int);
 int test_spio_plun();
@@ -826,4 +832,5 @@ int call_attach_diff_devno();
 int max_vlun_on_a_ctx();
 void displayBuildinfo();
 int get_max_res_hndl_by_capacity(char *dev);
+int max_ctx_cross_limit();
 #endif /*__CFLASH_TEST_H__ */

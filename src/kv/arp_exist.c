@@ -29,28 +29,26 @@
 #include <unistd.h>
 #include <string.h>
 
-#include <sys/errno.h>
-
 #include "ut.h"
 #include "vi.h"
 
 #include "arkdb.h"
 #include "ark.h"
+#include "arp.h"
 #include "am.h"
 
 #include <arkdb_trace.h>
-
-int ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
+#include <errno.h>
 
 // if successful returns length of value
-int ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
+void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  scb_t            *scbp     = &(_arkp->poolthreads[tid]);
-  rcb_t            *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
-  ark_io_list_t    *bl_array = NULL;
-  int32_t           rc       = 0;
-  int32_t           state    = ARK_CMD_DONE;
+  scb_t         *scbp     = &(_arkp->poolthreads[tid]);
+  rcb_t         *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
+  tcb_t         *iotcbp   = &(_arkp->tcbs[rcbp->ttag]);
+  iocb_t        *iocbp    = &(_arkp->iocbs[rcbp->ttag]);
+  ark_io_list_t *bl_array = NULL;
+  int32_t        rc       = 0;
 
   // Now that we have the hash entry, get the block
   // that holds the control information for the entry.
@@ -61,11 +59,11 @@ int ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // Set the error
   if ( tcbp->hblk == 0 )
   {
-    KV_TRC_FFDC(pAT, "rc = ENOENT key %p, klen %"PRIu64"",
-                 rcbp->key, rcbp->klen);
+    KV_TRC_FFDC(pAT, "rc = ENOENT key %p, klen %"PRIu64" ttag:%d",
+                 rcbp->key, rcbp->klen, tcbp->ttag);
     rcbp->res   = -1;
     rcbp->rc = ENOENT;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_exist_start_err;
   }
 
@@ -76,9 +74,10 @@ int ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
                   (tcbp->blen * _arkp->bsize));
   if (rc != 0)
   {
+    KV_TRC_FFDC(pAT, "bt_growif failed tcbp:%p ttag:%d", tcbp, tcbp->ttag);
     rcbp->res = -1;
     rcbp->rc = rc;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_exist_start_err;
   }
 
@@ -86,53 +85,45 @@ int ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   bl_array = bl_chain(_arkp->bl, tcbp->hblk, tcbp->blen);
   if (bl_array == NULL)
   {
+    KV_TRC_FFDC(pAT, "bl_chain failed tcbp:%p ttag:%d", tcbp, tcbp->ttag);
     rcbp->rc = ENOMEM;
     rcbp->res = -1;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_exist_start_err;
   }
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  rc = ea_async_io_mod(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array, 
+  KV_TRC_IO(pAT, "read hash entry ttag:%d", tcbp->ttag);
+  ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array,
                    tcbp->blen, 0, tcbp->ttag, ARK_EXIST_FINISH);
-  if (rc < 0)
+  if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
+      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
   {
-    rcbp->rc = -rc;
-    rcbp->res = -1;
-    state = ARK_CMD_DONE;
-    goto ark_exist_start_err;
-  }
-  else if (rc == 0)
-  {
-    state = ARK_IO_HARVEST;
-  }
-  else
-  {
-    state = ark_exist_finish(_arkp, tid, tcbp);
+      ark_exist_finish(_arkp, tid, tcbp);
   }
 
 ark_exist_start_err:
 
-  return state;
+  return;
 }
 
-int ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
+void ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  int32_t state = ARK_CMD_DONE;
-  rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
+  rcb_t *rcbp = &(_arkp->rcbs[tcbp->rtag]);
 
   // Find the key position in the read in bucket
   rcbp->res = bt_exists(tcbp->inb, rcbp->klen, rcbp->key);
   if (rcbp->res == BT_FAIL)
   {
-    KV_TRC_FFDC(pAT, "rc = ENOENT key %p, klen %"PRIu64"",
-                  rcbp->key, rcbp->klen);
+    KV_TRC_FFDC(pAT, "rc = ENOENT key %p, klen %"PRIu64" ttag:%d",
+                  rcbp->key, rcbp->klen, tcbp->ttag);
     rcbp->rc = ENOENT;
     rcbp->res = -1;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
   }
 
-  return state;
+  tcbp->state = ARK_CMD_DONE;
+  return;
 }
 

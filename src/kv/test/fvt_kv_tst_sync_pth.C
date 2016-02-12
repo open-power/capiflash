@@ -76,11 +76,7 @@ TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_8x4k)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-#ifdef _AIX
-TEST(FVT_KV_GOOD_PATH, DISABLED_SYNC_PTH_FIXED_BIG_BLOCKS)
-#else
 TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_BIG_BLOCKS)
-#endif
 {
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 1;
@@ -122,6 +118,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_1_PTH_2_CONTEXT)
     uint32_t LEN      = 200;
     uint32_t secs     = 3;
 
+    TESTCASE_SKIP_IF_FILE;
+
     Sync_pth sync_pth;
 
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, vlen, LEN, secs);
@@ -138,6 +136,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_4_PTH_40_CONTEXT)
     uint32_t vlen     = 128;
     uint32_t LEN      = 200;
     uint32_t secs     = 3;
+
+    TESTCASE_SKIP_IF_FILE;
 
     Sync_pth sync_pth;
 
@@ -156,10 +156,12 @@ TEST(FVT_KV_GOOD_PATH, SYNC_4_PTH_200_CONTEXT)
 {
     uint32_t num_ctxt = 200;
     uint32_t num_pth  = 4;
-    uint32_t npool    = 4;
+    uint32_t npool    = 1;
     uint32_t vlen     = 128;
     uint32_t LEN      = 100;
     uint32_t secs     = 3;
+
+    TESTCASE_SKIP_IF_FILE;
 
     Sync_pth sync_pth;
 

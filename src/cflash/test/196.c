@@ -61,6 +61,9 @@ int ioctl_7_1_196()
     __u64 stride=0x1000,st_lba=0;
     pthread_t thread[20];
     struct flash_disk disks[MAX_FDISK];
+    char disk1[30];
+    char disk2[30];
+
     int cfdisk = MAX_FDISK;
 
     pid = getpid();
@@ -70,8 +73,13 @@ int ioctl_7_1_196()
     if (cfdisk < 2)
     {
         fprintf(stderr,"Must have 2 flash disks..\n");
-        return -1;
+        TESTCASE_SKIP("Need disk from same adapter and each disk multipathed");
+        return 0;
     }
+
+    strcpy(disk1,disks[0].dev);
+    strcpy(disk2,disks[1].dev);
+
     // creating first context
 
     for (i=0;i<21;i++)
@@ -145,21 +153,25 @@ int ioctl_7_1_196()
         return rc;
     }
 
-    for (i=2;i<21;i++)
-    {
+    /* using a goto-label removes the compile warning (-O3 issue) */
+    i=2;
+    for_loop:
         pthread_cancel(thread[i]);
         close_res(p_ctx[i]);
-    }
+        if (++i < 21) {goto for_loop;}
 
     ctx_close(p_ctx[2]);
     debug("2nd PROCEDURE\n");
-
+   
     // procedure 2 of the same case
     debug("%d: ........Phase 1 done.. Starting 2nd Phase........\n",getpid());
     memset(p_ctx_1, 0, sizeof(struct ctx));
 
     memset(p_ctx_2, 0, sizeof(struct ctx));
     // open the first flash disk in write mode and create a DIRECT LUN
+
+    // restoring from backup
+    strcpy(disks[0].dev,disk1);
     p_ctx_1->fd = open_dev(disks[0].dev, O_WRONLY);
     if (p_ctx_1->fd < 0)
     {
@@ -193,7 +205,7 @@ int ioctl_7_1_196()
         CHECK_RC(rc, "send_write failed");
         rc = send_read(p_ctx_2, st_lba, stride);
         CHECK_RC(rc, "send_read failed");
-        if (rc !=0 )
+        /*if (rc !=0 )
         {
             rc = rw_cmp_buf(p_ctx_1, st_lba);
             if (rc != 0)
@@ -201,7 +213,7 @@ int ioctl_7_1_196()
                 fprintf(stderr,"buf cmp failed for lba 0x%lX,rc =%d\n",st_lba,rc);
                 break;
             }
-        }
+        }*/
     }
     if ( rc != 0 )
         return rc;
@@ -211,14 +223,12 @@ int ioctl_7_1_196()
         pthread_cancel(thread[i]);
     }
 
-    close_res(p_ctx_1);
+    //close_res(p_ctx_1);
     ctx_close(p_ctx_1);
-    close_res(p_ctx_2);
+    //close_res(p_ctx_2);
     ctx_close(p_ctx_2);
 
     debug("3rd PROCEDURE\n");
-
-
     debug("%d: ........Phase 2 done.. Starting 3rd Phase........\n",getpid());
     // case 3 of the same case
     // creating multiple process for LUN_DIRECT creation.
@@ -228,20 +238,20 @@ int ioctl_7_1_196()
         {
             if ( 0 == fork())
             { rc = ctx_init(p_ctx[i]);
-                CHECK_RC(rc, "Context init failed");
+                CHECK_RC_EXIT(rc, "Context init failed");
                 // CHECK_RC(rc, "Context init failed");
                 //thread to handle AFU interrupt & events
 
                 rc = create_resource(p_ctx[i], 0, DK_UDF_ASSIGN_PATH , LUN_DIRECT);
-                CHECK_RC(rc, "create LUN_DIRECT failed");
+                CHECK_RC_EXIT(rc, "create LUN_DIRECT failed");
                 // do io on context
                 pthread_create(&thread[i], NULL, ctx_rrq_rx, p_ctx[i]);
                 stride=0x1000;
                 sleep(2);
-                do_io(p_ctx[i], stride);
+                //do_io(p_ctx[i], stride);
                 pthread_cancel(thread[i]);
                 close_res(p_ctx[i]);
-                return(rc);
+                exit(rc);
             }
         }
         wait4all();

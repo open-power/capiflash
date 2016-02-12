@@ -28,29 +28,26 @@
 #include <unistd.h>
 #include <string.h>
 
-#include <sys/errno.h>
-
 #include "ut.h"
 #include "vi.h"
 
 #include "arkdb.h"
 #include "ark.h"
+#include "arp.h"
 #include "am.h"
 
 #include <arkdb_trace.h>
-
-int ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_get_process(_ARK *_arkp, int tid, tcb_t *tcbp);
+#include <errno.h>
 
 // if successful returns length of value
-int ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
+void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t            *scbp     = &(_arkp->poolthreads[tid]);
   rcb_t            *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
+  tcb_t            *iotcbp   = &(_arkp->tcbs[rcbp->ttag]);
+  iocb_t           *iocbp    = &(_arkp->iocbs[rcbp->ttag]);
   ark_io_list_t    *bl_array = NULL;
   int32_t           rc       = 0;
-  int32_t           state    = ARK_CMD_DONE;
 
   // Now that we have the hash entry, get the block
   // that holds the control information for the entry.
@@ -61,11 +58,11 @@ int ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // Set the error
   if ( tcbp->hblk == 0 )
   {
-    KV_TRC_FFDC(pAT, "rc = ENOENT key %p, klen %"PRIu64"",
-                 rcbp->key, rcbp->klen);
+    KV_TRC_FFDC(pAT, "rc = ENOENT key %p, klen %"PRIu64" ttag:%d",
+                 rcbp->key, rcbp->klen, tcbp->ttag);
     rcbp->res   = -1;
     rcbp->rc = ENOENT;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_get_start_err;
   }
 
@@ -76,9 +73,10 @@ int ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
                   (tcbp->blen * _arkp->bsize));
   if (rc != 0)
   {
+    KV_TRC_FFDC(pAT, "bt_growif failed ttag:%d", tcbp->ttag);
     rcbp->res = -1;
     rcbp->rc = rc;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_get_start_err;
   }
 
@@ -86,45 +84,37 @@ int ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   bl_array = bl_chain(_arkp->bl, tcbp->hblk, tcbp->blen);
   if (bl_array == NULL)
   {
+    KV_TRC_FFDC(pAT, "bl_chain failed ttag:%d", tcbp->ttag);
     rcbp->rc = ENOMEM;
     rcbp->res = -1;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_get_start_err;
   }
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  rc = ea_async_io_mod(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array, 
+  KV_TRC_IO(pAT, "read hash entry ttag:%d", tcbp->ttag);
+  ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array,
                    tcbp->blen, 0, tcbp->ttag, ARK_GET_PROCESS);
-  if (rc < 0)
+  if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
+      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
   {
-    rcbp->rc = -rc;
-    rcbp->res = -1;
-    state = ARK_CMD_DONE;
-    goto ark_get_start_err;
-  }
-  else if (rc == 0)
-  {
-    state = ARK_IO_HARVEST;
-  }
-  else
-  {
-    state = ark_get_process(_arkp, tid, tcbp);
+      ark_get_process(_arkp, tid, tcbp);
   }
 
 ark_get_start_err:
 
-  return state;
+  return;
 }
 
-int ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
+void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
 {
   scb_t            *scbp        = &(_arkp->poolthreads[tid]);
   rcb_t            *rcbp        = &(_arkp->rcbs[tcbp->rtag]);
+  tcb_t            *iotcbp      = &(_arkp->tcbs[rcbp->ttag]);
+  iocb_t           *iocbp       = &(_arkp->iocbs[rcbp->ttag]);
   ark_io_list_t    *bl_array    = NULL;
   uint8_t          *new_vb      = NULL;
-  int32_t           rc          = 0;
-  int32_t           state       = ARK_CMD_DONE;
   uint64_t          vblk        = 0;
   uint64_t          new_vbsize  = 0;
 
@@ -147,20 +137,21 @@ int ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
       // buffer is big enough to hold the value.
       if (tcbp->vvlen > tcbp->vbsize) {
 
-	new_vbsize = (tcbp->blen * _arkp->bsize);
-	new_vb = am_realloc(tcbp->vb_orig, new_vbsize);
-	if ( new_vb == NULL )
-	{
-	  rcbp->rc = ENOMEM;
+        new_vbsize = (tcbp->blen * _arkp->bsize);
+        new_vb = am_realloc(tcbp->vb_orig, new_vbsize);
+        if ( new_vb == NULL )
+        {
+          KV_TRC_FFDC(pAT, "am_realloc failed ttag:%d", tcbp->ttag);
+          rcbp->rc = ENOMEM;
           rcbp->res = -1;
-	  state = ARK_CMD_DONE;
-	  goto ark_get_process_err;
-	}
+          tcbp->state = ARK_CMD_DONE;
+          goto ark_get_process_err;
+        }
         
-	// The realloc succeeded.  Set the new size, original
-	// variable buffer, and adjusted variable buffer
-	tcbp->vbsize = new_vbsize;
-	tcbp->vb_orig = new_vb;
+        // The realloc succeeded.  Set the new size, original
+        // variable buffer, and adjusted variable buffer
+        tcbp->vbsize = new_vbsize;
+        tcbp->vb_orig = new_vb;
         tcbp->vb = ptr_align(tcbp->vb_orig);
       }
 
@@ -168,60 +159,47 @@ int ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
       bl_array = bl_chain(_arkp->bl, vblk, tcbp->blen);
       if (bl_array == NULL)
       {
+        KV_TRC_FFDC(pAT, "bl_chain failed ttag:%d", tcbp->ttag);
         rcbp->rc = ENOMEM;
         rcbp->res = -1;
-	state = ARK_CMD_DONE;
+        tcbp->state = ARK_CMD_DONE;
         goto ark_get_process_err;
       }
 
       scbp->poolstats.io_cnt += tcbp->blen;
 
+      KV_TRC_IO(pAT, "read key value ttag:%d", tcbp->ttag);
       // Schedule the READ of the key's value into the
       // variable buffer.
-      rc = ea_async_io_mod(_arkp, ARK_EA_READ, (void *)tcbp->vb, 
+      ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->vb,
                        bl_array, tcbp->blen, 0, tcbp->ttag, ARK_GET_FINISH);
-      if (rc < 0)
+      if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
+          ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
       {
-        rcbp->rc = -rc;
-        rcbp->res = -1;
-	state = ARK_CMD_DONE;
-        goto ark_get_process_err;
-      }
-      else if (rc == 0)
-      {
-        state = ARK_IO_HARVEST;
-      }
-      else
-      {
-        state = ark_get_finish(_arkp, tid, tcbp);
+          ark_get_finish(_arkp, tid, tcbp);
       }
     }
     else
     {
-      // Copy the value into the buffer passed in.
-      memcpy(rcbp->val, tcbp->vb, tcbp->vvlen);
-      rcbp->res = tcbp->vvlen;
-      rcbp->rc = 0;
-      state = ARK_CMD_DONE;
+        ark_get_finish(_arkp, tid, tcbp);
     }
   } 
   else
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: key %p, klen %"PRIu64"",
-                  rcbp->key, rcbp->klen);
+    KV_TRC_FFDC(pAT, "rc = EINVAL: key %p, klen %"PRIu64" ttag:%d",
+                  rcbp->key, rcbp->klen, tcbp->ttag);
     rcbp->rc = ENOENT;
     rcbp->res = -1;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
   }
 
 ark_get_process_err:
 
-  return state;
+  return;
 }
 
-int ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
+void ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  int32_t state = ARK_CMD_DONE;
   rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
 
   // We've read in the variable buffer.  Now we copy it
@@ -236,6 +214,8 @@ int ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
   }
   rcbp->res = tcbp->vvlen;
 
-  return state;
+  tcbp->state = ARK_CMD_DONE;
+
+  return;
 }
 

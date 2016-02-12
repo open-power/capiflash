@@ -26,7 +26,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <errno.h>
 
 #include "am.h"
 #include "bv.h"
@@ -35,6 +34,7 @@
 #include "ht.h"
 
 #include <arkdb_trace.h>
+#include <errno.h>
 
 uint64_t ht_hash(uint8_t *buf, uint64_t n) {
   uint64_t sum = 0;
@@ -67,20 +67,26 @@ HT *ht_new(uint64_t n, uint64_t m) {
 }
 
 void ht_delete(HT *ht) {
-    KV_TRC(pAT, "ht %p valid %p value %p", ht, ht->valid, ht->value);
+  KV_TRC(pAT, "ht %p valid %p value %p", ht, ht->valid, ht->value);
   bv_delete(ht->valid);
   iv_delete(ht->value);
   am_free(ht);
 }
 
 
-void      ht_set(HT *ht, uint64_t pos, uint64_t val) {
+void ht_set(HT *ht, uint64_t pos, uint64_t val) {
   bv_set(ht->valid, pos);
   iv_set(ht->value, pos, val);
 } 
 
-uint64_t ht_get(HT *ht, uint64_t pos) {
-  return iv_get(ht->value,pos);
+int64_t ht_get(HT *ht, uint64_t pos)
+{
+    int64_t v;
+    if ((v=iv_get(ht->value,pos)) < 0)
+    {
+        KV_TRC_FFDC(pAT, "invalid pos:%ld", pos);
+    }
+    return v;
 }
 
 void     ht_clr(HT *ht, uint64_t pos) {

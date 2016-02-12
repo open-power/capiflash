@@ -26,7 +26,7 @@
 #Constants
 KERNEL_MOD="cxlflash"
 CAPI_FLASH=capi_flash.pl
-CAPI_IMAGE=corsa_surelock.150930D1.bin
+CAPI_IMAGE=1410f0041410f004.00000001151029D1
 IMAGES_DIR=images #relative to the cwd of the script
 FLASH_ROOT=/opt/ibm/capikv/afu
 

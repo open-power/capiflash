@@ -26,13 +26,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#include <errno.h>
 
 #include "am.h"
 #include "ut.h"
 #include "si.h"
 
 #include <arkdb_trace.h>
+#include <errno.h>
 
 // there is a better variable size implementation but for now
 typedef struct _sie {
@@ -164,7 +164,7 @@ void si_summary(void *siv) {
   for(i=0; i<si->nh; i++) if (si->tbl[i]>=0) ecnt++;
     
   printf("table %"PRIu64"/%"PRIu64" entries %"PRIu64"/%"PRIu64" data %"PRIu64"/%"PRIu64"\n", 
-	 ecnt, si->nh, 
-	 si->ent_next, si->ne,
-	 si->dat_next, si->nb);
+         ecnt, si->nh,
+         si->ent_next, si->ne,
+         si->dat_next, si->nb);
 }

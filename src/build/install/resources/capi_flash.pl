@@ -67,6 +67,13 @@ my $numdev;              # Number of CORSA Devices in the lspci output
 my $devstr;              # Device String from lspci output
 my @dsev;                # Device String split apart to find device location
 
+# -- My Change -
+
+my $hdr = 0;             # Set if PAPR header is present in image
+my $hdat = 0;            # Vendoer Dev id from header if present
+my $devId = 0x101404cf;           # 0x101404cf default for capi
+my $size = 0;         # verify size at offset 24 , 8 bytes for actual image
+
 # -------------------------------------------------------------------------------
 # Defaults:
 # -------------------------------------------------------------------------------
@@ -95,6 +102,7 @@ $optOK = GetOptions ( "f|rbf=s"   => \$filename,
                       "p1"        ,  \$partition1,
                       "v"         ,  \$vpd,
                       "l"        ,  \$list,
+                      "d=o"  => \$devId,
                       "t|target=s" => \$target,
                       "h|help!"   ,  \$prthelp
                     );
@@ -116,6 +124,7 @@ if (!($optOK) | $prthelp) {
   print "    -v             : Program VPD Information                      \n";
   print "    -f or --rbf    : Raw Binary File Containing the Bitstream     \n";
   print "    -l             : List pci location of capi devices            \n";
+  print "    -d             : Dev and Ven ID in header of fw image         \n";
   print "    -t or --target : Target pcie device to flash                  \n";
   print "    -h or --help   : Help - Print this message                    \n";
   die "\n";
@@ -153,6 +162,7 @@ if (-e $filename) {
 } elsif (!$list){
   die "Raw Binary Bitstream File $filename does not exist.\n";
 }
+
 
 # -------------------------------------------------------------------------------
 # Make stdout autoflush
@@ -234,6 +244,38 @@ $d = unpack("V",$dat);
 printf("  Device/Vendor ID: 0x%08x\n\n", $d);
 
 # -------------------------------------------------------------------------------
+#  Check the image file has header 
+# -------------------------------------------------------------------------------
+sysseek(IN, 0, SEEK_SET);
+sysread(IN,$dat,2); # read first 16 bits of word hdr
+$d = unpack("n",$dat);
+if ($d == 0x0001) {
+    printf(" The AFU image has PAPR header\n");
+    sysseek(IN, 8, SEEK_SET);
+    sysread(IN,$dat,4);
+    $hdat = unpack("N",$dat);
+
+    if ($hdat == $devId) {
+        printf(" Image has header for DevVenId : 0x%08x\n\n", $hdat);
+        $hdr = 1;
+        sysseek(IN, 0, SEEK_SET);
+        sysseek(IN, 28, SEEK_SET);
+        sysread(IN,$hdat,8);
+        $size = unpack ("N",$hdat);
+        printf(" Image size in header :0x%08x\n\n", $size);
+    } else {
+        printf(" Header doesn't match with DevVenId : 0x%08x\n\n",$devId); 
+        printf(" Image has header for DevVenId : 0x%08x\n\n", $hdat);
+        die " Use correct image for the card \n"; 
+    }
+} else {
+    printf(" Image has no header\n\n");
+
+}
+ 
+sysseek(IN, 0, SEEK_SET);
+
+# -------------------------------------------------------------------------------
 # Read the VSEC Length / VSEC ID from the Configuration Space
 # -------------------------------------------------------------------------------
 sysseek(CFG, 0x904, SEEK_SET);
@@ -294,7 +336,17 @@ while ($cp == 1) {
 # Calculate the number of blocks to write
 # -------------------------------------------------------------------------------
 $fsize = -s $filename;
+if ($hdr == 1) {
+    $fsize -= 0x80; # Linux image don't need header for Linux image
+    if ($fsize == $size) {
+        printf(" FW image size matched with size in header  = 0x%x\n", $size);
+        printf(" Header will be stripped from image\n");
+    } else {
+  	die "Image size didn't match with size in header.\n";
+    }
 
+    sysseek(IN,0x80, SEEK_SET);
+}
 $n = $fsize / (64 * 1024 * 4);
 $n = (($n == int($n)) ? $n : int($n + 1));
 
@@ -460,7 +512,11 @@ $svt = time();
 if ($ec == 0) {
   print "Verifying Flash\n";
 
-  seek IN, 0, SEEK_SET;   # Reset to beginning of file
+  if ($hdr == 1 ) {
+     seek IN, 0x80, SEEK_SET; # skip the header for Linux
+  } else {
+     seek IN, 0, SEEK_SET;   # Reset to beginning of file
+  }
   #close(IN);
   #open(IN, "< $filename");
   #binmode(IN);

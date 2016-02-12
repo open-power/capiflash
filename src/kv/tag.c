@@ -24,9 +24,9 @@
 /* IBM_PROLOG_END_TAG                                                     */
 
 #include <stdio.h>
-#include <errno.h>
 #include "tag.h"
 #include "am.h"
+#include <errno.h>
 
 tags_t *tag_new(uint32_t n) {
   int i;

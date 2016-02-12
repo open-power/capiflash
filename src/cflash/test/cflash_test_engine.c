@@ -780,6 +780,10 @@ int mc_test_engine(mc_test_t test_name)
                 rc = max_vlun_on_a_ctx();
                 break;
 
+            case E_TEST_MAX_CTX_CRSS_LIMIT:
+                rc = max_ctx_cross_limit();
+                break;
+
             default:
                 rc = -1;
                 break;

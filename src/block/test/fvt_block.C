@@ -725,7 +725,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_get_lun_size_physical)
 
     EXPECT_EQ(0 , ret);
     EXPECT_EQ(0 , er_no);
-    EXPECT_NE(0, phys_lun_sz);
+    EXPECT_NE((size_t)0, phys_lun_sz);
 
 // get size on phys lun should report whole phys lun size
     get_set_size_flag = 1; 
@@ -771,7 +771,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_get_lun_siz_virtual)
 
     EXPECT_EQ(0 , ret);
     EXPECT_EQ(0 , er_no);
-    EXPECT_EQ(0, lun_sz);
+    EXPECT_EQ((size_t)0, lun_sz);
 
     blk_open_tst_cleanup();
 
@@ -961,7 +961,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_increase_decrease_chunk_size)
 
     EXPECT_EQ(0 , ret);
     EXPECT_EQ(0 , er_no);
-    EXPECT_EQ(0, chunk_sz);
+    EXPECT_EQ((size_t)0, chunk_sz);
 
     // set chunk size (100)
    
@@ -1483,7 +1483,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_1M_thru_16M_xfersize_physical)
             /*
             * This test will not work  filemode and no CFLSH_BLK_MAX_XFER set.
             */
-            fprintf(stderr, "Test Skipped :env CFLSH_BLK_MAX_XFER is _not_ set\n");
+            TESTCASE_SKIP("env CFLSH_BLK_MAX_XFER is _not_ set");
             return;
 
         }
@@ -1514,7 +1514,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_1M_thru_16M_xfersize_physical)
 
         blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
     
-        EXPECT_EQ(xfersz , ret);
+        EXPECT_EQ(xfersz, (size_t)ret);
         if ((int)xfersz != ret) {
            fprintf(stderr,"Write failed xfersz 0x%lx\n",i);
            blk_open_tst_cleanup();
@@ -1526,7 +1526,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_1M_thru_16M_xfersize_physical)
         // read what was wrote  xfersize
         blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
 
-        EXPECT_EQ(xfersz , ret);
+        EXPECT_EQ(xfersz, (size_t)ret);
         if ((int)xfersz != ret) {
            fprintf(stderr,"Read failed xfersz 0x%lx\n",i);
            blk_open_tst_cleanup();
@@ -1574,7 +1574,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_1M_xfersize_physical)
             /*
             * This test will not work  filemode and no CFLSH_BLK_MAX_XFER set.
             */
-            fprintf(stderr, "Test Skipped :env CFLSH_BLK_MAX_XFER is _not_ set\n");
+            TESTCASE_SKIP("env CFLSH_BLK_MAX_XFER is _not_ set");
             return;
 
         }
@@ -1604,7 +1604,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_1M_xfersize_physical)
 
         blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
     
-        EXPECT_EQ(xfersz , ret);
+        EXPECT_EQ(xfersz, (size_t)ret);
         if ((int)xfersz != ret) {
            fprintf(stderr,"Write failed 1M xfersz \n");
            blk_open_tst_cleanup();
@@ -1616,7 +1616,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_1M_xfersize_physical)
         // read what was wrote  xfersize
         blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
 
-        EXPECT_EQ(xfersz , ret);
+        EXPECT_EQ(xfersz, (size_t)ret);
         if ((int)xfersz != ret) {
            fprintf(stderr,"Read failed 1M xfersz \n");
            blk_open_tst_cleanup();
@@ -1668,7 +1668,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_phys_lun_large_xfer_test)
             /*
             * This test will not work  filemode and no CFLSH_BLK_MAX_XFER set.
             */
-            fprintf(stderr, "Test Skipped :env CFLSH_BLK_MAX_XFER is _not_ set\n");
+            TESTCASE_SKIP("env CFLSH_BLK_MAX_XFER is _not_ set");
             return;
 
     } else if (!nblks){
@@ -1698,7 +1698,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_phys_lun_large_xfer_test)
 
         blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
     
-        EXPECT_EQ(xfersz , ret);
+        EXPECT_EQ(xfersz, (size_t)ret);
         if ((int)xfersz != ret) {
            fprintf(stderr,"Write failed 1M+ xfersz \n");
            blk_open_tst_cleanup();
@@ -1710,7 +1710,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_phys_lun_large_xfer_test)
         // read what was wrote  xfersize
         blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
 
-        EXPECT_EQ(xfersz , ret);
+        EXPECT_EQ(xfersz, (size_t)ret);
         if ((int)xfersz != ret) {
            fprintf(stderr,"Read failed 1M+ xfersz \n");
            blk_open_tst_cleanup();
@@ -1757,7 +1757,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_514_blksz_physical)
             /*
             * This test will not work  filemode and no CFLSH_BLK_MAX_XFER set.
             */
-            fprintf(stderr, "Test Skipped :env CFLSH_BLK_MAX_XFER is _not_ set\n");
+            TESTCASE_SKIP("env CFLSH_BLK_MAX_XFER is _not_ set");
             return;
 
         }
@@ -1787,7 +1787,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_514_blksz_physical)
 
     blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
     
-    EXPECT_EQ(xfersz , ret);
+    EXPECT_EQ(xfersz, (size_t)ret);
     if ((int)xfersz != ret) {
            fprintf(stderr,"Write failed 1M+ xfersz \n");
            blk_open_tst_cleanup();
@@ -1799,7 +1799,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_514_blksz_physical)
     // read what was wrote  xfersize
     blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
 
-    EXPECT_EQ(xfersz , ret);
+    EXPECT_TRUE(xfersz == (size_t)ret);
     if ((int)xfersz != ret) {
     fprintf(stderr,"Read failed 1M+ xfersz \n");
         blk_open_tst_cleanup();
@@ -2866,6 +2866,76 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_aresult_next_tag)
 
 }
 
+// Verify CBLK_ARESULT_USER_TAG
+TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_aresult_user_tag)
+{
+    chunk_id_t id                = 0;
+    int        open_flags        = CBLK_OPN_VIRT_LUN;
+    int        max_reqs          = 1024;
+    int        er_no             = 0;
+    int        open_cnt          = 1;
+    int        ret               = 0;
+    int        sz_flags          = 0;
+    size_t     temp_sz           = 0;
+    int        get_set_size_flag = 0;  // 0 = get phys lun sz
+                                       // 1 = get chunk sz
+                                       // 2 = set chunk sz
+    ASSERT_EQ(0,blk_fvt_setup(1));
+
+    // open virt lun
+    blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID,  id );
+
+    temp_sz = 1024;
+    get_set_size_flag = 2;
+    blk_fvt_get_set_lun_size(id, &temp_sz, sz_flags, get_set_size_flag,
+                             &ret, &er_no);
+    ASSERT_NE(-1 , ret);
+
+    user_tag_io_tst ( id,  &ret, &er_no);
+
+    EXPECT_EQ(1 , ret);
+    EXPECT_EQ(0 , er_no);
+
+    blk_open_tst_cleanup();
+}
+
+// Verify CBLK_ARESULT_USER_TAG with CBLK_OPN_NO_INTRP_THREADS;
+TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_aresult_user_tag_no_intrp)
+{
+    chunk_id_t id                = 0;
+    int        open_flags        = CBLK_OPN_VIRT_LUN;
+    int        max_reqs          = 1024;
+    int        er_no             = 0;
+    int        open_cnt          = 1;
+    int        ret               = 0;
+    int        sz_flags          = 0;
+    size_t     temp_sz           = 0;
+    int        get_set_size_flag = 0;  // 0 = get phys lun sz
+                                       // 1 = get chunk sz
+                                       // 2 = set chunk sz
+    ASSERT_EQ(0,blk_fvt_setup(1));
+
+    open_flags |= CBLK_OPN_NO_INTRP_THREADS;
+
+    // open virt lun
+    blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID,  id );
+
+    temp_sz = 1024;
+    get_set_size_flag = 2;
+    blk_fvt_get_set_lun_size(id, &temp_sz, sz_flags, get_set_size_flag,
+                             &ret, &er_no);
+    ASSERT_NE(-1 , ret);
+
+    user_tag_io_tst ( id,  &ret, &er_no);
+
+    EXPECT_EQ(1 , ret);
+    EXPECT_EQ(0 , er_no);
+
+    blk_open_tst_cleanup();
+}
+
 TEST(Block_FVT_Suite, BLK_API_FVT_virt_lun_perf_test)
 {
 
@@ -2932,7 +3002,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phy_lun_perf_test)
 
     /* Test needs atleast 10000 blksz lun */
     if (temp_sz < 10000 ) {
-            fprintf(stderr, "Test Skipped : Lun size less than then 10000 blks\n");
+            TESTCASE_SKIP("Lun size less than then 10000 blks");
             blk_open_tst_cleanup();
             return;
     }
@@ -3246,11 +3316,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_virt_lun_share_cntxt_rw_tst)
     ASSERT_EQ(0,blk_fvt_setup(1));
     ret = validate_share_context();
     if (ret) {
-           fprintf(stderr,"SKIPPING Test, context _not_ sharable \n");
-    	   if (blk_fvt_data_buf != NULL)
-        	free(blk_fvt_data_buf);
-    	   if (blk_fvt_comp_data_buf != NULL)
-        	free(blk_fvt_comp_data_buf);
+           TESTCASE_SKIP("context _not_ sharable");
+           if (blk_fvt_data_buf != NULL)
+               free(blk_fvt_data_buf);
+           if (blk_fvt_comp_data_buf != NULL)
+               free(blk_fvt_comp_data_buf);
            return;
     }
     num_loops = 10;
@@ -3275,11 +3345,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phys_lun_share_cntxt_rw_tst)
     ASSERT_EQ(0,blk_fvt_setup(1));
     ret = validate_share_context();
     if (ret) {
-           fprintf(stderr,"SKIPPING Test, context _not_ sharable \n");
-    	   if (blk_fvt_data_buf != NULL)
-        	free(blk_fvt_data_buf);
-    	   if (blk_fvt_comp_data_buf != NULL)
-        	free(blk_fvt_comp_data_buf);
+           TESTCASE_SKIP("context _not_ sharable");
+           if (blk_fvt_data_buf != NULL)
+               free(blk_fvt_data_buf);
+           if (blk_fvt_comp_data_buf != NULL)
+               free(blk_fvt_comp_data_buf);
            return;
     }
     num_loops = 10;
@@ -3415,10 +3485,10 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_get_chunk_status_num_commands)
     ret = cblk_get_stats (id, &stats, 0);
 
     EXPECT_EQ(0 , ret);
-    EXPECT_EQ(1000,stats.num_reads);
-    EXPECT_EQ(1000,stats.num_writes);
-    EXPECT_EQ(1000,stats.num_blocks_read);
-    EXPECT_EQ(1000,stats.num_blocks_written);
+    EXPECT_TRUE(1000 == stats.num_reads);
+    EXPECT_TRUE(1000 == stats.num_writes);
+    EXPECT_TRUE(1000 == stats.num_blocks_read);
+    EXPECT_TRUE(1000 == stats.num_blocks_written);
 
 
     blk_open_tst_cleanup();
@@ -4992,7 +5062,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phy_mpio_cabl_pull_io)
 
     /* Test needs atleast 10000 blksz lun */
     if (temp_sz < 10000 ) {
-            fprintf(stderr, "Test Skipped : Lun size less than then 10000 blks\n");
+            TESTCASE_SKIP("Lun size less than then 10000 blks");
             blk_open_tst_cleanup();
             return;
     }

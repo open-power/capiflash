@@ -60,7 +60,9 @@ int cblk_update_path_type(cflsh_chunk_t *chunk, cflsh_path_t *path, cflsh_block_
 void cblk_release_path(cflsh_chunk_t *chunk, cflsh_path_t *path);
 cflsh_block_chunk_type_t cblk_get_chunk_type(const char *path, int arch_type);
 int  cblk_set_fcn_ptrs(cflsh_path_t *path);
+cflash_cmd_err_t cblk_process_cmd(cflsh_chunk_t *chunk,int path_index, cflsh_cmd_mgm_t *cmd);
 chunk_id_t cblk_get_chunk(int flags,int max_num_cmds);
+int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags);
 int cblk_get_buf_cmd(cflsh_chunk_t *chunk,void **buf, size_t buf_len, 
 		     cflsh_cmd_mgm_t **cmd);
 int cblk_get_lun_id(cflsh_chunk_t *chunk);
@@ -82,7 +84,6 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu);
 int cblk_retry_new_path(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, int delay_needed_same_afu);
 void cblk_trace_log_data_ext(trace_log_ext_arg_t *ext_arg, FILE *logfp,char *filename, char *function, 
 			     uint line_num,char *msg, ...);
-
 void  cblk_display_stats(cflsh_chunk_t *chunk, int verbosity);
 
 int  cblk_setup_dump_file(void);
@@ -91,6 +92,9 @@ void  cblk_dump_debug_data(const char *reason, const char *reason_filename,const
 			   int, const char *reason_date);
 int cblk_setup_sigusr1_dump(void);
 int cblk_setup_sigsev_dump(void);
+
+void cblk_clear_poison_bits(void *buf, size_t len);
+void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_paths);
 
 #ifdef BLOCK_FILEMODE_ENABLED
 void cblk_filemode_io(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd);

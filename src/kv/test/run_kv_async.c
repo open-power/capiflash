@@ -28,47 +28,53 @@
  * \brief
  *   Key/Value ARK Database Asynchronous I/O Driver
  * \details
- *   This runs I/O to the Key/Value ARK Database using ASYNC IO. The          \n
- *   expected iops are around 220k. Four Arks are used to achieve the max     \n
- *   iops. Each ark does set/get/exists/delete in a loop for a list of        \n
+ *   This runs I/O to the Key/Value ARK Database using ASYNC IO.              \n
+ *   Each ark does set/get/exists/delete in a loop for a list of              \n
  *   keys/values. This code essentially runs write/read/compare/delete.       \n
  *   One or more completion threads are created to handle the                 \n
  *   async callback from the arkdb.                                           \n
  *                                                                            \n
  *   Example:                                                                 \n
  *                                                                            \n
- *     run_kv_async /dev/sg10                                                 \n
- *     ctxt:4 async_ops:100 k/v:16x65536: op/s:24778 io/s:223010 secs:19      \n
+ *   Run to memory with 4 arks:                                               \n
+ *   run_kv_async                                                             \n
+ *   ctxt:4 async_ops:100 k/v:16x65536: op/s:218666 io/s:1968000 secs:15      \n
+ *                                                                            \n
+ *   Run to a file with 1 ark:                                                \n
+ *   run_kv_async                                                             \n
+ *   ctxt:1 async_ops:100 k/v:16x65536: op/s:26666 io/s:240000 secs:15        \n
+ *                                                                            \n
+ *   Run to a capi dev with 4 arks:                                           \n
+ *   run_kv_async                                                             \n
+ *   ctxt:4 async_ops:100 k/v:16x65536: op/s:21176 io/s:190588 secs:17        \n
+ *
  *******************************************************************************
  */
 #include <arkdb.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <errno.h>
 
-#define KV_ASYNC_CONTEXTS      4
-#define KV_ASYNC_JOBS_PER_CTXT 100
-#define KV_ASYNC_COMP_PTH      2
-
-#define KV_ASYNC_MIN_SECS      15
-
-#define KV_ASYNC_KLEN          16
-#define KV_ASYNC_VLEN          64*1024
-#define KV_ASYNC_NUM_KV        100
-
-#define KV_ASYNC_RUNNING       0x08000000
-#define KV_ASYNC_SHUTDOWN      0x04000000
-
-#define TRUE  1
-#define FALSE 0
+uint32_t KV_ASYNC_CONTEXTS =    4;
+uint32_t KV_ASYNC_COMP_PTH =    2;
+#define  KV_ASYNC_JOBS_PER_CTXT 100
+#define  KV_ASYNC_MIN_SECS      15
+#define  KV_ASYNC_KLEN          16
+#define  KV_ASYNC_VLEN          64*1024
+#define  KV_ASYNC_NUM_KV        100
+#define  KV_ASYNC_RUNNING       0x08000000
+#define  KV_ASYNC_SHUTDOWN      0x04000000
+#define  TRUE                   1
+#define  FALSE                  0
 
 /**
 ********************************************************************************
+** \brief
 ** struct to hold a generated key/value pair
 *******************************************************************************/
 typedef struct
@@ -79,6 +85,7 @@ typedef struct
 
 /**
 ********************************************************************************
+** \brief
 ** struct to hold a list ("database") of key/value pairs
 *******************************************************************************/
 typedef struct
@@ -88,6 +95,7 @@ typedef struct
 
 /**
 ********************************************************************************
+** \brief
 ** struct for each ASYNC op (job)
 *******************************************************************************/
 typedef struct
@@ -108,6 +116,7 @@ typedef struct
 
 /**
 ********************************************************************************
+** \brief
 ** struct to hold the async ops for a single context (ARK)
 *******************************************************************************/
 typedef struct
@@ -120,10 +129,11 @@ typedef struct
 ********************************************************************************
 ** structs for all contexts
 *******************************************************************************/
-async_context_t pCTs[KV_ASYNC_CONTEXTS];
+async_context_t *pCTs;
 
 /**
 ********************************************************************************
+** \brief
 ** struct for all k/v databases, one for each job. These are reused in
 ** each context
 *******************************************************************************/
@@ -131,6 +141,7 @@ db_t dbs[KV_ASYNC_JOBS_PER_CTXT];
 
 /**
 ********************************************************************************
+** \brief
 ** structs for each thread
 *******************************************************************************/
 typedef struct
@@ -150,9 +161,11 @@ void kv_async_DEL_KEY       (async_CB_t *pCB);
 void kv_async_wait_jobs     (void);
 void kv_async_completion_pth(pth_t *p);
 
-/*******************************************************************************
- * hw specific sync macros
- ******************************************************************************/
+/**
+********************************************************************************
+** \brief
+** hw specific sync macros
+*******************************************************************************/
 #ifdef _AIX
 #define SYNC()        asm volatile ("lwsync")
 #elif  _MACOSX
@@ -161,9 +174,11 @@ void kv_async_completion_pth(pth_t *p);
 #define SYNC()        __asm__ __volatile__ ("sync")
 #endif
 
-/*******************************************************************************
- * setup unique values to help in debug
- ******************************************************************************/
+/**
+********************************************************************************
+** \brief
+** setup unique values to help in debug
+*******************************************************************************/
 #define SET_ITAG(ctxt_i, cb_i)  (UINT64_C(0xBEEF000000000000) | \
                                ((uint64_t)ctxt_i)<<32         | \
                                 (uint64_t)cb_i   <<16)
@@ -172,6 +187,7 @@ void kv_async_completion_pth(pth_t *p);
 
 /**
 ********************************************************************************
+** \brief
 ** stop on error
 *******************************************************************************/
 #define KV_ERR_STOP(_pCB, _msg, _rc)           \
@@ -185,6 +201,7 @@ do                                             \
 
 /**
 ********************************************************************************
+** \brief
 ** setup all the databases with unique key/values, lengths a multiple of 8bytes
 *******************************************************************************/
 void init_kv_db(void)
@@ -220,6 +237,7 @@ void init_kv_db(void)
 
 /**
 ********************************************************************************
+** \brief
 ** callback fcn passed to ARK for an async op
 *******************************************************************************/
 void kv_async_cb(int errcode, uint64_t dt, int64_t res)
@@ -242,6 +260,7 @@ void kv_async_cb(int errcode, uint64_t dt, int64_t res)
 
 /**
 ********************************************************************************
+** \brief
 ** process the call back for a ARK set
 *******************************************************************************/
 void kv_set_cb(void *p)
@@ -269,6 +288,7 @@ done:
 
 /**
 ********************************************************************************
+** \brief
 ** process the call back for a ARK get
 *******************************************************************************/
 void kv_get_cb(void *p)
@@ -301,6 +321,7 @@ done:
 
 /**
 ********************************************************************************
+** \brief
 ** process the call back for a ARK exists
 *******************************************************************************/
 void kv_exists_cb(void *p)
@@ -328,6 +349,7 @@ done:
 
 /**
 ********************************************************************************
+** \brief
 ** process the call back for a ARK delete
 *******************************************************************************/
 void kv_del_cb(void *p)
@@ -360,6 +382,7 @@ done:
 
 /**
 ********************************************************************************
+** \brief
 ** issue a set to the ARK
 *******************************************************************************/
 void kv_async_SET_KEY(async_CB_t *pCB)
@@ -381,6 +404,7 @@ void kv_async_SET_KEY(async_CB_t *pCB)
 
 /**
 ********************************************************************************
+** \brief
 ** issue a get to the ARK
 *******************************************************************************/
 void kv_async_GET_KEY(async_CB_t *pCB)
@@ -403,6 +427,7 @@ void kv_async_GET_KEY(async_CB_t *pCB)
 
 /**
 ********************************************************************************
+** \brief
 ** issue an exists to the ARK
 *******************************************************************************/
 void kv_async_EXISTS_KEY(async_CB_t *pCB)
@@ -422,6 +447,7 @@ void kv_async_EXISTS_KEY(async_CB_t *pCB)
 
 /**
 ********************************************************************************
+** \brief
 ** issue a delete to the ARK
 *******************************************************************************/
 void kv_async_DEL_KEY(async_CB_t *pCB)
@@ -441,6 +467,7 @@ void kv_async_DEL_KEY(async_CB_t *pCB)
 
 /**
 ********************************************************************************
+** \brief
 ** create completion thread(s), wait for jobs to complete, cleanup
 *******************************************************************************/
 void kv_async_wait_jobs(void)
@@ -488,6 +515,7 @@ void kv_async_wait_jobs(void)
 
 /**
 ********************************************************************************
+** \brief
 ** create arks, start all jobs, wait for jobs to complete
 *******************************************************************************/
 void kv_async_run_io(char *dev)
@@ -498,7 +526,6 @@ void kv_async_run_io(char *dev)
     uint32_t         ctxt = 0;
 
     init_kv_db();
-    bzero(pCTs, sizeof(pCTs));
 
     for (ctxt=0; ctxt<KV_ASYNC_CONTEXTS; ctxt++)
     {
@@ -590,15 +617,20 @@ void kv_async_completion_pth(pth_t *p)
 
 /**
 ********************************************************************************
+** \brief
 ** check input parm, start all jobs
 *******************************************************************************/
 int main(int argc, char **argv)
 {
-    if (argv[1] == NULL)
+    /* if running to a file, cannot do multi-context */
+    if (argv[1] != NULL && strncmp(argv[1], "/dev/", 5) != 0)
     {
-        printf("dev name required as parameter\n");
-        exit(-1);
+        KV_ASYNC_CONTEXTS = 1;
+        KV_ASYNC_COMP_PTH = 1;
     }
+
+    pCTs = malloc(sizeof(async_context_t) * KV_ASYNC_CONTEXTS);
+    bzero(pCTs,   sizeof(async_context_t) * KV_ASYNC_CONTEXTS);
 
     printf("ctxt:%d async_ops:%d k/v:%dx%d: ",
             KV_ASYNC_CONTEXTS,
@@ -609,5 +641,6 @@ int main(int argc, char **argv)
 
     kv_async_run_io(argv[1]);
 
+    free(pCTs);
     return 0;
 }

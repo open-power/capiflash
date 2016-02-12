@@ -23,11 +23,11 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include <errno.h>
 #include <inttypes.h>
 
 #include "am.h"
 #include "queue.h"
+#include <errno.h>
 
 queue_t *queue_new(uint32_t n) {
   queue_t *q = am_malloc(sizeof(queue_t) + n * sizeof(int32_t));

@@ -154,7 +154,7 @@ struct ctx* remap();
 
 
 char *afu_path;   /* points to argv[] string */
-pid_t pid;
+pid_t pr_id;
 read_fcn_t read_fcn = send_readv; // default is read virtual
 __u64 lun_id = 0x0;
 __u64 chunk_base = CHUNK_BASE;
@@ -585,16 +585,16 @@ void rw_cmp_buf(struct ctx *p_ctx, __u64 start_lba, __u64 stride) {
 	if (cmp_buf((__u64*)&p_ctx->rbuf[i][0], (__u64*)&p_ctx->wbuf[i][0], 
 		    sizeof(p_ctx->rbuf[i])/sizeof(__u64))) {
 	    printf("%d: miscompare at start_vlba 0x%lx, chunk# %d\n", 
-		   pid, start_lba, i);
+		   pr_id, start_lba, i);
 	    fflush(stdout);
 
 	    send_readm(p_ctx, start_lba, stride); // sends NUM_CMDS reads
 
-	    sprintf(buf, "read.%d", pid);
+	    sprintf(buf, "read.%d", pr_id);
 	    read_fd = open(buf, O_RDWR|O_CREAT);
-	    sprintf(buf, "write.%d", pid);
+	    sprintf(buf, "write.%d", pr_id);
 	    write_fd = open(buf, O_RDWR|O_CREAT);
-	    sprintf(buf, "readm.%d", pid);
+	    sprintf(buf, "readm.%d", pr_id);
 	    readm_fd = open(buf, O_RDWR|O_CREAT);
 
 	    write(read_fd,  &p_ctx->rbuf[i][0], sizeof(p_ctx->rbuf[i]));
@@ -642,7 +642,7 @@ void wait_resp(struct ctx *p_ctx) {
 
 	if (p_ctx->cmd[i].sa.ioasc) {	
 	    printf("%d:IOASC = flags 0x%x, afu_rc 0x%x, scsi_rc 0x%x, fc_rc 0x%x\n", 
-		   pid,
+		   pr_id,
 		   p_ctx->cmd[i].sa.rc.flags,
 		   p_ctx->cmd[i].sa.rc.afu_rc, 
 		   p_ctx->cmd[i].sa.rc.scsi_rc, 
@@ -707,7 +707,7 @@ main(int argc, char *argv[])
 
     get_parameters(argc, argv);
 
-    pid = getpid(); // pid used to create unique data patterns 
+    pr_id = getpid(); // pid used to create unique data patterns
                     // or ctx file for mmap
 
     rand_fd = open("/dev/urandom", O_RDONLY);
@@ -719,7 +719,7 @@ main(int argc, char *argv[])
 #if LIBAFU
     p_ctx = &myctx;
 #else
-    sprintf(ctx_file, "ctx.%d", pid);
+    sprintf(ctx_file, "ctx.%d", pr_id);
     unlink(ctx_file);
     ctx_fd = open(ctx_file, O_RDWR|O_CREAT);
     if (ctx_fd < 0) {
@@ -759,7 +759,7 @@ main(int argc, char *argv[])
 	}
 
 	if ((npass++ & 0xFF) == 0) {
-	    printf("%d:completed pass %ld\n", pid, npass>>8); fflush(stdout);
+	    printf("%d:completed pass %ld\n", pr_id, npass>>8); fflush(stdout);
 	}
     }
 
@@ -777,7 +777,7 @@ void fill_buf(__u64* p_buf, unsigned int len, __u64 vlba, __u64 plba)
   // the vlba & plba helps to see if right data is going to the right
   // place.
   for (i = 0; i < len; i += 4) {
-    p_buf[i] = pid;
+    p_buf[i] = pr_id;
     p_buf[i + 1] = data++;
     p_buf[i + 2] = vlba;
     p_buf[i + 3] = plba;

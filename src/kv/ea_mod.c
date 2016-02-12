@@ -23,311 +23,305 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
+/**
+ *******************************************************************************
+ * \file
+ * \brief
+ *   init/schedule/harvest functions for async IO
+ ******************************************************************************/
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 #include <fcntl.h>
 
 #include "ark.h"
 #include "bl.h"
 #include "ea.h"
-#include "capiblock.h"
 #include "am.h"
 
-#include <test/fvt_kv_inject.h>
+#ifdef _OS_INTERNAL
+#include <sys/capiblock.h>
+#else
+#include "capiblock.h"
+#endif
+
+#include <kv_inject.h>
 #include <arkdb_trace.h>
+#include <errno.h>
 
-int ea_async_io_schedule(_ARK *_arkp, int32_t tid, tcb_t *tcbp, iocb_t *iocbp)
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+/**
+ *******************************************************************************
+ * \brief
+ *  return TRUE if all IOs for the iocb are successfully completed, else FALSE
+ ******************************************************************************/
+int ea_async_io_schedule(_ARK   *_arkp,
+                         int32_t tid,
+                         tcb_t  *iotcbp,
+                         iocb_t *iocbp)
 {
-  EA       *ea             = iocbp->ea;
-  int32_t   rc             = 0;
-  int32_t   harvest        = 0;
-  int64_t   i              = 0;
-  uint8_t  *p_addr         = NULL;
-  uint8_t  *m_addr         = NULL;
+  EA       *ea     = iocbp->ea;
+  int32_t   rc     = TRUE;
+  int32_t   arc    = 0;
+  void     *prc    = 0;
+  int64_t   i      = 0;
+  uint8_t  *p_addr = NULL;
+  uint8_t  *m_addr = NULL;
+  char     *ot     = NULL;
 
-  if ( EA_STORE_TYPE_MEMORY == ea->st_type )
+  KV_TRC_IO(pAT, "IO_BEG: SCHEDULE_START: tid:%d ttag:%d start:%"PRIu64" "
+                 "nblks:%"PRIu64" issT:%d cmpT:%d",
+                 tid, iocbp->tag, iocbp->start, iocbp->nblks,
+                 iocbp->issT, iocbp->cmpT);
+
+  ARK_SYNC_EA_READ(iocbp->ea);
+
+  if (iocbp->op == ARK_EA_READ) {ot="IO_RD";}
+  else                          {ot="IO_WR";}
+
+  for (i=iocbp->start; i<iocbp->nblks; i++)
   {
-    // With memory, since we will be doing a simple
-    // memcpy, there really isn't anything to "wait"
-    // for in terms of IO completion.  However, to keep
-    // it somewhat similar in design, we will perform the
-    // memcpy inline here, but the "wait" IO task will
-    // still be scheduled.  When it pops, no processing
-    // will be done, instead the "complete" status
-    // will be set and the IO will be considered
-    // done.
-
-    // Loop through the block list to issue the IO
-    for ( i = 0; i < iocbp->nblks; i++ )
-    {
-      p_addr = ((uint8_t *)(iocbp->addr)) + (i * ea->bsize);
-
-      // For in-memory store, we issue the memcpy.  There 
-      // is no need to do any asynchronous "waiting" for 
-      // IO completion.
-      m_addr = ea->st_memory + (iocbp->blist[i].blkno * ea->bsize);
-
-      if ( ARK_EA_READ == iocbp->op )
+      if (ea->st_type == EA_STORE_TYPE_MEMORY)
       {
+          p_addr = ((uint8_t *)(iocbp->addr)) + (i * ea->bsize);
+          m_addr = ea->st_memory + (iocbp->blist[i].blkno * ea->bsize);
 
-        if (FVT_KV_READ_ERROR_INJECT)
-        {
-            FVT_KV_CLEAR_READ_ERROR; 
-            rc = -(EIO);
-            KV_TRC_FFDC(pAT, "READ_ERROR_INJECT rc = %d", EIO);
-	    break;
-        }
+          if (ARK_EA_READ == iocbp->op) {prc = memcpy(p_addr,m_addr,ea->bsize);}
+          else                          {prc = memcpy(m_addr,p_addr,ea->bsize);}
 
-	if ( memcpy(p_addr, m_addr, ea->bsize) == NULL )
-	{
-          rc = -(errno);
-	  break;
-	}
+          if (check_sched_error_injects(iocbp->op)) {prc=NULL;}
+
+          // if memcpy failed, fail the iocb
+          if (prc == NULL)
+          {
+              rc=FALSE;
+              KV_TRC_FFDC(pAT,"IO_ERR: tid:%d ttag:%d blkno:%"PRIi64""
+                              " errno:%d", tid, iocbp->tag,
+                              iocbp->blist[i].blkno, errno);
+              if (!errno) {KV_TRC_FFDC(pAT, "IO:     UNSET_ERRNO"); errno=EIO;}
+              iocbp->io_error = errno;
+              break;
+          }
+          ++iocbp->issT;
+          iocbp->blist[i].a_tag = i;
       }
-      else
+      else // r/w to hw
       {
+          p_addr = ((uint8_t *)iocbp->addr) + (i * ea->bsize);
 
-        if (FVT_KV_WRITE_ERROR_INJECT)
-        {
-            FVT_KV_CLEAR_WRITE_ERROR; 
-            rc = -(EIO);
-            KV_TRC_FFDC(pAT, "READ_ERROR_INJECT rc = %d", EIO);
-	    break;
-        }
+          if (check_sched_error_injects(iocbp->op))
+          {
+              arc=-1;
+          }
+          else if ( iocbp->op == ARK_EA_READ )
+          {
+              arc = cblk_aread(ea->st_flash, p_addr, iocbp->blist[i].blkno, 1,
+                              &(iocbp->blist[i].a_tag), NULL, 0);
+          }
+          else
+          {
+              arc = cblk_awrite(ea->st_flash, p_addr, iocbp->blist[i].blkno, 1,
+                               &(iocbp->blist[i].a_tag), NULL, 0);
+          }
 
-	if ( memcpy(m_addr, p_addr, ea->bsize) == NULL )
-	{
-          rc = -(errno);
-	  break;
-	}
+          if (arc == 0)    // good status
+          {
+              ++iocbp->issT; rc=FALSE;
+          }
+          else if (arc < 0)
+          {
+              rc=FALSE;
+              if (errno == EAGAIN)
+              {
+                  // return, and an ark thread will re-schedule this iocb
+                  KV_TRC_DBG(pAT,"IO:    RW_EAGAIN: tid:%d ttag:%d "
+                                 "blkno:%"PRIi64"",
+                                 tid, iocbp->tag, iocbp->blist[i].blkno);
+                  break;
+              }
+              // Something bad went wrong, fail the iocb
+              KV_TRC_FFDC(pAT,"IO_ERR: tid:%d ttag:%d blkno:%"PRIi64""
+                              " errno:%d", tid, iocbp->tag,
+                              iocbp->blist[i].blkno, errno);
+              if (!errno) {KV_TRC_FFDC(pAT, "IO:     UNSET_ERRNO"); errno=EIO;}
+              iocbp->io_error = errno;
+              break;
+          }
+          else if (arc > 0)
+          {
+              KV_TRC_IO(pAT,"IO_CMP: IMMEDIATE: tid:%d ttag:%d a_tag:%d "
+                            "blkno:%"PRIi64"",
+                            tid, iocbp->tag,
+                            iocbp->blist[i].a_tag, iocbp->blist[i].blkno);
+              ++iocbp->issT;
+              ++iocbp->cmpT;
+              iocbp->blist[i].a_tag = -1; // mark as harvested
+          }
       }
-    }
 
-    if ( rc >= 0)
-    {
-      rc = iocbp->nblks;
-    }
+      KV_TRC_IO(pAT, "%s:  tid:%2d ttag:%4d a_tag:%4d blkno:%5"PRIi64"", ot,tid,
+                iocbp->tag, iocbp->blist[i].a_tag, iocbp->blist[i].blkno);
 
-    am_free(iocbp->blist);
   }
-  else
-  {
-    // The idea here is to try and issue all the IO's
-    // for this operation.  However, we can run into
-    // a situation where the block layer runs out of
-    // command IO buffer space and starts returning
-    // EAGAIN.  If that happens, we need to stop issuing
-    // IO's and instead look to harvest the completion
-    // of any outstanding ops, so we schedule a TASK
-    // to do that.  This can get a bit tricky
-    
-    for (i = iocbp->start; i < iocbp->nblks; i++)
-    {
-      p_addr = ((uint8_t *)iocbp->addr) + (i * ea->bsize);
 
-      // Call out to the block layer and retrive a block
-      // Do an async op for a single block and tell the block
-      // layer to wait if there are no available command
-      // blocks.  Upon return, we can either get an error
-      // (rc == -1), the data will be available (rc == number
-      // of blocks read), or IO has been scheduled (rc == 0).
-      if ( iocbp->op == ARK_EA_READ )
-      {
-        if (FVT_KV_READ_ERROR_INJECT)
-        {
-          FVT_KV_CLEAR_READ_ERROR;
-          rc = -1;
-	  errno = EIO;
-          KV_TRC_FFDC(pAT, "READ_ERROR_INJECT rc = %d", EIO);
-        }
-	else
-	{
-        KV_TRC_IO(pAT, "RD: id:%d blkno:%"PRIi64" tag:%d",
-                ea->st_flash,
-                iocbp->blist[i].blkno,
-                iocbp->blist[i].a_tag);
-          rc = cblk_aread(ea->st_flash, p_addr, iocbp->blist[i].blkno, 1, 
-                          &(iocbp->blist[i].a_tag), NULL, 
-                          0);
-        }
-      }
-      else
-      {
-        if (FVT_KV_WRITE_ERROR_INJECT)
-        {
-          FVT_KV_CLEAR_WRITE_ERROR;
-          rc = -1;
-	  errno = EIO;
-          KV_TRC_FFDC(pAT, "READ_ERROR_INJECT rc = %d", EIO);
-        }
-	else
-	{
-        KV_TRC_IO(pAT, "WR: id:%d blkno:%"PRIi64" tag:%d",
-                ea->st_flash,
-                iocbp->blist[i].blkno,
-                iocbp->blist[i].a_tag);
-          rc = cblk_awrite(ea->st_flash, p_addr, iocbp->blist[i].blkno, 1, 
-                        &(iocbp->blist[i].a_tag), NULL, 
-                        0);
-        }
-      }
-
-      if ( rc == -1 )
-      {
-        if ( errno != EAGAIN )
-	{
-          // Something bad went wrong.  We need to fail the
-	  // IO operation and the KV command itself.  We schedule
-	  // an ARK_IO_HARVEST task and set an error in the status
-	  // field.
-          //rc = -(errno);
-          rc = -(EIO);
-        }
-	else
-	{
-          rc = 0;
-	}
-
-	break;
-      }
-      else if ( rc > 0 )
-      {
-        // Data has already been returned so we don't need
-	// to harvest the completion for this block
-	iocbp->blist[i].a_tag = -1;
-      }
-      else
-      {
-        // IO was scheduled and we need to check back
-	// later for the completion.
-	harvest = 1;
-      }
-    }
-
-    iocbp->new_start = i;
-
-    if ( harvest )
-    {
-      // Schedule the task to harvest the outstanding
-      // IO operations.
-      iocbp->io_errno = rc;
-      rc = 0;
-    }
-    else
-    {
-      if ( i == iocbp->nblks )
-      {
-        // The IO has completed and we have all the data
-        // Schedule an ARK_IO_DONE task.
-        rc = iocbp->nblks;
-      }
-    }
-  }
+  iotcbp->state = ARK_IO_HARVEST;
+  iocbp->start  = i;
+  ARK_SYNC_EA_UNLOCK(iocbp->ea);
 
   return rc;
 }
 
-int ea_async_io_harvest(_ARK *_arkp, int32_t tid, tcb_t *tcbp, iocb_t *iocbp)
+/**
+ *******************************************************************************
+ * \brief
+ *  return TRUE if the IOs for the iocb are successfully completed, else FALSE
+ ******************************************************************************/
+int ea_async_io_harvest(_ARK   *_arkp,
+                        int32_t tid,
+                        tcb_t  *iotcbp,
+                        iocb_t *iocbp,
+                        rcb_t  *iorcbp)
 {
-  EA        *ea     = iocbp->ea;
-  int32_t    i      = 0;
-  int32_t    rc     = 0;
-  int32_t    a_rc   = 0;
-  uint64_t   status = 0;
-  
-  // Loop through all potential async IO's waiting for
-  // completions
-  for (i = iocbp->start; i < iocbp->new_start; i++)
+  EA       *ea     = iocbp->ea;
+  int32_t   i      = 0;
+  int32_t   arc    = 0;
+  int32_t   rc     = FALSE;
+  uint64_t  status = 0;
+  scb_t    *scbp   = &(_arkp->poolthreads[tid]);
+  queue_t  *rq     = scbp->rqueue;
+  queue_t  *tq     = scbp->tqueue;
+  queue_t  *ioq    = scbp->ioqueue;
+
+  for (i=0; i<iocbp->issT; i++)
   {
-    // If a_tag is -1, that means we don't need to wait
-    // for any data...just move on to the next one
-    if ( iocbp->blist[i].a_tag == -1 )
-    {
-      continue;
-    }
-
-    do
-    {
-      // Make call to harvest the IO completion.
-      a_rc = cblk_aresult(ea->st_flash, &(iocbp->blist[i].a_tag), 
-                           &status, CBLK_ARESULT_BLOCKING);
-
-      KV_TRC_IO(pAT, "RT: id:%d blkno:%"PRIi64" tag:%d status:%"PRIi64"",
-              ea->st_flash,
-              iocbp->blist[i].blkno,
-              iocbp->blist[i].a_tag,
-              status);
-      if (a_rc == -1)
+      if (EA_STORE_TYPE_MEMORY == ea->st_type)
       {
-        if (rc == 0)
-        {
-          //rc = -errno;
-          rc = -(EIO);
-        }
+          // the IO has already been done in the schedule function,
+          // so mark it completed
+          arc = 1;
       }
-    } while (a_rc == 0);
+      else
+      {
+          // skip previously harvested cmd
+          if (iocbp->blist[i].a_tag == -1) {continue;}
+
+          arc = cblk_aresult(ea->st_flash, &(iocbp->blist[i].a_tag), &status,0);
+      }
+
+      if (check_harv_error_injects(iocbp->op)) {arc=-1;}
+
+      if (arc == 0)
+      {
+          KV_TRC_DBG(pAT,"IO:     WAIT_NOT_CMP: tid:%d ttag:%d a_tag:%d "
+                         "blkno:%"PRIi64"",
+                         tid, iocbp->tag, iocbp->blist[i].a_tag,
+                         iocbp->blist[i].blkno);
+          ++iocbp->hmissN;
+
+          // if nothing to do and the first harvest missed, usleep
+          if (queue_empty(rq) && queue_empty(tq) && queue_count(ioq)<=8 &&
+              iocbp->hmissN==1 &&
+              _arkp->ea->st_type != EA_STORE_TYPE_MEMORY)
+          {
+              usleep(50);
+              KV_TRC_DBG(pAT,"IO:     USLEEP");
+          }
+          break;
+      }
+
+      if (arc < 0)
+      {
+          KV_TRC_FFDC(pAT, "IO_ERR: tid:%d ttag:%d errno=%d",
+                           tid, iocbp->tag, errno);
+          if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=EIO;}
+          iocbp->io_error = errno;
+      }
+      else
+      {
+          KV_TRC_IO(pAT,"IO_CMP: tid:%2d ttag:%4d a_tag:%4d blkno:%5"PRIi64"",
+                    tid, iocbp->tag,
+                    iocbp->blist[i].a_tag, iocbp->blist[i].blkno);
+      }
+
+      ++iocbp->cmpT;
+      iocbp->blist[i].a_tag = -1; // mark as harvested
   }
 
-  // If we've harvested all IO's or if we got
-  // an error, then the IO itself
-  // is complete.  Schedule the ARK_IO_DONE task.
-  if ( (iocbp->io_errno < 0) || (rc < 0) || (iocbp->new_start == iocbp->nblks) )
+  if (iocbp->io_error)
   {
-    if ( iocbp->io_errno < 0 )
-    {
-      rc = iocbp->io_errno;
-    }
-    else if ( (rc == 0) && (iocbp->new_start == iocbp->nblks) )
-    {
-      rc = iocbp->nblks;
-    }
-    am_free(iocbp->blist);
+      // if all cmds that were issued (success or fail) have been
+      // completed for this iocb, then fail this iocb
+      if (iocbp->issT == iocbp->cmpT)
+      {
+          iorcbp->res    = -1;
+          iorcbp->rc     = iocbp->io_error;
+          iotcbp->state  = ARK_CMD_DONE;
+          am_free(iocbp->blist);
+          KV_TRC_FFDC(pAT, "IO:     ERROR_DONE: tid:%d ttag:%d rc:%d",
+                      tid, iocbp->tag, iorcbp->rc);
+      }
+      else
+      {
+          // IOs outstanding, harvest the remaining IOs for this iocb
+          KV_TRC_FFDC(pAT,"IO:    ERROR_RE_HARVEST: tid:%d ttag:%d "
+                          "iocbp->issT:%d iocbp->cmpT:%d",
+                          tid, iocbp->tag, iocbp->issT, iocbp->cmpT);
+      }
+  }
+  // if all IO has completed successfully for this iocb, done
+  else if (iocbp->cmpT == iocbp->nblks)
+  {
+      rc=TRUE;
+      am_free(iocbp->blist);
+      iotcbp->state = ARK_IO_DONE;
+      KV_TRC_IO(pAT, "IO_END: SUCCESS tid:%d ttag:%d cmpT:%d",
+                tid, iocbp->tag, iocbp->cmpT);
+  }
+  // if more blks need an IO, schedule
+  else if (iocbp->issT < iocbp->nblks)
+  {
+      iotcbp->state = ARK_IO_SCHEDULE;
+      KV_TRC_IO(pAT,"IO:     RE_SCHEDULE: tid:%d ttag:%d "
+                    "iocbp->issT:%d iocbp->nblks:%"PRIi64" ",
+                    tid, iocbp->tag, iocbp->issT, iocbp->nblks);
   }
   else
   {
-    // We are not done so we have to go back and
-    // schedule some more IOs
-    iocbp->start = iocbp->new_start;
-    rc = 0;
+      // all IOs have been issued but not all are completed, do harvest
+      KV_TRC_IO(pAT,"IO:     RE_HARVEST: tid:%d ttag:%d "
+                    "iocbp->cmpT:%d iocbp->issT:%d",
+                    tid, iocbp->tag, iocbp->cmpT, iocbp->issT);
   }
-
   return rc;
 }
 
-int ea_async_io_mod(_ARK *_arkp, int op, void *addr, ark_io_list_t *blist, 
-                int64_t nblks, int start, int32_t tag, int32_t io_done)
+/**
+ *******************************************************************************
+ * \brief
+ *  init iocb struct for IO
+ ******************************************************************************/
+void ea_async_io_init(_ARK *_arkp, int op, void *addr, ark_io_list_t *blist,
+                      int64_t nblks, int start, int32_t tag, int32_t io_done)
 {
-  int     status = 0;
-  iocb_t *iocbp = &(_arkp->iocbs[tag]);
-  tcb_t  *tcbp  = &(_arkp->tcbs[tag]);
+  iocb_t *iocbp  = &(_arkp->iocbs[tag]);
 
-  // We really shouldn't run into an error here since all we
-  // are doing is filling in the iocb_t structure for the
-  // given tag and setting the state to ARK_IO_SCHEDULE and
-  // queueing it up on the task queue. 
   iocbp->ea       = _arkp->ea;
   iocbp->op       = op;
   iocbp->addr     = addr;
   iocbp->blist    = blist;
   iocbp->nblks    = nblks;
   iocbp->start    = start;
-  iocbp->new_start = 0;
-  iocbp->io_errno = 0;
+  iocbp->issT     = 0;
+  iocbp->cmpT     = 0;
+  iocbp->hmissN   = 0;
+  iocbp->io_error = 0;
   iocbp->io_done  = io_done;
   iocbp->tag      = tag;
 
-  // Set the state to start the IO
-  // tcbp->state     = ARK_IO_SCHEDULE;
-
-  ARK_SYNC_EA_READ(iocbp->ea);
-
-  // Queue up the task now.
-  // (void)sq_enq(_arkp->tkq[tid], (void *)&task);
-  status = ea_async_io_schedule(_arkp, 0, tcbp, iocbp);
-
-  ARK_SYNC_EA_UNLOCK(iocbp->ea);
-
-  return status;
+  return;
 }
-

@@ -28,7 +28,12 @@
 #include <stdint.h>
 #include "ark.h"
 #include "bl.h"
+
+#ifdef _OS_INTERNAL
+#include <sys/capiblock.h>
+#else
 #include "capiblock.h"
+#endif
 
 #define ARK_EA_READ  0
 #define ARK_EA_WRITE 1
@@ -48,7 +53,7 @@ typedef union _store_id {
   flash_cntrl_t   flash;
 } store_id_t;
 
-#define ARK_EA_BLK_ASYNC_CMDS    256
+#define ARK_EA_BLK_ASYNC_CMDS 4096
 
 typedef struct _ea {
   pthread_rwlock_t ea_rwlock;

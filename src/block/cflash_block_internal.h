@@ -734,21 +734,25 @@ do {                                                                    \
 #define CBLK_Q_NODE_HEAD(head, tail, node,_node_prev,_node_next) \
 do {                                                            \
                                                                 \
-    (node)->_node_prev = NULL;                                  \
-    (node)->_node_next = (head);                                \
+    /* If node is valid  */                                     \
+    if ((node) != NULL)                                         \
+    {                                                           \
+	(node)->_node_prev = NULL;				\
+	(node)->_node_next = (head);				\
                                                                 \
-    if ((head) == NULL) {                                       \
+	if ((head) == NULL) {					\
                                                                 \
-        /* List is empty; 'node' is also the tail */            \
-        (tail) = (node);                                        \
+	    /* List is empty; 'node' is also the tail */	\
+	    (tail) = (node);					\
                                                                 \
-    } else {                                                    \
+	} else {						\
                                                                 \
-        /* List isn't empty; old head must point to 'node' */   \
-        (head)->_node_prev = (node);                            \
-    }                                                           \
+	    /* List isn't empty;old head must point to 'node' */ \
+	    (head)->_node_prev = (node);		        \
+	}						        \
                                                                 \
-    (head) = (node);                                            \
+	(head) = (node);					\
+    }    							\
                                                                 \
 } while (0)
 
@@ -763,21 +767,28 @@ do {                                                            \
 #define CBLK_Q_NODE_TAIL(head, tail, node,_node_prev,_node_next) \
 do {                                                            \
                                                                 \
-    (node)->_node_prev = (tail);                                \
-    (node)->_node_next = NULL;                                  \
+    /* If node is valid  */                                     \
+    if ((node) != NULL)                                         \
+    {                                                           \
                                                                 \
-    if ((tail) == NULL) {                                       \
+	(node)->_node_prev = (tail);				\
+	(node)->_node_next = NULL;				\
                                                                 \
-        /* List is empty; 'node' is also the head */            \
-        (head) = (node);                                        \
+	if ((tail) == NULL) {					\
                                                                 \
-    } else {                                                    \
+	    /* List is empty; 'node' is also the head */	\
+	    (head) = (node);					\
                                                                 \
-        /* List isn't empty; old tail must point to 'node' */   \
-        (tail)->_node_next = (node);                            \
-    }                                                           \
+	} else {						\
                                                                 \
-    (tail) = (node);                                            \
+	    /* List isn't empty;old tail must point to 'node' */ \
+	    (tail)->_node_next = (node);			\
+	}							\
+                                                                \
+	(tail) = (node);					\
+    }    							\
+                                                                \
+                                                                \
                                                                 \
 } while (0)
 
@@ -792,32 +803,37 @@ do {                                                            \
  */
 #define CBLK_DQ_NODE(head, tail, node,_node_prev,_node_next)    \
 do {                                                            \
-    /* If node was head, advance the head to node's next  */    \
-    if ((head) == (node))                                       \
+    /* If node is valid  */                                     \
+    if ((node) != NULL)                                         \
     {                                                           \
-        (head) = ((node)->_node_next);                          \
-    }                                                           \
-                                                                \
-    /* If node was tail, retract the tail to node's prev  */    \
-    if ((tail) == (node))                                       \
-    {                                                           \
-        (tail) = ((node)->_node_prev);				\
-    }                                                           \
-                                                                \
-    /* A follower's predecessor is now node's predecessor */    \
-    if ((node)->_node_next)                                     \
-    {                                                           \
-        (node)->_node_next->_node_prev = ((node)->_node_prev);	\
-    }                                                           \
-                                                                \
-    /* A predecessor's follower is now node's follower */       \
+	/* If node was head, advance the head to node's next*/  \
+	if ((head) == (node))					\
+	{							\
+	    (head) = ((node)->_node_next);			\
+	}							\
+								\
+	/* If node was tail, retract the tail to node's prev */	\
+	if ((tail) == (node))					\
+	{							\
+	    (tail) = ((node)->_node_prev);			\
+	}							\
+								\
+	/* A follower's predecessor is now node's predecessor*/	\
+	if ((node)->_node_next)					\
+	{							\
+	    (node)->_node_next->_node_prev = ((node)->_node_prev); \
+	}							\
+								\
+	/* A predecessor's follower is now node's follower */	\
 	if ((node)->_node_prev)					\
-    {                                                           \
-        (node)->_node_prev->_node_next = ((node)->_node_next);  \
-    }                                                           \
-                                                                \
-    (node)->_node_next = NULL;                                  \
-    (node)->_node_prev = NULL;                                  \
+	{							\
+	    (node)->_node_prev->_node_next = ((node)->_node_next); \
+	}							\
+								\
+	(node)->_node_next = NULL;				\
+	(node)->_node_prev = NULL;				\
+    }    							\
+								\
                                                                 \
 } while(0)
 
@@ -986,6 +1002,7 @@ enum {
 #define CFLASH_ASYNC_OP     0x01   /* Request is an async I/O operation */
 #define CFLASH_READ_DIR_OP  0x02   /* Read direction operation          */
 #define CFLASH_WRITE_DIR_OP 0x04   /* Read direction operation          */
+#define CFLASH_SHORT_POLL   0x08   /* Request 1 poll per aresult call   */
 
 
 #define CAPI_SCSI_IO_TIME_OUT  5
@@ -1008,6 +1025,12 @@ enum {
 #define CFLASH_BLOCK_CMD_ALIGNMENT 64 /* Byte alignment required of */
 				      /* of commands. This must be  */
 				      /* a power of 2.              */
+
+
+#define CMD_BAD_ADDR_MASK 0x3f        /* Command (IOARCB)  should   */
+				      /* be aligned on 64-byte      */
+				      /*  boundary                  */
+
 typedef struct cflsh_cmd_mgm_s {
     union {
 	sisl_iocmd_t sisl_cmd;   /* SIS Lite AFU command and   */
@@ -1342,6 +1365,8 @@ typedef struct cflsh_chunk_s {
 #define CFLSH_CHNK_VLUN_SCRUB 0x1000 /* Chunk vlun is scrubbed */
 				   /* on any size change       */
 				   /* and close.               */
+#define CFLSH_CHNK_RECOV_AFU 0x2000 /* This chunk is doing a   */
+				/* recover AFU operation       */
     chunk_id_t index;           /* Chunk index number          */
     int fd;                     /* File descriptor             */
     char dev_name[PATH_MAX];    /* Device special filename     */

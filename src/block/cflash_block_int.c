@@ -1878,6 +1878,662 @@ chunk_id_t cblk_get_chunk(int flags,int max_num_cmds)
 
 
 /*
+ * NAME:        cblk_process_cmd
+ *
+ * FUNCTION:    Processes the status of a command
+ *              that the AFU has completed. 
+ *              
+ * Environment: This routine assumes the chunk lock is held
+ *              and afu mutex
+ *              lock was conditionally taken by 
+ *              CFLASH_BLOCK_AFU_SHARE_LOCK.
+ *
+ * INPUTS:
+ *              chunk - Chunk the cmd is associated.
+ *
+ *              cmd   - Cmd which just completed
+ *
+ * RETURNS:
+ *             -1  - Fatal error
+ *              0  - Ignore error (consider good completion)
+ *              1  - Retry recommended
+ *              
+ *              
+ */
+
+cflash_cmd_err_t cblk_process_cmd(cflsh_chunk_t *chunk,int path_index, cflsh_cmd_mgm_t *cmd)
+{
+    cflash_cmd_err_t rc = CFLASH_CMD_IGNORE_ERR;
+    int rc2 = 0;
+    size_t transfer_size = 0;
+    int pthread_rc;
+
+
+    if (CBLK_INVALID_CMD_CMDI(chunk,cmd,cmd->cmdi,__FUNCTION__)) {
+
+	CBLK_TRACE_LOG_FILE(1,"cmd/cmdi is valid");
+	
+        errno = EINVAL;
+	rc = CFLASH_CMD_FATAL_ERR;
+	return rc;
+    }
+
+
+    if (!cmd->cmdi->in_use) {
+
+	/*
+	 * This command has already been
+	 * processed.
+	 */
+ 	CBLK_TRACE_LOG_FILE(1,"!!---CMD WAS ALREADY COMPLETED:  cmd->cmdi->lba = 0x%llx, cmd->cmdi->retry_count %d, flags = 0x%x",cmd->cmdi->lba,cmd->cmdi->retry_count,cmd->cmdi->flags);
+	CBLK_TRACE_LOG_FILE(1,"!!---CMD WAS ALREADY COMPLETED2:  cmd = 0x%llx on chunk->index = %d",(uint64_t)cmd,chunk->index);
+	return CFLASH_CMD_IGNORE_ERR;
+    }
+    
+    CBLK_TRACE_LOG_FILE(8,"cmd = 0x%llx",(uint64_t)cmd);
+
+    if (CBLK_INVALID_CHUNK_PATH_AFU(chunk,path_index,__FUNCTION__)) {
+
+	CBLK_TRACE_LOG_FILE(1,"chunk/path/AFU is bad");
+	
+        errno = EINVAL;
+	rc = CFLASH_CMD_FATAL_ERR;
+	return rc;
+
+
+    }
+
+    if (chunk->path[path_index]->afu->num_issued_cmds) {
+	fetch_and_add(&(chunk->path[path_index]->afu->num_issued_cmds),-1);
+
+    } else {
+	CBLK_TRACE_LOG_FILE(1,"bad num_issued_cmds field, cmd = 0x%llx,path_index = %d, ",
+			    (uint64_t)cmd,path_index);
+    }
+
+    if (CBLK_COMPLETE_STATUS_ADAP_CMD(chunk,cmd)) {
+
+	/*
+	 * Command completed with an error
+	 */
+
+	cmd->cmdi->transfer_size = 0;
+
+	rc = CBLK_PROCESS_ADAP_CMD_ERR(chunk,cmd);
+
+	if ((rc == CFLASH_CMD_RETRY_ERR) ||
+	    (rc == CFLASH_CMD_DLY_RETRY_ERR)) {
+
+	    CBLK_TRACE_LOG_FILE(5,"retry recommended for  cmd->cmdi->lba = 0x%llx, cmd->cmdi->retry_count = %d on chunk->index = %d",
+				cmd->cmdi->lba,cmd->cmdi->retry_count,chunk->index);
+
+	    if (cmd->cmdi->retry_count < CAPI_CMD_MAX_RETRIES) {
+
+		/*
+		 * Retry command
+		 */
+
+		if (rc == CFLASH_CMD_DLY_RETRY_ERR) {
+		    /*
+		     * This is a retry after a delay.
+		     *
+		     * NOTE: Currently we are just
+		     *       sleeping here for the delay.
+		     *       Under the current implementation, this is 
+		     *       approach is acceptable. However if we
+		     *       we may need to change this in the future.
+		     *
+		     *       For this current approach we need
+		     *       to unlock (and allow other threads
+		     *       to progress) while we sleep. 
+		     */
+
+		    CBLK_TRACE_LOG_FILE(5,"retry with delayrecommended for  cmd->cmdi->lba = 0x%llx, cmd->cmdi->retry_count %d chunk->index = %d",
+					cmd->cmdi->lba,cmd->cmdi->retry_count,chunk->index);
+		    CFLASH_BLOCK_UNLOCK(chunk->lock);
+		    sleep(CAPI_SCSI_IO_RETRY_DELAY);
+		    CFLASH_BLOCK_LOCK(chunk->lock);
+
+		    
+		}
+
+		CBLK_INIT_ADAP_CMD_RESP(chunk,cmd);
+
+		/*
+		 * Update command possibly for new path or context
+		 */
+
+		if (CBLK_UPDATE_PATH_ADAP_CMD(chunk,cmd,0)) {
+
+		    CBLK_TRACE_LOG_FILE(1,"CBLK_UPDATE_PATH_ADAP_CMD failed");
+
+		    rc = CFLASH_CMD_FATAL_ERR;
+		}
+
+		cmd->cmdi->retry_count++;
+
+
+		/*
+		 * Since the caller used CFLASH_BLOCK_AFU_SHARE_LOCK,
+		 * we need to use the CFLASH_BLOCK_AFU_SHARE_UNLOCK here.
+		 */
+
+		CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
+
+		rc2 = CBLK_ISSUE_CMD(chunk,cmd,cmd->cmdi->buf,
+					cmd->cmdi->lba,cmd->cmdi->nblocks,CFLASH_ISSUE_RETRY);
+
+
+		/*
+		 * Since we are going to potentially wait on a resume event,
+		 * we need to explicitly take the afu->lock, instead
+		 * of conditionally taking the lock as is done in
+		 * CFLASH_BLOCK_AFU_SHARE_LOCK. We will explicitly release
+		 * it after the waiting and if necessary do the conditional
+		 * taking of it later via CFLASH_BLOCK_AFU_SHARE_LOCK,
+		 * Since this error recovery, this should not impact good path
+		 */
+
+		CFLASH_BLOCK_LOCK(chunk->path[path_index]->afu->lock);
+		
+		if (CBLK_INVALID_CHUNK_PATH_AFU(chunk,path_index,__FUNCTION__)) {
+
+		    CBLK_TRACE_LOG_FILE(1,"chunk/path/AFU is bad");
+	
+		}
+
+		if (chunk->path[path_index]->afu->flags & CFLSH_AFU_HALTED) {
+		    
+		    /*
+		     * If path is in a halted state then wait for it to 
+		     * resume. Since we are waiting for the AFU resume
+		     * event, that afu-lock will be released, but our chunk
+		     * lock will not be released. So do that now.
+		     */
+		    
+		    CFLASH_BLOCK_UNLOCK(chunk->lock);
+		    
+		    
+		    pthread_rc = pthread_cond_wait(&(chunk->path[path_index]->afu->resume_event),
+						   &(chunk->path[path_index]->afu->lock.plock));
+		    
+		    /*
+		     * Chunk lock must be acquired first to prevent deadlock.
+		     */
+		    
+		    CFLASH_BLOCK_UNLOCK(chunk->path[path_index]->afu->lock);          
+		    CFLASH_BLOCK_LOCK(chunk->lock);
+
+		    /*
+		     * Conditionally acquire the afu lock to match the
+		     * lock state we entered this routine.
+		     */
+		    CFLASH_BLOCK_AFU_SHARE_LOCK(chunk->path[path_index]->afu); 
+
+		    if (pthread_rc) {
+			
+			
+			
+			
+			CBLK_TRACE_LOG_FILE(5,"pthread_cond_wait failed for resume_event rc = %d errno = %d",
+					    pthread_rc,errno);
+			
+			cmd->cmdi->status = EIO;
+
+			errno = EIO;
+			
+			rc = CFLASH_CMD_FATAL_ERR;
+			return rc;
+		    }
+
+		    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_HALTED) {
+			
+			/*
+			 * Give up if the AFU is still halted.
+			 */
+			
+                        
+			CBLK_TRACE_LOG_FILE(5,"afu halted again afu->flag = 0x%x",
+					    chunk->path[path_index]->afu->flags);
+					    
+			
+			cmd->cmdi->status = EIO;
+
+			errno = EIO;
+			
+			rc = CFLASH_CMD_FATAL_ERR;
+			return rc;
+		    }
+		    
+		} else {
+
+
+		    /*
+		     * Conditionally acquire the afu lock to match the
+		     * lock state we entered this routine.
+		     */
+		    CFLASH_BLOCK_UNLOCK(chunk->path[path_index]->afu->lock);
+		    CFLASH_BLOCK_AFU_SHARE_LOCK(chunk->path[path_index]->afu); 
+		}
+
+
+
+		if (rc2) {
+
+		    /*
+		     * If we failed to issue this command for
+		     * retry then give up on it now.
+		     */
+
+		    CBLK_TRACE_LOG_FILE(8,"retry issue failed with rc2 = 0x%x cmd->cmdi->lba = 0x%llx chunk->index = %d",
+					rc2,cmd->cmdi->lba,chunk->index);
+		    cmd->cmdi->status = EIO;
+
+		    errno = EIO;
+
+		    rc = CFLASH_CMD_FATAL_ERR;
+		    return rc;
+		} else {
+	
+		    chunk->stats.num_retries++;
+		    CBLK_TRACE_LOG_FILE(8,"retry issue succeeded cmd->cmdi->in_use= 0x%x cmd->cmdi->lba = 0x%llx chunk->index = %d",
+					cmd->cmdi->in_use,cmd->cmdi->lba,chunk->index);
+		    return rc;
+		}
+
+
+
+	    } else {
+
+
+		/*
+		 * If we exceeded retries then
+		 * give up on it now.
+		 */
+
+		errno = EIO;
+		cmd->cmdi->status = EIO;
+
+		rc = CFLASH_CMD_FATAL_ERR;
+	    }
+
+	} /* rc == CFLASH_CMD_RETRY_ERR */
+
+
+    } else {
+
+	/*
+	 * No serious error was seen, but we could
+	 * have an underrun.
+	 */
+
+
+	cmd->cmdi->status = 0;
+
+	if (!cmd->cmdi->transfer_size_bytes) {
+
+	    /*
+	     * If this transfer is not in bytes, then it will
+	     * be in blocks, which indicate this is a read/write.
+	     * As result, if all data was transferred, then
+	     * we should save this to the cache.
+	     */
+
+
+	    if (cmd->cmdi->transfer_size_bytes == cmd->cmdi->nblocks) {
+
+		CBLK_SAVE_IN_CACHE(chunk,cmd->cmdi->buf,cmd->cmdi->lba,
+				   cmd->cmdi->nblocks);
+	    }
+	}
+
+    }
+
+
+    cmd->cmdi->flags |= CFLSH_PROC_CMD;
+
+
+#ifdef _COMMON_INTRPT_THREAD
+
+    if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
+		    
+
+	/*
+	 * Signal any one waiting for this specific command
+	 */
+
+	pthread_rc = pthread_cond_signal(&(cmd->cmdi->thread_event));
+	
+	if (pthread_rc) {
+	    
+	    CBLK_TRACE_LOG_FILE(5,"pthread_cond_signal failed for hread_event rc = %d,errno = %d, chunk->index = %d",
+				pthread_rc,errno,chunk->index);
+	}
+	    
+
+	/*
+	 * Signal any one waiting for any command to complete.
+	 */
+
+	pthread_rc = pthread_cond_signal(&(chunk->cmd_cmplt_event));
+	
+	if (pthread_rc) {
+	    
+	    CBLK_TRACE_LOG_FILE(5,"pthread_cond_signal failed for cmd_cmplt_event rc = %d,errno = %d, chunk->index = %d",
+				pthread_rc,errno,chunk->index);
+	}
+    }
+
+    
+#endif
+
+    if (CBLK_INVALID_CHUNK_PATH_AFU(chunk,path_index,__FUNCTION__)) {
+
+	CBLK_TRACE_LOG_FILE(1,"chunk/path/AFU is bad");
+	
+	return rc;
+
+
+    }
+
+    if (CBLK_INVALID_CMD_CMDI(chunk,cmd,cmd->cmdi,__FUNCTION__)) {
+
+	CBLK_TRACE_LOG_FILE(1,"cmd/cmdi is valid");
+	
+	return rc;
+    }
+
+    CBLK_TRACE_LOG_FILE(8,"cmd->cmdi->in_use= 0x%x cmd->cmdi->lba = 0x%llx, chunk->index = %d cmd->cmdi->flags = 0x%x",
+			cmd->cmdi->in_use,cmd->cmdi->lba,chunk->index,cmd->cmdi->flags);
+
+    CBLK_TRACE_LOG_FILE(8,"chunk->dev_name = %s, chunk->flags = 0x%x, path_index = %d",
+			chunk->dev_name,chunk->flags,path_index);
+
+    if (((rc != CFLASH_CMD_RETRY_ERR) &&
+	(rc != CFLASH_CMD_DLY_RETRY_ERR)) &&
+	(chunk->cmd_info[cmd->index].flags & CFLSH_CMD_INFO_USTAT)) {
+
+	CBLK_COMPLETE_CMD(chunk,cmd,&transfer_size);
+	
+    }
+
+
+    return rc;
+}
+
+
+
+/*
+ * NAME:        cblk_find_free_cmd
+ *
+ * FUNCTION:    Finds the first free command. Assumes caller has chunk lock.
+ *
+ *
+ * INPUTS:
+ *              chunk - The chunk to which a free
+ *                      command is needed.
+ *          
+ *              cmd   - Pointer to found command.
+ *
+ * RETURNS:
+ *              0         - Command was found.
+ *              otherwise - error
+ *              
+ */
+
+int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
+{
+    int rc = -1;
+    int found = FALSE;
+    int num_in_use = 0;
+    int pthread_rc;
+    int loop_cnt = 0;
+    cflsh_cmd_info_t *cmdi;
+
+
+    if (chunk == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"Invalid chunk");
+	errno = EINVAL;
+	return -1;
+
+    }
+
+    if (CFLSH_EYECATCH_CHUNK(chunk)) {
+	/*
+	 * Invalid chunk. Exit now.
+	 */
+	
+	cflsh_blk.num_bad_chunk_ids++;
+	CBLK_TRACE_LOG_FILE(1,"Invalid chunk");
+	errno = EINVAL;
+	return -1;
+    }
+
+    /*
+     * The head of the free queue will be the command
+     * on the free list the longest. So use that if
+     * it is available.
+     */
+
+    cmdi = chunk->head_free;
+
+
+	
+    if (cmdi == NULL)  {  
+	
+	chunk->stats.num_no_cmds_free++;
+
+        if (flags & CFLASH_WAIT_FREE_CMD) {
+
+	    /*
+	     * We do not have any free commands
+	     * available.  So we need to wait for 
+	     * a free command.
+	     */
+
+
+	    while ((!found) && (loop_cnt < CFLASH_BLOCK_MAX_CMD_WAIT_RETRIES))  {
+
+		CFLASH_BLOCK_UNLOCK(chunk->lock);
+
+		usleep(CFLASH_BLOCK_FREE_CMD_WAIT_DELAY);
+
+		CFLASH_BLOCK_LOCK(chunk->lock);
+
+	    
+		if (CFLSH_EYECATCH_CHUNK(chunk)) {
+		    /*
+		     * Invalid chunk. Exit now.
+		     */
+
+		    cflsh_blk.num_bad_chunk_ids++;
+		    CBLK_TRACE_LOG_FILE(1,"Invalid chunk");
+		    errno = EINVAL;
+		    return -1;
+		}
+
+		CBLK_TRACE_LOG_FILE(1,"No free command found num_active_cmds = %d, num_in_use = %d",
+				    chunk->num_active_cmds,num_in_use);
+		
+		
+		cmdi = chunk->head_free;
+
+		    
+		if (cmdi == NULL)  {  
+		    chunk->stats.num_no_cmds_free++;
+		    
+		    rc = -1;
+		    
+		    errno = EBUSY;
+		    
+		    
+		    CBLK_TRACE_LOG_FILE(1,"No free command found num_active_cmds = %d",chunk->num_active_cmds);
+		    
+		} else {
+
+		    found = TRUE;
+		}
+		
+
+	    } /* while */
+
+	    if (!found)  {
+
+
+		rc = -1;
+
+		errno = EBUSY;
+	    
+	    
+		chunk->stats.num_no_cmds_free_fail++;
+		CBLK_TRACE_LOG_FILE(1,"Giving up No free command found num_active_cmds = %d",chunk->num_active_cmds);
+		return rc;
+	    }
+        } else {
+
+
+	    /*
+	     * The caller does not want us
+	     * wait for a command. So fail now.
+	     */
+	    rc = -1;
+
+	    errno = EBUSY;
+	    
+	    chunk->stats.num_no_cmds_free_fail++;
+	    
+	    CBLK_TRACE_LOG_FILE(1,"No free command found num_active_cmds = %d num_in_use = %d",
+				chunk->num_active_cmds,num_in_use);
+	    return rc;
+	}
+
+    }
+
+    if (chunk->cmd_start == NULL) {
+	CBLK_TRACE_LOG_FILE(1,"cmd_start is NULL");
+	errno = EINVAL;
+	return -1;
+    }
+
+
+    if (cmdi == NULL) {
+	CBLK_TRACE_LOG_FILE(1,"cmdi is NULL");
+	errno = EINVAL;
+	return -1;
+    }
+
+    if ((cmdi < &(chunk->cmd_info[0])) ||
+	(cmdi > &(chunk->cmd_info[chunk->num_cmds]))) {
+
+
+
+	CBLK_TRACE_LOG_FILE(1,"cmdi = %p with index %d is invalid, chunk->num_cmds = %d",
+			    cmdi,cmdi->index, chunk->num_cmds);
+	errno = EINVAL;
+	return -1;
+
+    }
+
+    if (CFLSH_EYECATCH_CMDI(cmdi)) {
+
+	CBLK_TRACE_LOG_FILE(1,"Invalid eyecatcher cmdi = %p is invalid, chunk->num_cmds = %d",
+			    cmdi,cmdi->index, chunk->num_cmds);
+	errno = EINVAL;
+	return -1;
+
+    }
+
+
+    if (cmdi->index > chunk->num_cmds) {
+	CBLK_TRACE_LOG_FILE(1,"cmdi = %p index is too large = %d, chunk->num_cmds = %d",
+			    cmdi,cmdi->index, chunk->num_cmds);
+
+
+	CBLK_TRACE_LOG_FILE(1,"user_tag = 0x%x, *user_status = %p, path_index = %d",
+			    cmdi->user_tag,cmdi->user_status,cmdi->path_index);
+	errno = EINVAL;
+	return -1;
+    }
+
+    *cmd = &(chunk->cmd_start[cmdi->index]);
+
+    if (*cmd == NULL) {
+	CBLK_TRACE_LOG_FILE(1,"cmd is NULL");
+	errno = EINVAL;
+	return -1;
+    }
+
+    if (((*cmd) < chunk->cmd_start) ||
+	((*cmd) > chunk->cmd_end)) {
+
+
+
+	CBLK_TRACE_LOG_FILE(1,"cmd = %p with index = %d, is invalid, chunk->num_cmds = %d",
+			    *cmd,cmdi->index, chunk->num_cmds);
+	errno = EINVAL;
+	return -1;
+
+    }
+
+    bzero((void *)(*cmd),sizeof (**cmd));
+
+    pthread_rc = pthread_cond_init(&(cmdi->thread_event),NULL);
+    
+    if (pthread_rc) {
+	
+	CBLK_TRACE_LOG_FILE(1,"pthread_cond_init failed rc = %d errno= %d",
+			    pthread_rc,errno);
+	rc = -1;
+
+	return rc;
+	
+    }
+
+#ifndef _COMMON_INTRPT_THREAD
+    cmdi->async_data = NULL;
+#endif /* !_COMMON_INTRPT_THREAD */
+
+    cmdi->flags = 0;
+    cmdi->path_index = chunk->cur_path;
+    cmdi->retry_count = 0;
+    cmdi->state = 0;
+    cmdi->transfer_size = 0;
+    cmdi->transfer_size_bytes = 0;
+    cmdi->thread_id = 0;
+    cmdi->buf = NULL;
+    cmdi->status = 0;
+    cmdi->nblocks = 0;
+    cmdi->lba = 0;
+    cmdi->user_status = NULL;
+
+    
+    cmdi->cmd_time = time(NULL);
+    (*cmd)->cmdi = cmdi;
+
+
+    /*
+     * Remove command from free list
+     */
+    
+    CBLK_DQ_NODE(chunk->head_free,chunk->tail_free,cmdi,free_prev,free_next);
+
+    /*
+     * place command on active list
+     */
+    
+    CBLK_Q_NODE_TAIL(chunk->head_act,chunk->tail_act,cmdi,act_prev,act_next);
+ 		    
+  
+    cmdi->in_use = 1;
+    (*cmd)->index = cmdi->index;
+
+    CBLK_TRACE_LOG_FILE(9,"cmd = %p cmdi = %p",*cmd,cmdi);
+    return 0;
+}
+
+
+/*
  * NAME:        cblk_get_buf_cmd
  *
  * FUNCTION:    Finds free command and allocates data buffer for command
@@ -2056,8 +2712,7 @@ int cblk_start_common_intrpt_thread(cflsh_chunk_t *chunk)
  *              lun associated with this chunk.
  *
  * NOTE:        This routine assumes the caller
- *              is holding both the chunk lock and
- *              the global lock.
+ *              is not holding the chunk lock.
  *
  *
  * INPUTS:
@@ -2132,23 +2787,55 @@ int cblk_get_lun_id(cflsh_chunk_t *chunk)
     }
 
 
-
-
-
- 
-
+    CFLASH_BLOCK_LOCK(chunk->lock);
 
     if (CBLK_ISSUE_CMD(chunk,cmd,raw_lun_list,0,0,0)) {
 
         
+#ifdef BLOCK_FILEMODE_ENABLED
+	
+
+	/*
+	 * Since we're emulating SCSI commands, here we need to do
+	 * clean up from CBLK_ISSUE_CMD.
+	 */
+
+	if (chunk->path[chunk->cur_path]->afu->num_issued_cmds) {
+	    fetch_and_add(&(chunk->path[chunk->cur_path]->afu->num_issued_cmds),-1);
+
+	} else {
+	    CBLK_TRACE_LOG_FILE(1,"bad num_issued_cmds field, cmd = 0x%llx,path_index = %d, ",
+				(uint64_t)cmd,chunk->cur_path);
+	}
+
+#endif /* BLOCK_FILEMODE_ENABLED */
+
+	CFLASH_BLOCK_UNLOCK(chunk->lock);
 	CBLK_FREE_CMD(chunk,cmd);
         free(raw_lun_list);
         return -1;
 
     }
 
+    CFLASH_BLOCK_UNLOCK(chunk->lock);
+
 #ifdef BLOCK_FILEMODE_ENABLED
 	
+
+    /*
+     * Since we're emulating SCSI commands, here we need to do
+     * clean up from CBLK_ISSUE_CMD.
+     */
+
+    if (chunk->path[chunk->cur_path]->afu->num_issued_cmds) {
+	fetch_and_add(&(chunk->path[chunk->cur_path]->afu->num_issued_cmds),-1);
+
+    } else {
+	CBLK_TRACE_LOG_FILE(1,"bad num_issued_cmds field, cmd = 0x%llx,path_index = %d, ",
+			    (uint64_t)cmd,chunk->cur_path);
+    }
+
+
     /*
      * For BLOCK_FILEMODE_ENABLED get the size of this file that was
      * just opened
@@ -2368,10 +3055,33 @@ int cblk_get_lun_capacity(cflsh_chunk_t *chunk)
  
 
 
+    CFLASH_BLOCK_LOCK(chunk->lock);
+
     if (CBLK_ISSUE_CMD(chunk,cmd,readcap16_data,0,0,0)) {
 
         
         
+#ifdef BLOCK_FILEMODE_ENABLED
+	
+
+	/*
+	 * Since we're emulating SCSI commands, here we need to do
+	 * clean up from CBLK_ISSUE_CMD.
+	 */
+
+	if (chunk->path[chunk->cur_path]->afu->num_issued_cmds) {
+	    fetch_and_add(&(chunk->path[chunk->cur_path]->afu->num_issued_cmds),-1);
+
+	} else {
+	    CBLK_TRACE_LOG_FILE(1,"bad num_issued_cmds field, cmd = 0x%llx,path_index = %d, ",
+				(uint64_t)cmd,chunk->cur_path);
+	}
+
+#endif /* BLOCK_FILEMODE_ENABLED */
+
+
+	CFLASH_BLOCK_UNLOCK(chunk->lock);
+
 	CBLK_FREE_CMD(chunk,cmd);
 
         free(readcap16_data);
@@ -2379,8 +3089,24 @@ int cblk_get_lun_capacity(cflsh_chunk_t *chunk)
 
     }
 
+    CFLASH_BLOCK_UNLOCK(chunk->lock);
+
 #ifdef BLOCK_FILEMODE_ENABLED
 	
+    /*
+     * Since we're emulating SCSI commands, here we need to do
+     * clean up from CBLK_ISSUE_CMD.
+     */
+
+    if (chunk->path[chunk->cur_path]->afu->num_issued_cmds) {
+	fetch_and_add(&(chunk->path[chunk->cur_path]->afu->num_issued_cmds),-1);
+
+    } else {
+	CBLK_TRACE_LOG_FILE(1,"bad num_issued_cmds field, cmd = 0x%llx,path_index = %d, ",
+			    (uint64_t)cmd,chunk->cur_path);
+    }
+
+
     /*
      * For BLOCK_FILEMODE_ENABLED get the size of this file that was
      * just opened
@@ -3775,6 +4501,9 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 
     if (chunk->num_active_cmds) {
 	
+
+	CBLK_TRACE_LOG_FILE(9,"resuming %d active commands",chunk->num_active_cmds);
+
 	for (i=0; i < chunk->num_cmds; i++) {
 	    if ((chunk->cmd_info[i].in_use) &&
 		(chunk->cmd_info[i].state == CFLSH_MGM_HALTED) &&
@@ -3999,6 +4728,8 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
     }
 
 
+
+    CBLK_TRACE_LOG_FILE(9,"finished resuming %d active commands",chunk->num_active_cmds);
     return;
 }
 
@@ -4056,6 +4787,8 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
     CFLASH_BLOCK_UNLOCK(afu->lock);
 	
 	
+    CBLK_TRACE_LOG_FILE(9,"reseting context...");
+
     path = afu->head_path;
 
     while (path) {
@@ -4195,6 +4928,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
     }
     
 
+    CBLK_TRACE_LOG_FILE(9,"reset context complete");
     
     CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
     
@@ -6321,4 +7055,253 @@ int cblk_setup_sigusr1_dump(void)
 
 
     return rc;
+}
+
+
+/*
+ * NAME:        cblk_dcbz_buffer
+ *
+ * FUNCTION:    Clear poison bits for potential 
+ *              Uncorrectable Errors (UE) using the DCBZ
+ *              (Data Cache Block set to Zero).
+ *
+ * RETURNS:
+ *              
+ *             None
+ *              
+ */
+void cblk_dcbz_buffer(void *buf, size_t len)
+{
+#define CBLK_DCBZ_CACHE_LINE_SZ 128
+
+    ulong start_addr;
+    ulong end_addr;
+    ulong addr;
+
+
+    start_addr = (ulong)buf;
+    end_addr = (ulong)buf+len;
+
+
+    /*
+     * Align start and end addresses on a cacheline boundary
+     */
+
+    if (start_addr & (CBLK_DCBZ_CACHE_LINE_SZ-1)) {
+
+	start_addr = ((ulong)start_addr+CBLK_DCBZ_CACHE_LINE_SZ) & ~(CBLK_DCBZ_CACHE_LINE_SZ-1);
+
+    }
+
+    if (end_addr & (CBLK_DCBZ_CACHE_LINE_SZ-1)) {
+
+	end_addr = ((ulong)end_addr+CBLK_DCBZ_CACHE_LINE_SZ) & ~(CBLK_DCBZ_CACHE_LINE_SZ-1);
+
+    }
+
+    addr = start_addr;
+
+    /*
+     * Issue DCBZ (Data Cache Block set to Zero) to clear 
+     * all poison bits across the data buffer.
+     */
+
+    while (addr < end_addr) {
+
+	asm volatile ("dcbz 0, %0" : : "r" (addr) : "memory");
+
+	addr += CBLK_DCBZ_CACHE_LINE_SZ;
+    }
+
+    /* issue sync for cache lines */
+
+    asm volatile ( "lwsync" : : ); 
+
+    return;
+}
+
+
+/*
+ * NAME:        cblk_clear_poison_bits
+ *
+ * FUNCTION:    Clear poison bits for potential 
+ *              Uncorrectable Errors (UE).
+ *
+ * RETURNS:
+ *              
+ *             None
+ *              
+ */
+
+void cblk_clear_poison_bits(void *buf, size_t len)
+{
+
+
+#ifdef _AIX
+#ifdef _BSTERILE
+
+    __bsterile(buf, len);
+#else
+    cblk_dcbz_buffer(buf, len);
+    
+#endif
+#else
+
+    cblk_dcbz_buffer(buf, len);
+#endif
+
+    return;
+   
+}
+
+
+/*
+ * NAME:        cblk_clear_poison_bits_chunk
+ *
+ * FUNCTION:    Clear poison bits for potential 
+ *              Uncorrectable Errors (UE). When a
+ *              CAPI Flash adapter goes thru recovery
+ *              (EEH, reset etc), there is the possibility
+ *              that the event that caused this (such as
+ *              a CAPP link going down), corrupted cachelines.
+ *              To prevent data corruption
+ *              the hardware will mark those cachelines as
+ *              poison: any access of that cacheline will
+ *              cause an Uncorrectable Error, which at a
+ *              minimum would cause the application to segfault.
+ *	        Since there is no way to determine prior to
+ *              consuming the cacheline that a UE would occur,
+ *              this code will error on the side of assuming
+ *              this is always true for IOARCBs and data
+ *              read buffers. As result it will use
+ *              an OS specific interface (invoked from
+ *              inside cblk_clear_poison_bits) to clear
+ *              IOARCBs and read data buffers. 
+ * 
+ *              Write data buffers will not be cleared,
+ *              since we have no interface to reconstruct
+ *              the write data buffer.  Thus
+ *              if write data cachelines were corrupted a UE
+ *              could still happen. 
+ *              
+ *
+ * NOTES:       This routine assumes the caller
+ *              has the chunk lock and that
+ *              all active commands are halted.
+ *
+ * RETURNS:
+ *              
+ *             None
+ *              
+ */
+
+void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_paths)
+{
+
+    int i;
+    scsi_cdb_t *cdb = NULL;
+    cflsh_cmd_mgm_t *cmd = NULL;
+    cflsh_cmd_info_t *cmdi;
+    int local_flags = 0;
+    uint8_t op_code = 0;
+
+
+
+
+    /*
+     * For each active command, clear all IOARCBs
+     * and rebuild the IOARCB
+     * (from the information in the associated
+     * cmd_info) to allow it to be re-issued
+     * safely later.
+     *
+     * Also for reads, we will also clear the data
+     * buffers to prevent UEs when access the read
+     * data buffer. .
+     */
+
+    for (i=0; i < chunk->num_cmds; i++) {
+	if ((chunk->cmd_info[i].in_use) &&
+	    (chunk->cmd_info[i].state == CFLSH_MGM_HALTED) &&
+	    (all_paths || (chunk->cmd_info[i].path_index == path_index))) {
+
+	    /*
+	     * cmd_info and cmd_start array entries
+	     * with the same index correspond to the
+	     * same command.
+	     */
+
+	    cmdi = &chunk->cmd_info[i];
+
+	    cmd = &chunk->cmd_start[i];
+	    
+	    if (cmdi->flags & CFLSH_MODE_READ) {
+
+		/*
+		 * Read request
+		 */
+
+		op_code = SCSI_READ_16;
+
+		local_flags = CFLASH_READ_DIR_OP;
+		
+	    } else if (cmdi->flags & CFLSH_MODE_WRITE) {
+
+		
+		/*
+		 * Write request
+		 */
+
+		op_code = SCSI_WRITE_16;
+
+		local_flags = CFLASH_WRITE_DIR_OP;
+
+	    } else {
+
+		/*
+		 * This is invalid request: skip to the next one
+		 */
+		CBLK_TRACE_LOG_FILE(1,"Invalid cmdi->flags: no read/write flags = 0x%x",cmdi->flags);
+
+		continue;
+	    }
+
+	    /*
+	     * Only the adapter specific area could have 
+	     * poison bits, but for simplicity (to avoid
+	     * using a an adapter specific routine to clear
+	     * the poison bits), we will just clear the whole
+	     * cmd.
+	     */
+
+	    cblk_clear_poison_bits(cmd,(sizeof(*cmd)));
+
+	    cmd->cmdi = cmdi;
+
+	    cmd->index = i;
+
+	    CBLK_BUILD_ADAP_CMD(chunk,cmd,cmdi->buf,(CAPI_FLASH_BLOCK_SIZE * cmdi->nblocks),local_flags);
+    
+	    cdb = CBLK_GET_CMD_CDB(chunk,cmd);
+
+	    cdb->scsi_op_code = op_code;
+
+	    CFLASH_BUILD_RW_16(cdb,(chunk->start_lba + cmdi->lba)*(chunk->blk_size_mult),cmdi->nblocks*(chunk->blk_size_mult));
+		
+
+	    if (cmdi->flags & CFLSH_MODE_READ) {
+
+		/*
+		 * Clear read data buffer of any potential poison bits
+		 */
+
+		cblk_clear_poison_bits(cmdi->buf,(cmdi->nblocks*CAPI_FLASH_BLOCK_SIZE));
+	    }
+
+	    
+	}
+
+    } /* for */
+
+    return;
 }

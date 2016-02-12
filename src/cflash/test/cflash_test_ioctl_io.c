@@ -605,6 +605,7 @@ int test_large_transfer()
     pthread_t thread;
     struct rwlargebuf rwbuf;
     __u64 chunk=2; // do io on last 2 chunks on a plun
+
     __u64 buf_size[] =
     {
         0x1000, //4KB
@@ -613,13 +614,13 @@ int test_large_transfer()
                            0x40000, //256KB
                            0x800000, //8MB
                            0x1000000 }; //16MB
+
     int i;
     //Large trasnfer size is for PLUN not Vluns(4K only) as per Jim
     pid = getpid();
 #ifdef _AIX
-    system("ulimit -d unlimited");
-    system("ulimit -s unlimited");
-    system("ulimit -m unlimited");
+    rc = setRUnlimited();
+    CHECK_RC(rc, "setRUnlimited failed");
 #endif
     rc = ctx_init(p_ctx);
     CHECK_RC(rc, "Context init failed");
@@ -891,8 +892,9 @@ int max_ctx_rcvr_except_last_one()
 #ifdef _AIX
     printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
 #else
-    char * autoEehP   = getenv("AUTO_EEH");
-    if ( NULL != autoEehP )
+    char * manualEehP   = getenv("MANUAL_EEH");
+
+    if ( NULL == manualEehP )
     {
         printf("%d:.....MAIN: doing  EEH now .......\n",getpid());
 
@@ -1087,8 +1089,8 @@ int max_ctx_rcvr_last_one_no_rcvr()
 #ifdef _AIX
     printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
 #else
-    char * autoEehP   = getenv("AUTO_EEH");
-    if ( NULL != autoEehP )
+    char * manualEehP   = getenv("MANUAL_EEH");
+    if ( NULL != manualEehP )
     {
         printf("%d:.....MAIN: doing  EEH now .......\n",getpid());
         rc = diskToPCIslotConv(cflash_path, tmpBuff );
@@ -1271,6 +1273,37 @@ int test_clone_ioctl(int cmd)
         rc = wait4all();
     }
     return rc;
+}
+
+int max_ctx_cross_limit()
+{
+    int i;
+    int rc = 0;
+    struct ctx myctx;
+    struct ctx *p_ctx=&myctx;
+    pid = getpid();
+	int max_p = MAX_OPENS;
+	//int max_p = 1;
+	for (i=0; i<max_p;i++)
+	{
+		if (0==fork())
+		{
+			pid=getpid();
+			rc =ctx_init(p_ctx);
+			sleep(10);
+			exit(rc);
+		}
+	}
+	sleep(5);
+	rc=ctx_init(p_ctx);
+	if(rc){
+		fprintf(stderr,"%d:expectd to fail....\n",pid);
+		g_error=0;
+		rc = 0;
+	}
+	else rc =10;
+	rc = wait4all();
+	return rc;
 }
 
 int max_ctx_on_plun(int cmd)

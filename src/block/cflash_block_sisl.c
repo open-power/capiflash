@@ -1214,6 +1214,14 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 	if (p_cmd) {
 
 
+	    if ((uint64_t)p_cmd & CMD_BAD_ADDR_MASK) {
+	
+		CBLK_TRACE_LOG_FILE(1,"cmd is not aligned correctly = %p",cmd);
+	
+		continue;
+	    }
+
+
 	    if (p_cmd->cmdi == NULL) {
 
 
@@ -1222,21 +1230,10 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 		continue;
 	    }
 
-	    if (p_cmd->cmdi->chunk == NULL) {
+	    if (CBLK_INVALID_CMD_CMDI(p_cmd->cmdi->chunk,p_cmd,p_cmd->cmdi,__FUNCTION__)) {
 
-
-		CBLK_TRACE_LOG_FILE(1,"Invalid Null chunk, cmd = 0x%llx p_hrrq_curr = 0x%llx, chunk->index = %d",
+		CBLK_TRACE_LOG_FILE(1,"Invalid p_cmd pointer received by AFU = 0x%llx p_hrrq_curr = 0x%llx, chunk->index = %d",
 				    (uint64_t)p_cmd,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
-		continue;
-	    }
-
-	    if (CFLSH_EYECATCH_CHUNK(p_cmd->cmdi->chunk)) {
-
-
-
-		CBLK_TRACE_LOG_FILE(1,"Invalid eyecatcher= 0x%x in  pchunnk  = %p chunk = %p p_hrrq_curr = 0x%llx, chunk->index = %d",
-				    p_cmd->cmdi->chunk->eyec,(p_cmd->cmdi->chunk),chunk,
-				    (uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
 		continue;
 	    }
 
@@ -1273,7 +1270,7 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 		p_cmd->cmdi->state = CFLSH_MGM_CMP;
 
 
-		rc = CBLK_PROCESS_CMD(chunk,path_index,p_cmd);
+		rc = cblk_process_cmd(chunk,path_index,p_cmd);
 
 		if ((*cmd == NULL) &&
 		    (!(*cmd_complete))) {
@@ -1359,6 +1356,21 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 
 	}
 
+	if (CBLK_INVALID_CHUNK_PATH_AFU(chunk,path_index,__FUNCTION__)) {
+
+	    CBLK_LIVE_DUMP_THRESHOLD(5,"0x620");
+
+	    break;
+
+	}
+
+	if (chunk->path[path_index]->afu->p_hrrq_curr == NULL) {
+
+	    CBLK_TRACE_LOG_FILE(1,"p_hrrq_curr is null, chunk = %p",chunk);
+
+	    CBLK_LIVE_DUMP_THRESHOLD(5,"0x621");
+	    break;
+	}
 
 	CBLK_TRACE_LOG_FILE(7,"*(chunk->path[path_index].p_hrrq_curr) = 0x%llx, chunk->path[path_index].toggle = 0x%llx, chunk->index = %d",
 			    *(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,chunk->index);	

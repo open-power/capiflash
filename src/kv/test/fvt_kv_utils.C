@@ -36,6 +36,7 @@ extern "C"
 #include <fvt_kv.h>
 #include <fvt_kv_utils.h>
 #include <kv_utils_db.h>
+#include <errno.h>
 }
 
 /*******************************************************************************
@@ -64,9 +65,13 @@ void fvt_kv_utils_load(ARK *ark, kv_t *db, uint32_t LEN)
  ******************************************************************************/
 void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
 {
-    uint32_t i   = 0;
-    int64_t  res = 0;
-    uint8_t  gvalue[vbuflen];
+    uint32_t i      = 0;
+    int64_t  res    = 0;
+    uint8_t *gvalue = NULL;
+
+    if (vbuflen==0) {gvalue=(uint8_t*)malloc(1);}
+    else            {gvalue=(uint8_t*)malloc(vbuflen);}
+    ASSERT_TRUE(gvalue != NULL);
 
     ASSERT_TRUE(NULL != ark);
     ASSERT_TRUE(NULL != db);
@@ -85,15 +90,20 @@ void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
         EXPECT_EQ(0, memcmp(db[i].value,gvalue,db[i].vlen));
         EXPECT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
     }
+    free(gvalue);
 }
 
 /*******************************************************************************
  ******************************************************************************/
 void fvt_kv_utils_query_empty(ARK *ark, kv_t *db, uint32_t vbuflen,uint32_t LEN)
 {
-    uint32_t i   = 0;
-    int64_t  res = 0;
-    uint8_t  gvalue[vbuflen];
+    uint32_t i      = 0;
+    int64_t  res    = 0;
+    uint8_t *gvalue = NULL;
+
+    if (vbuflen==0) {gvalue=(uint8_t*)malloc(1);}
+    else            {gvalue=(uint8_t*)malloc(vbuflen);}
+    ASSERT_TRUE(gvalue != NULL);
 
     ASSERT_TRUE(NULL != ark);
     ASSERT_TRUE(NULL != db);
@@ -110,6 +120,7 @@ void fvt_kv_utils_query_empty(ARK *ark, kv_t *db, uint32_t vbuflen,uint32_t LEN)
                              &res));
         EXPECT_EQ(ENOENT, ark_exists(ark, db[i].klen, db[i].key, &res));
     }
+    free(gvalue);
 }
 
 /*******************************************************************************
@@ -119,27 +130,33 @@ void fvt_kv_utils_query_off(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
     uint32_t i      = 0;
     int64_t  res    = 0;
     uint32_t offset = 7;
-    uint8_t  gvalue[vbuflen+offset];
+    uint8_t *pval   = NULL;
+    uint8_t *gvalue = NULL;
+
+    if (vbuflen==0) {gvalue=(uint8_t*)malloc(1);}
+    else            {gvalue=(uint8_t*)malloc(vbuflen);}
+    ASSERT_TRUE(gvalue != NULL);
 
     ASSERT_TRUE(NULL != ark);
     ASSERT_TRUE(NULL != db);
 
     for (i=0; i<LEN; i++)
     {
+        EXPECT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
         EXPECT_TRUE(db[i].vlen <= vbuflen);
         EXPECT_EQ(0, ark_get(ark,
                              db[i].klen,
                              db[i].key,
-                             db[i].vlen,
+                             db[i].vlen-offset,
                              gvalue,
                              offset,
                              &res));
         EXPECT_EQ(db[i].vlen, res);
-        EXPECT_EQ(0, memcmp(db[i].value,gvalue,db[i].vlen));
-        EXPECT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
+        pval = (uint8_t*)db[i].value;
+        EXPECT_EQ(0, memcmp(pval+offset, gvalue, db[i].vlen - offset));
     }
+    free(gvalue);
 }
-
 
 /*******************************************************************************
  ******************************************************************************/
@@ -236,7 +253,7 @@ void fvt_kv_utils_REP_LOOP(ARK       *ark,
             /* regenerate values to each key */
             if (i%2) regen_vlen = vlen+1;
             else     regen_vlen = vlen;
-            ASSERT_EQ(0, db_regen(db, LEN, regen_vlen));
+            ASSERT_TRUE(0 == db_regen(db, LEN, regen_vlen));
         }
 
         /* load/replace all key/value pairs from the db into the ark */
@@ -260,9 +277,13 @@ void fvt_kv_utils_REP_LOOP(ARK       *ark,
  ******************************************************************************/
 void fvt_kv_utils_read(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
 {
-    uint32_t i   = 0;
-    int64_t  res = 0;
-    uint8_t  gvalue[vbuflen];
+    uint32_t i      = 0;
+    int64_t  res    = 0;
+    uint8_t *gvalue = NULL;
+
+    if (vbuflen==0) {gvalue=(uint8_t*)malloc(1);}
+    else            {gvalue=(uint8_t*)malloc(vbuflen);}
+    ASSERT_TRUE(gvalue != NULL);
 
     ASSERT_TRUE(NULL != ark);
     ASSERT_TRUE(NULL != db);
@@ -279,6 +300,7 @@ void fvt_kv_utils_read(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
                              &res));
         EXPECT_EQ(db[i].vlen, res);
     }
+    free(gvalue);
 }
 
 /*******************************************************************************

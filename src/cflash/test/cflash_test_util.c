@@ -56,6 +56,12 @@ int g_error=0;
 int g_errno=0;
 uint8_t rc_flags;
 bool long_run_enable=false;
+
+#ifdef _AIX
+// Using this flag to determine reserve_policy need to set or not
+int  irPFlag=0 ;
+#endif
+
 int static rw_cmd_loaded=0;
 int static force_dump = 0;
 //bool static cmd_cleared=false;
@@ -79,7 +85,7 @@ int get_fvt_dev_env()
     strcpy(cflash_path, fvt_dev);
     if ( NULL == LONG_RN )
     {
-        long_run=10;
+        long_run=2;
     }
     else
     {
@@ -255,6 +261,18 @@ int ctx_init(struct ctx *p_ctx)
 {
 #ifdef _AIX
     int rc = 0;
+    char str[MC_PATHLEN];
+    char diskBuf[MC_PATHLEN];
+
+    if(irPFlag == 1)
+    {
+      sprintf(str, "chdev -l %s -a reserve_policy=no_reserve",
+                  diskWithoutDev(cflash_path,diskBuf));
+      rc = system(str);
+      CHECK_RC(rc, "reserve_policy changed failed");
+      irPFlag = 0;
+    }
+
 #endif /*_AIX */
     memset(p_ctx, 0, sizeof(struct ctx));
     if ((p_ctx->fd = open_dev(cflash_path, O_RDWR)) < 0)
@@ -892,12 +910,29 @@ int wait_resp(struct ctx *p_ctx)
 
     for (i = 0; i < NUM_CMDS; i++)
     {
+#ifdef _AIX
+		struct timespec ts;
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_sec+=15;
+        pthread_mutex_lock(&p_ctx->cmd[i].mutex);
+        while (p_ctx->cmd[i].sa.host_use_b[0] != B_DONE)
+        {
+            rc=pthread_cond_timedwait(&p_ctx->cmd[i].cv, &p_ctx->cmd[i].mutex,&ts);
+			if(rc == EINVAL){
+				fprintf(stderr,"%d:timedout cmd for lba 0X%"PRIX64"\n",
+				pid, p_ctx->cmd[i].rcb.cdb[2]);
+				p_ctx->cmd[i].sa.host_use_b[0] |=B_DONE;
+			}
+        }
+        pthread_mutex_unlock(&p_ctx->cmd[i].mutex);
+#else
         pthread_mutex_lock(&p_ctx->cmd[i].mutex);
         while (p_ctx->cmd[i].sa.host_use_b[0] != B_DONE)
         {
             pthread_cond_wait(&p_ctx->cmd[i].cv, &p_ctx->cmd[i].mutex);
         }
         pthread_mutex_unlock(&p_ctx->cmd[i].mutex);
+#endif
         //force_dump=1;
         hexdump((void *)(&p_ctx->cmd[i].rcb), sizeof(p_ctx->cmd[i].rcb), "RCB data........");
         //force_dump=0;
@@ -913,7 +948,7 @@ int wait_resp(struct ctx *p_ctx)
                 p_u64 = (__u64*)&p_ctx->cmd[i].rcb.cdb[2];
                 if (p_rc != rc)
                 {
-                    hexdump(&p_ctx->cmd[i].sa.sense_data,0x20,"Sense data Writing");
+                    hexdump((void*)(&p_ctx->cmd[i].sa.sense_data),0x20,"Sense data Writing");
 
                     // copied sense_data for further use
                     memcpy((void *)p_ctx->verify_sense_data,(const void *)p_ctx->cmd[i].sa.sense_data,20);
@@ -926,7 +961,7 @@ int wait_resp(struct ctx *p_ctx)
                     if (p_ctx->cmd[i].sa.rc.scsi_rc || p_ctx->cmd[i].sa.rc.fc_rc)
                     {
                         force_dump=1;
-                        hexdump(&p_ctx->cmd[i].sa.sense_data,0x20,"Sense data Writing");
+                        hexdump((void*)(&p_ctx->cmd[i].sa.sense_data),0x20,"Sense data Writing");
                         force_dump=0;
                     }
                 }
@@ -959,7 +994,7 @@ int wait_single_resp(struct ctx *p_ctx)
             if (p_ctx->cmd[0].sa.rc.scsi_rc || p_ctx->cmd[0].sa.rc.fc_rc)
             {
                 force_dump=1;
-                hexdump(&p_ctx->cmd[0].sa.sense_data,0x20,"Sense data Writing");
+                hexdump((void*)(&p_ctx->cmd[0].sa.sense_data),0x20,"Sense data Writing");
                 force_dump=0;
             }
             printf("%d:IOASC = flags 0x%x, afu_rc 0x%x, scsi_rc 0x%x, fc_rc 0x%x\n",
@@ -2406,6 +2441,9 @@ int get_flash_disks(struct flash_disk disks[], int type)
     FILE *fptr;
     char *p_file;
     char buf[10];
+    char *ptrP = NULL;
+    char * export_disks;
+    int  exportFlag = 0;
 #ifdef _AIX
     const char *cmd ="lsdev -c disk -s capidev -t extflash |awk '{print $1}'>/tmp/flist";
 #else
@@ -2426,16 +2464,28 @@ int get_flash_disks(struct flash_disk disks[], int type)
     {
         p_file="/tmp/flist_sameAdap";
         debug("%d: List of capi disks from same adapter present in %s file\n", pid, p_file);
+
+        export_disks = (char *)getenv("FVT_DEV_SAME_ADAP");
+        if ( NULL != export_disks)
+           exportFlag = 1; // variable is exported 
     }
     else if ( type == FDISKS_SHARED )
     {
         p_file="/tmp/flist_disk_shared";
         debug("%d: List of capi disks shared with different adapter in %s file\n", pid, p_file);
+
+        export_disks = (char *)getenv("FVT_DEV_SHARED");
+        if ( NULL != export_disks)
+            exportFlag = 1; // variable is exported
     }
     else
     {
         p_file="/tmp/flist_diffAdap";
         debug("%d: List of capi disks from diff adapter present in %s file\n", pid, p_file);
+ 
+        export_disks = (char *)getenv("FVT_DEV_DIFF_ADAP");
+        if ( NULL != export_disks)
+           exportFlag = 1; // variable is exported
     }
 
     debug("%d: List of all unique capi disks present in /tmp/flist\n", pid);
@@ -2444,9 +2494,11 @@ int get_flash_disks(struct flash_disk disks[], int type)
 #ifndef _AIX
     system("rm /tmp/flist_sameAdap /tmp/flist_diffAdap /tmp/flist_disk_shared >/dev/null 2>&1");
 #endif
-    fptr = fopen(p_file, "r");
-    if (NULL == fptr)
+    if( exportFlag == 0)
     {
+      fptr = fopen(p_file, "r");
+      if (NULL == fptr )
+      {
 #ifdef _AIX
         fprintf(stderr,"%d: --------------------------------------------------------\n", pid);
         fprintf(stderr,"%d: Error opening file %s\n", pid, p_file);
@@ -2498,20 +2550,20 @@ int get_flash_disks(struct flash_disk disks[], int type)
                 errno = 0;
         }
 #endif
-    }
+       }
 
-    while (fgets(buf,10, fptr) != NULL)
-    {
-        i=0;
-        while (i < 10)
-        {
+       while (fgets(buf,10, fptr) != NULL)
+       {
+           i=0;
+          while (i < 10)
+          {
             if (buf[i] =='\n')
             {
                 buf[i]='\0';
                 break;
             }
             i++;
-        }
+          }
         sprintf(disks[count].dev,"/dev/%s",buf);
 #ifdef _AIX
         //for LINUX devno & path_id have no meaning
@@ -2521,8 +2573,20 @@ int get_flash_disks(struct flash_disk disks[], int type)
         count++;
         if (MAX_FDISK == count)
             break;
+      }
+      fclose(fptr);
     }
-    fclose(fptr);
+    else
+    {
+       ptrP = strtok( export_disks, "," );
+       while (  ptrP != NULL )
+       {
+           sprintf(disks[count].dev,"%s",ptrP);
+           count = count +1;
+           ptrP=strtok(NULL,",");
+       } 
+
+    }
     return count;
 }
 
@@ -2782,9 +2846,8 @@ int do_eeh(struct ctx *p_ctx)
     pthread_condattr_t cattrVar;
     char tmpBuff[MAXBUFF];
 
-    int    iautoEeh   = 1;
-    char * autoEehP   = getenv("AUTO_EEH");
-    if ( NULL == autoEehP )
+    char * manualEehP   = getenv("MANUAL_EEH");
+    if ( NULL != manualEehP )
     {
         while (1)
         {
@@ -2802,8 +2865,7 @@ int do_eeh(struct ctx *p_ctx)
     }
     else
     {
-        iautoEeh          = atoi(autoEehP);
-        eehCmdP->ieehLoop = iautoEeh;
+        eehCmdP->ieehLoop = 1;
         pthread_mutexattr_init(&mattrVar);
         pthread_condattr_init(&cattrVar);
         pthread_mutex_init(&eehCmdP->eeh_mutex , &mattrVar);
@@ -3219,13 +3281,13 @@ int ioctl_dk_capi_clone(struct ctx *p_ctx,uint64_t src_ctx_id,int src_adap_fd)
     clone.context_id_dst = p_ctx->context_id;
     clone.adap_fd_src = src_adap_fd;
     clone.hdr.version = p_ctx->version;
-    debug("%d:----------- Start DK_CXLFLASH_CLONE ----------\n", pid);
+    debug("%d:----------- Start DK_CXLFLASH_VLUN_CLONE ----------\n", pid);
     debug("%d:src_ctx_id=0X%"PRIX64" dst_ctx_id=0X%"PRIX64" src_adap_fd=%d\n",
           pid,src_ctx_id,p_ctx->context_id,src_adap_fd);
-    rc =ioctl(p_ctx->fd,DK_CXLFLASH_CLONE, &clone);
+    rc =ioctl(p_ctx->fd,DK_CXLFLASH_VLUN_CLONE, &clone);
     if (rc)
-        CHECK_RC(errno, "DK_CXLFLASH_CLONE failed with errno\n");
-    debug("%d:----------- Done DK_CXLFLASH_CLONE ----------\n", pid);
+        CHECK_RC(errno, "DK_CXLFLASH_VLUN_CLONE failed with errno\n");
+    debug("%d:----------- Done DK_CXLFLASH_VLUN_CLONE ----------\n", pid);
 #endif
     return rc;
 }
@@ -4742,3 +4804,67 @@ xerror:
     return rc;
 }
 
+#ifdef _AIX
+
+int setRUnlimited()
+{
+    struct rlimit val;
+
+    val.rlim_cur = RLIM_INFINITY;
+    val.rlim_max = RLIM_INFINITY;
+
+    if (setrlimit(RLIMIT_DATA, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+       return 1;
+    }
+
+    if (setrlimit(RLIMIT_AS, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+       return 1;
+    }
+    if (setrlimit(RLIMIT_CORE, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+
+       return 1;
+    }
+    if (setrlimit(RLIMIT_CPU, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+
+       return 1;
+    }
+    if (setrlimit(RLIMIT_FSIZE, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+
+       return 1;
+    }
+    if (setrlimit(RLIMIT_STACK, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+
+       return 1;
+    }
+    if (setrlimit(RLIMIT_RSS, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+
+       return 1;
+    }
+
+        if (setrlimit(RLIMIT_NOFILE, &val) != 0) {
+       printf("setRlimit failed with errno=%d\n", errno);
+
+       return 1;
+    }
+
+    return 0;
+}
+
+char * diskWithoutDev(char * source , char * destination )
+{
+    char temp[MC_PATHLEN];
+    strcpy(temp,source);
+    destination = strtok(temp,"/");
+    destination = strtok(NULL,"/");
+    return destination;
+}
+
+
+#endif

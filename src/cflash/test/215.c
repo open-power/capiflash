@@ -88,12 +88,20 @@ int ioctl_7_1_215( int flag )
     struct ctx *p_ctx1 = &myctx1, *temp=&myctx2;
     pthread_t thread;
     struct flash_disk disks[MAX_FDISK];
+    int cfdisk = 0;
 
     __u64 flags=0;
 
     memset(temp, 0, sizeof(struct ctx));
 
-    get_flash_disks(disks, FDISKS_SAME_ADPTR );
+    cfdisk = get_flash_disks(disks, FDISKS_SAME_ADPTR);
+    if (cfdisk < 2)
+    {
+        fprintf(stderr,"Must have 2 flash disks..\n");
+        TESTCASE_SKIP("Need disk from same adapter");
+        return 0;
+    }
+
     // creating first context
     rc = ctx_init2(p_ctx, disks[0].dev, flags, p_ctx->devno);
     // initializing a dummy context for second disk, to use it as temporary, context

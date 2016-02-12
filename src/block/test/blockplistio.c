@@ -28,18 +28,14 @@
  * \brief Block Interface Pending List I/O Driver
  * \details
  *   This runs I/O to the capi Block Interface using List IO and pending
- *   lists. After the cmds are issued using an IO list, the IO list is
- *   copied to a pending list and completions are queried. After each cmd
- *   completion query, those cmds which have completed are taken out of the
- *   pending list... until all cmds are complete.                             \n
- *   The expected iops are 300k-400k per capi card.                           \n
+ *   lists. The expected iops are 300k-400k per capi card.                    \n
  *   Example:                                                                 \n
  *                                                                            \n
  *     blockplistio -d /dev/sg5                                               \n
- *     d:/dev/sg10 l:5 c:1000 p:0 s:5 i:0 err:0 mbps:1389 iops:355838         \n
+ *     d:/dev/sg34 l:1 c:120 p:0 s:5 i:0 tmiss:9 mbps:1498 iops:383657        \n
  *                                                                            \n
  *     blockplistio -d /dev/sg10 -s 20 -l 1 -c 1 -p -i                        \n
- *     d:/dev/sg10 l:1 c:1 p:1 s:20 i:1 err:0 mbps:3 iops:921
+ *     d:/dev/sg34 l:1 c:1 p:1 s:20 i:1 tmiss:18620996 mbps:18 iops:4760
  *******************************************************************************
  */
 #include <stdlib.h>
@@ -58,8 +54,8 @@
 #define _8K   8*1024
 #define _4K   4*1024
 
-#define TIME_INTERVAL _8K
-#define SET_NBLKS     TIME_INTERVAL*4
+#define TIME_INTERVAL 1024
+#define SET_NBLKS     260*1024
 
 #ifdef _AIX
 #define USLEEP 100
@@ -79,8 +75,15 @@ typedef struct
     uint32_t    do_send;
     uint32_t    do_cmp;
     uint32_t    ncmp;
+    uint32_t    nI;
     uint32_t    nP;
 } listio_t;
+
+/**
+********************************************************************************
+** \brief bump lba, reset lba if it wraps
+*******************************************************************************/
+#define BMP_LBA() lba+=2; if (lba >= nblks) {lba=lrand48()%nblks;}
 
 /**
 ********************************************************************************
@@ -142,19 +145,19 @@ int main(int argc, char **argv)
     char           *_NL        = NULL;
     char           *_LD        = NULL;
     uint32_t        nsecs      = 5;
-    uint32_t        NL         = 40;
-    uint32_t        LD         = 100;
+    uint32_t        NL         = 1;
+    uint32_t        LD         = 120;
     uint32_t        intrp_thds = 0;
     uint32_t        plun       = 0;
     int             tag        = 0;
+    int             nC         = LD;
     uint32_t        cnt        = 0;
     size_t          nblks      = 0;
-    uint32_t        pollN      = 0;
-    int32_t         ncmp       = 0;
     uint32_t        TI         = TIME_INTERVAL;
     uint32_t        N          = 0;
     uint32_t        TIME       = 1;
-    uint32_t        COMP       = 0;
+    uint32_t        miss       = 0;
+    uint32_t        tmiss      = 0;
     uint32_t        lba        = 0;
     uint32_t        p_i        = 0;
     listio_t       *lio        = NULL;
@@ -189,13 +192,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "-l %d * -c %d cannot be greater than 8k\n", NL, LD);
         usage();
     }
-    N    = NL;
-    COMP = N < 3 ? 1 : N/3;
 
     /*--------------------------------------------------------------------------
      * open device and set lun size
      *------------------------------------------------------------------------*/
-   rc = cblk_init(NULL,0);
+    rc = cblk_init(NULL,0);
     if (rc)
     {
         fprintf(stderr,"cblk_init failed with rc = %d and errno = %d\n",
@@ -269,6 +270,7 @@ int main(int argc, char **argv)
                 cblk_term(NULL,0);
                 exit(0);
             }
+            lio[i].ncmp   = LD;
             lio[i].ioI[j] = lio[i].p_ioI+j;
             lio[i].ioP[j] = lio[i].p_ioP+j;
             lio[i].ioC[j] = lio[i].p_ioC+j;
@@ -288,100 +290,81 @@ int main(int argc, char **argv)
 
     do
     {
-        /*----------------------------------------------------------------------
-         * send up to RD reads, as long as the queuedepth N is not max
-         *--------------------------------------------------------------------*/
-        while (TIME && N)
-        {
-            if (!lio[tag].do_send) {if (++tag == NL) tag = 0; continue;}
+        lio[tag].nI   = 0;
+        lio[tag].ncmp = 0;
+        nC            = LD;
 
-            lio[tag].do_send = 0;
-            lio[tag].do_cmp  = 1;
-            lio[tag].ncmp    = 0;
-            ncmp             = LD;
-            N               -= 1;
-            memset(lio[tag].p_ioC, 0, LD*sizeof(cblk_io_t));
-            rc = cblk_listio(id, lio[tag].ioI,LD,
-                                 NULL,0,
-                                 NULL,0,
-                                 lio[tag].ioC, &ncmp,
-                                 0,0);
-            if (rc == -1) io_error(id, "SEND", errno);
+        /* if time is up and there are no pending ops for this tag, skip */
+        if (!TIME && lio[tag].nP == 0) {if (++tag >= NL) tag = 0; continue;}
+
+        if (TIME)
+        {
+            /* set lba to issue LD-nP more reads */
+            for (lio[tag].nI=0; lio[tag].nI<LD-lio[tag].nP; lio[tag].nI++)
+            {
+                lio[tag].ioI[lio[tag].nI]->lba = lba;
+                BMP_LBA();
+            }
         }
-        if (NL==1) usleep(USLEEP);
 
-        /*----------------------------------------------------------------------
-         * complete cmds until queue depth is QD-COMP
-         *--------------------------------------------------------------------*/
-        while (N < COMP)
+        rc = cblk_listio(id, lio[tag].ioI, lio[tag].nI,
+                             lio[tag].ioP, lio[tag].nP,
+                             NULL,0,
+                             lio[tag].ioC, &nC,
+                             0,0);
+        if (rc == -1) {io_error(id, "COMP", errno);}
+
+        N += lio[tag].nI;
+
+        /*--------------------------------------------------------------
+         * collapse the pending list to only the pending cmds
+         *------------------------------------------------------------*/
+        p_i = 0;
+        for (i=0; i<lio[tag].nP; i++)
         {
-            if (!lio[tag].do_cmp) {if (++tag == NL) tag = 0; continue;}
-
-            if (0 == lio[tag].nP)
+            if (lio[tag].ioP[i]->stat.status == -1)
+                {io_error(id, "status==-1", -1);}
+            else if (lio[tag].ioP[i]->stat.status ==CBLK_ARW_STATUS_SUCCESS)
+                {++cnt; ++lio[tag].ncmp; miss=0;}
+            else if (lio[tag].ioP[i]->stat.status == CBLK_ARW_STATUS_FAIL)
+                {io_error(id, "CMD FAIL",lio[tag].ioP[i]->stat.fail_errno);}
+            else if (lio[tag].ioP[i]->stat.status ==CBLK_ARW_STATUS_PENDING)
             {
-                memcpy(lio[tag].p_ioP, lio[tag].p_ioI, LD*sizeof(cblk_io_t));
-                lio[tag].ncmp   = 0;
-                lio[tag].nP     = LD;
-                ncmp            = LD;
-            }
-            else
-            {
-                ncmp = lio[tag].nP;
-            }
-
-            memset(lio[tag].p_ioC, 0, LD*sizeof(cblk_io_t));
-            rc = cblk_listio(id, NULL,0,
-                                 lio[tag].ioP, lio[tag].nP,
-                                 NULL,0,
-                                 lio[tag].ioC, &ncmp,
-                                 0,0);
-            if (rc == -1) io_error(id, "COMP", errno);
-
-            for (i=0; i<lio[tag].nP; i++)
-            {
-                if      (lio[tag].ioC[i]->stat.status ==CBLK_ARW_STATUS_PENDING)
-                    {continue;}
-                else if (lio[tag].ioC[i]->stat.status == -1)
-                    {io_error(id, "status==-1", -1);}
-                else if (lio[tag].ioC[i]->stat.status ==CBLK_ARW_STATUS_SUCCESS)
-                    {lba+=2; if (lba >= nblks) lba=cnt%2;
-                    ++lio[tag].ncmp; lio[tag].ioI[i]->lba = lba;}
-                else if (lio[tag].ioC[i]->stat.status == CBLK_ARW_STATUS_FAIL)
-                    {io_error(id, "CMD FAIL",lio[tag].ioC[i]->stat.fail_errno);}
+                if (i==p_i) {++p_i; continue;}
                 else
-                    {io_error(id, "CMD ELSE",lio[tag].ioC[i]->stat.status);}
-            }
-            if (lio[tag].ncmp == LD)
-            {
-                /* all cmds complete */
-                lio[tag].do_send = 1;
-                lio[tag].do_cmp  = 0;
-                lio[tag].nP      = 0;
-                cnt += LD;
-                N   += 1;
+                {
+                    memcpy(lio[tag].ioP[p_i++],
+                           lio[tag].ioP[i], sizeof(cblk_io_t));
+                }
             }
             else
-            {
-                /*--------------------------------------------------------------
-                 * collapse the pending list to only the pending cmds
-                 *------------------------------------------------------------*/
-                p_i = 0;
-                for (i=0; i<lio[tag].nP; i++)
-                {
-                    if (lio[tag].ioP[i]->stat.status == CBLK_ARW_STATUS_PENDING)
-                    {
-                        if (i==p_i) {++p_i; continue;}
-                        else        {memcpy(lio[tag].ioP[p_i++],
-                                            lio[tag].ioP[i],
-                                            sizeof(cblk_io_t));}
-                    }
-                }
-                lio[tag].nP = p_i;
-                usleep(USLEEP);
-                ++pollN;
-            }
-            if (++tag == NL) tag = 0;
+                {io_error(id, "PEN CMD ELSE",lio[tag].ioP[i]->stat.status);}
         }
+        /*--------------------------------------------------------------
+         * copy the newly issued pending cmds to the pending list
+         *------------------------------------------------------------*/
+        for (i=0; i<lio[tag].nI; i++)
+        {
+            if (lio[tag].ioI[i]->stat.status == -1)
+                {io_error(id, "status==-1", -1);}
+            else if (lio[tag].ioI[i]->stat.status ==CBLK_ARW_STATUS_SUCCESS)
+                {++cnt; ++lio[tag].ncmp; miss=0;}
+            else if (lio[tag].ioI[i]->stat.status == CBLK_ARW_STATUS_FAIL)
+                {io_error(id, "CMD FAIL",lio[tag].ioI[i]->stat.fail_errno);}
+            else if (lio[tag].ioI[i]->stat.status ==CBLK_ARW_STATUS_PENDING)
+                {memcpy(lio[tag].ioP[p_i++],lio[tag].ioI[i],sizeof(cblk_io_t));}
+            else
+                {io_error(id, "ISS CMD ELSE",lio[tag].ioI[i]->stat.status);}
+        }
+        lio[tag].nP = p_i;
+
+        if      (lio[tag].ncmp == 0)  {++miss; ++tmiss;}
+        else if (lio[tag].ncmp == LD) {miss=0;}
+
+        if (NL==1 && LD==1 && !lio[tag].ncmp && miss==1) {usleep(80);}
+
+        N -= lio[tag].ncmp;
+        if (++tag >= NL) tag = 0;
 
         /*----------------------------------------------------------------------
          * at an interval which does not impact performance, check if secs
@@ -391,11 +374,11 @@ int main(int argc, char **argv)
         {
             TI += TIME_INTERVAL;
             gettimeofday(&delta, NULL);
-            if (delta.tv_sec - start.tv_sec >= nsecs) {TIME=0; COMP=NL;}
-            lba = lrand48() % TIME_INTERVAL;
+            if (delta.tv_sec - start.tv_sec >= nsecs) {TIME=0;}
+            lba = lrand48() % nblks;
         }
     }
-    while (TIME || NL-N);
+    while (TIME || N);
 
     /*--------------------------------------------------------------------------
      * print IO stats
@@ -403,8 +386,8 @@ int main(int argc, char **argv)
     gettimeofday(&delta, NULL);
     esecs = ((float)((delta.tv_sec*mil + delta.tv_usec) -
                      (start.tv_sec*mil + start.tv_usec))) / (float)mil;
-    printf("d:%s l:%d c:%d p:%d s:%d i:%d pollN:%d mbps:%d iops:%d\n",
-            dev, NL, LD, plun, nsecs, intrp_thds, pollN,
+    printf("d:%s l:%d c:%d p:%d s:%d i:%d tmiss:%d mbps:%d iops:%d\n",
+            dev, NL, LD, plun, nsecs, intrp_thds, tmiss,
             (uint32_t)((float)(cnt*4)/1024/esecs),
             (uint32_t)((float)cnt/esecs));
 

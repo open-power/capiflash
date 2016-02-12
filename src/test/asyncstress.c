@@ -38,72 +38,7 @@
 #include <pthread.h>
 #include <cflash_tools_user.h>
 #include <sys/time.h>
-
-static __inline__ uint64_t getticks(void)
-{
-     unsigned int x, x0, x1;
-     do {
-	  __asm__ __volatile__ ("mftbu %0" : "=r"(x0));
-	  __asm__ __volatile__ ("mftb %0" : "=r"(x));
-	  __asm__ __volatile__ ("mftbu %0" : "=r"(x1));
-     } while (x0 != x1);
-
-     return (((uint64_t)x0) << 32) | x;
-}
-static __inline__ double elapsed(uint64_t t1, uint64_t t0)			
-{									
-  return (double)t1 - (double)t0;					
-}
-double time_diff(struct timeval x , struct timeval y)
-{
-    double x_ms , y_ms , diff;
-     
-    x_ms = (double)x.tv_sec*1000000 + (double)x.tv_usec;
-    y_ms = (double)y.tv_sec*1000000 + (double)y.tv_usec;
-     
-    diff = (double)y_ms - (double)x_ms;
-     
-    return diff;
-}
-
-double time_per_tick(int n, int del) {
-  int i;
-
-  double *td = malloc(n * sizeof(double));
-  double *tv = malloc(n * sizeof(double));
-
-  struct timeval tvs;
-  struct timeval tve;
-
-  uint64_t  ts;
-  uint64_t te;
-
-  for (i=0; i<n; i++) {
-
-    gettimeofday(&tvs, NULL);
-    ts = getticks();
-
-    usleep(del);
-
-    te = getticks();
-    gettimeofday(&tve, NULL);
-
-    td[i] = elapsed(te,ts);
-    tv[i] = time_diff(tvs,tve);
-  }
-
-  double sum = 0.0;
-
-  for(i=0; i<n; i++) {
-
-    sum +=  1000.0 * tv[i] / td[i];
-
-    //printf("ticks, %15g, time, %15g, ticks/usec, %15g, nsec/tick, %15g\n", td[i], tv[i], td[i] / tv[i], 1000.0 * tv[i] / td[i]);
-    
-  }
-  return sum / n ;
-
-}  
+#include <ut.h>
 
 //#define PRI(wh, args...) fprintf(wh, ##args)
 #define PRI(wh, args...) 
@@ -235,11 +170,11 @@ int main(int argc, char **argv) {
   uint64_t *op_stop  = malloc(num_asyncs * sizeof(uint64_t));
   
 
-  uint64_t rop_min = 0x7fffffffffffffff;
+  uint64_t rop_min = UINT64_C(0x7fffffffffffffff);
   uint64_t rop_max = 0;
   uint64_t rop_sum = 0;
   uint64_t rop_cnt = 0;
-  uint64_t wop_min = 0x7fffffffffffffff;
+  uint64_t wop_min = UINT64_C(0x7fffffffffffffff);
   uint64_t wop_max = 0;
   uint64_t wop_sum = 0;
   uint64_t wop_cnt = 0;

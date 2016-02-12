@@ -85,6 +85,8 @@ do                                                                             \
     char *env_verbosity = getenv("KV_TRC_VERBOSITY");                          \
     char *env_user      = getenv("USER");                                      \
     char  fn[STRLEN+1]  = {0};                                                 \
+    int   pid           = getpid();                                            \
+    struct timeb _cur_time;                                                    \
                                                                                \
     if (NULL == _pKT) break;                                                   \
                                                                                \
@@ -113,6 +115,22 @@ do                                                                             \
     }                                                                          \
     else                                                                       \
     {                                                                          \
+        if (!_pKT->start_time_valid)                                           \
+        {                                                                      \
+            ftime(&_cur_time);                                                 \
+            _pKT->start_time       = _cur_time;                                \
+            _pKT->start_time_valid = 1;                                        \
+            fprintf(_pKT->logfp,"----------------------------------------------\
+---------------------------------\n");                                         \
+            fprintf(_pKT->logfp,"START:%d Date is %s at %s\n",                 \
+                    pid, __DATE__,__TIME__);                                   \
+            fprintf(_pKT->logfp,"%-9s %-6s %10s %10s %-30s %-25s\n",           \
+     "  PID", "Index", "sec.msec", "delta.dmsec", "Line:Filename", "Function");\
+            fprintf(_pKT->logfp,"----------------------------------------------\
+---------------------------------\n");                                         \
+        }                                                                      \
+        fprintf(_pKT->logfp,"OPEN:  PID:%d Date is %s at %s\n",                \
+                            getpid(), __DATE__,__TIME__);                      \
         ++_pKT->init_done;                                                     \
         if (env_verbosity) {_pKT->verbosity = atoi(env_verbosity);}            \
     }                                                                          \
@@ -141,11 +159,8 @@ do                                                                             \
     {                                                                          \
         if (_pKT->start_time_valid)                                            \
         {                                                                      \
-            fprintf(_pKT->logfp,"----------------------------------------------\
------------------------------\n");                                             \
-            fprintf(_pKT->logfp,"DONE: Date is %s at %s\n",__DATE__,__TIME__); \
-            fprintf(_pKT->logfp,"----------------------------------------------\
------------------------------\n");                                             \
+            fprintf(_pKT->logfp,"CLOSE: PID:%d Date is %s at %s\n",            \
+                                getpid(), __DATE__,__TIME__);                  \
         }                                                                      \
         fflush(_pKT->logfp);                                                   \
         fclose(_pKT->logfp);                                                   \
@@ -165,6 +180,7 @@ close_unlock:                                                                  \
 do                                                                             \
 {                                                                              \
     char         _str[STRLEN] = {0};                                           \
+    int          pid          = getpid();                                      \
     struct timeb _cur_time, _log_time, _delta_time;                            \
                                                                                \
     if (EYEC_INVALID(_pKT))  break;                                            \
@@ -175,32 +191,14 @@ do                                                                             \
                                                                                \
     ftime(&_cur_time);                                                         \
                                                                                \
-    if (!_pKT->start_time_valid)                                               \
-    {                                                                          \
-        _pKT->start_time       = _cur_time;                                    \
-        _pKT->start_time_valid = 1;                                            \
-        _log_time.time         = 0;                                            \
-        _log_time.millitm      = 0;                                            \
-        _delta_time.time       = 0;                                            \
-        _delta_time.millitm    = 0;                                            \
-        fprintf(_pKT->logfp,"--------------------------------------------------\
----------------------------------\n");                                         \
-        fprintf(_pKT->logfp,"BEGIN: Date is %s at %s\n",__DATE__,__TIME__);    \
-        fprintf(_pKT->logfp,"%-8s %13s %10s %-30s %-25s\n",                    \
-        "Index", "sec.msec", "delta.dmsec", "Line:Filename", "Function");      \
-        fprintf(_pKT->logfp,"--------------------------------------------------\
----------------------------------\n");                                         \
-    }                                                                          \
-    else                                                                       \
-    {                                                                          \
-        /* Find time offset since starting time */                             \
-        _log_time.time      = _cur_time.time    - _pKT->start_time.time;       \
-        _log_time.millitm   = _cur_time.millitm - _pKT->start_time.millitm;    \
-        _delta_time.time    = _log_time.time    - _pKT->last_time.time;        \
-        _delta_time.millitm = _log_time.millitm - _pKT->last_time.millitm;     \
-    }                                                                          \
+    /* Find time offset since starting time */                                 \
+    _log_time.time      = _cur_time.time    - _pKT->start_time.time;           \
+    _log_time.millitm   = _cur_time.millitm - _pKT->start_time.millitm;        \
+    _delta_time.time    = _log_time.time    - _pKT->last_time.time;            \
+    _delta_time.millitm = _log_time.millitm - _pKT->last_time.millitm;         \
                                                                                \
-    fprintf(_pKT->logfp,"%-6d %5d.%05d %5d.%05d ",                             \
+    fprintf(_pKT->logfp,"  %-9d %-6d %5d.%05d %5d.%05d ",                      \
+            pid,                                                               \
             _pKT->log_number,                                                  \
             (int)_log_time.time,                                               \
             _log_time.millitm,                                                 \

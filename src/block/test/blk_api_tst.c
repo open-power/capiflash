@@ -511,7 +511,7 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *r
 
     align = (io_flags & FV_ALIGN_BUFS) ? 1: 0;
     arflag = (io_flags & FV_ARESULT_BLOCKING) ? CBLK_ARESULT_BLOCKING : 0;
-    arflag |= (io_flags & FV_ARESULT_NEXT_TAG) ? FV_ARESULT_NEXT_TAG : 0;
+    arflag |= (io_flags & FV_ARESULT_NEXT_TAG) ? CBLK_ARESULT_NEXT_TAG : 0;
 
     switch  (cmd) {
         case FV_READ:
@@ -674,6 +674,7 @@ blk_fvt_intrp_io_tst(chunk_id_t id,
             break;
         case 6:
             io_flags |= CBLK_ARW_USER_STATUS_FLAG|CBLK_ARW_WAIT_CMD_FLAGS|CBLK_ARW_USER_TAG_FLAG;
+            tag=77;
             break;
 
         default:
@@ -1286,6 +1287,131 @@ void blocking_io_tst (chunk_id_t id, int *ret, int *err)
 
     *ret = rc;
     *err = errno;
+
+    return;
+}
+
+#define NBUFS 10
+
+void user_tag_io_tst (chunk_id_t id, int *ret, int *err)
+{
+    int      rc        = -1;
+    uint64_t ar_status = 0;
+    uint64_t lba       = 0;
+    size_t   nblocks   = 1;
+    int      i         = 0;
+    int      iter      = 0;
+    int      tag       = 0;
+    int      arflg     = 0;
+    char    *data_buf[NBUFS];
+
+    errno = 0;
+    memset(data_buf, 0, sizeof(data_buf));
+    blk_fvt_comp_data_buf = NULL;
+
+START:
+    for (i=0; i<NBUFS; i++)
+    {
+        /* Align write buffers on page boundary */
+        if (posix_memalign((void *)(data_buf+i),4096,BLK_FVT_BUFSIZE))
+        {
+            perror("posix_memalign failed for data buffer");
+            rc=-1;
+            goto exit;
+        }
+        memset(*(data_buf+i), i+1, BLK_FVT_BUFSIZE);
+    }
+    /* Align read buffer on page boundary */
+    if (posix_memalign((void *)&blk_fvt_comp_data_buf,4096,BLK_FVT_BUFSIZE))
+    {
+        perror("posix_memalign failed for comp data buffer");
+        rc=-1;
+        goto exit;
+    }
+    bzero(blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE);
+
+    arflg = CBLK_ARW_WAIT_CMD_FLAGS | CBLK_ARW_USER_TAG_FLAG;
+
+    /* do writes */
+    lba = 1;
+    for (i=0; i<NBUFS; i++,lba++)
+    {
+        tag=lba;
+        rc = cblk_awrite(id, *(data_buf+i), lba, nblocks, &tag, NULL, arflg);
+        DEBUG_3("\n***** cblk_awrite rc = 0x%d, tag = %d, lba =0x%lx\n",
+                rc, tag, lba);
+        if (rc < 0)
+        {
+            DEBUG_3("awrite failed for  lba = 0x%lx, rc = %d, errno = %d\n",
+                    lba,rc,errno);
+            goto exit;
+        }
+    }
+
+    arflg = CBLK_ARESULT_USER_TAG | CBLK_ARESULT_BLOCKING;
+
+    /* do completions in the reverse order that they were sent */
+    for (i=NBUFS; i>0; i--)
+    {
+        tag = i;
+        rc  = cblk_aresult(id, &tag, &ar_status, arflg);
+        if (rc != 1)
+        {
+            DEBUG_1("aresult error = %d\n",errno);
+            rc=-1;
+            goto exit;
+        }
+        DEBUG_2("\n***** cblk_aresult rc = 0x%d, tag = %d\n", rc, i);
+    }
+
+    /* do read-compares */
+    lba = 1;
+    for (i=0; i<NBUFS; i++,lba++)
+    {
+        tag   = 5+i;
+        arflg = CBLK_ARW_WAIT_CMD_FLAGS | CBLK_ARW_USER_TAG_FLAG;
+        rc    = cblk_aread(id, blk_fvt_comp_data_buf, lba, nblocks, &tag,
+                        NULL, arflg);
+        DEBUG_3("\n***** cblk_aread rc = 0x%d, tag = %d, lba =0x%lx\n",
+                rc, tag, lba);
+        if (rc < 0)
+        {
+            DEBUG_3("aread failed for  lba = 0x%lx, rc = %d, errno = %d\n",
+                    lba,rc,errno);
+            goto exit;
+        }
+
+        arflg = CBLK_ARESULT_USER_TAG | CBLK_ARESULT_BLOCKING;
+
+        rc = cblk_aresult(id, &tag, &ar_status, arflg);
+        if (rc != 1)
+        {
+            DEBUG_1("aresult error = %d\n",errno);
+            rc=-1;
+            goto exit;
+        }
+        DEBUG_2("\n***** cblk_aresult rc = 0x%d, tag = %d\n", rc, tag);
+        if (memcmp(blk_fvt_comp_data_buf, *(data_buf+i), BLK_FVT_BUFSIZE) != 0)
+        {
+            printf("miscompare for tag: %d\n", tag);
+            rc=-1;
+            goto exit;
+        }
+    }
+
+    if (++iter < 3) goto START;
+
+exit:
+    *ret = rc;
+    *err = errno;
+
+    for (i=0; i<NBUFS; i++)
+    {
+        if (*(data_buf+i))
+        {
+            free(*(data_buf+i));
+        }
+    }
 
     return;
 }

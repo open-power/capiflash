@@ -43,7 +43,7 @@ VPATH   += ..
 
 BTESTS=_tst_ark _tst_kv_utils _tst_persist test_perf \
        res_pers run_kv_async run_kv_sync run_kv_async_multi \
-       run_kv_benchmark
+       run_kv_benchmark run_kv_persist
 
 BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
 

@@ -63,6 +63,8 @@ _AFU_IMAGES_DIR=${AFU_ROOT}/images
 _MAN_DIR=${PREFIX}/usr/share/man/man3
 _SYSTEMD_DIR=${PREFIX}/usr/lib/systemd/system
 _UDEV_RULES_DIR=${PREFIX}/lib/udev/rules.d
+IMAGE="${_RESOURCEDIR}/corsa*"
+IMAGEH="${_RESOURCEDIR}/1410*"
 all:
 	rm -rf ${INSTALL_ROOT}
 	${MAKE} capikv capikv-test afuimage
@@ -105,6 +107,8 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/blockplistio ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_async64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_sync64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/run_kv_persist64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/run_kv_benchmark64 ${_BIN_DIR}
 else
 	${INSTALL} -s ${PGMDIR}/cxlfd ${_BIN_DIR}
 	${INSTALL} -s ${PGMDIR}/cxlflashutil ${_BIN_DIR}
@@ -116,6 +120,8 @@ else
 	${INSTALL} -s ${_TESTSRCDIR}/blockplistio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_sync ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_async ${_BIN_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/run_kv_persist ${_BIN_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/run_kv_benchmark ${_BIN_DIR}
 
 	${INSTALL} ${_RESOURCEDIR}/cxlfrefreshluns ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cablecheck ${_BIN_DIR}
@@ -124,7 +130,7 @@ else
 	${INSTALL} ${_RESOURCEDIR}/capikvutils.sh ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/setup.sh ${_BIN_DIR}
 
-	
+
 	#TEMPORARY install - remove this after kernel driver can run workaround
 	${INSTALL} ${_RESOURCEDIR}/afucfg.sh ${_BIN_DIR}
 
@@ -148,6 +154,7 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/block/test/blockplistio.c ${_EXAMPLES_DIR}
 	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_async.c ${_EXAMPLES_DIR}
 	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_sync.c ${_EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_persist.c ${_EXAMPLES_DIR}
 
 	@#Licenses
 	${INSTALL} ${_RESOURCEDIR}/license/*.txt ${_LIC_DIR}
@@ -157,6 +164,7 @@ else
 	${INSTALL} -m 644 ${ROOTPATH}/src/block/test/blockplistio.c ${_EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_async.c ${_EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_sync.c ${_EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_persist.c ${_EXAMPLES_DIR}
 
 	@#Licenses
 	${INSTALL} -m 644 ${_RESOURCEDIR}/license/*.txt ${_LIC_DIR}
@@ -185,7 +193,6 @@ capikv-test:
 	${INSTALL} ${_TESTSRCDIR}/run_fvt ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_block_fvt ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_async_multi ${_TEST_DIR}
-	${INSTALL} ${_TESTSRCDIR}/run_kv_benchmark ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_io ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_mcio ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_mc_aio ${_TEST_DIR}
@@ -210,7 +217,6 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/run_fvt64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_block_fvt64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_async_multi64 ${_TEST_DIR}
-	${INSTALL} ${_TESTSRCDIR}/run_kv_benchmark64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_io64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_mcio64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_mc_aio64 ${_TEST_DIR}
@@ -248,7 +254,16 @@ else #Linux only
 	${INSTALL} ${_RESOURCEDIR}/flash_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/reload_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/psl_trace_dump ${AFU_ROOT}
+#install if image PAPR header is promoted
+ifneq ("$(wildcard ${_RESOURCEDIR}/1410*)","")
+	${INSTALL} ${_RESOURCEDIR}/1410* ${_AFU_IMAGES_DIR}
 endif
+
+#install if image without header is promoted
+ifneq ("$(wildcard ${_RESOURCEDIR}/corsa*)","")
 	${INSTALL} ${_RESOURCEDIR}/corsa* ${_AFU_IMAGES_DIR}
+endif
+
+endif
 
 include ${ROOTPATH}/config.mk

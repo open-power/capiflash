@@ -26,23 +26,30 @@
  *******************************************************************************
  * \file
  * \brief
- *   Simple test cases for kv FVT
- * \ingroup
+ *   Error test cases for kv FVT
  ******************************************************************************/
 #include <gtest/gtest.h>
 
 extern "C"
 {
 #include <fvt_kv.h>
-#include <fvt_kv_inject.h>
 #include <fvt_kv_utils.h>
 #include <fvt_kv_utils_async_cb.h>
 #include <fvt_kv_utils_ark_io.h>
+#include <kv_inject.h>
+#include <ark.h>
+#include <am.h>
+#include <bl.h>
+#include <errno.h>
 
 ARK     *async_ark = NULL;
 uint32_t async_io  = 0;
 int32_t  async_err = 0;
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 void kv_tst_io_errors_cb(int errcode, uint64_t dt, int64_t res)
 {
     --async_io;
@@ -302,9 +309,9 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
     uint32_t klen = 8;
     int64_t  res  = 0;
 
-    FVT_KV_SET_INJECT_ACTIVE;
+    KV_SET_INJECT_ACTIVE;
 
-    errno=0; FVT_KV_INJECT_ALLOC_ERROR;
+    errno=0; KV_INJECT_ALLOC_ERROR;
     ASSERT_EQ(ENOMEM, ark_create(getenv("FVT_DEV"), 
                                  &async_ark, ARK_KV_VIRTUAL_LUN));
 
@@ -313,19 +320,19 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
     EXPECT_TRUE(async_ark != NULL);
 
     /* sync */
-    errno=0; FVT_KV_INJECT_ALLOC_ERROR;
+    errno=0; KV_INJECT_ALLOC_ERROR;
     EXPECT_EQ(ENOMEM, ark_set(async_ark, klen, s, klen, s, &res));
     EXPECT_EQ(ENOENT, ark_get(async_ark, klen, s, klen, s, 0, &res));
 
     EXPECT_EQ(0, ark_set(async_ark, klen, s, klen, s, &res));
     EXPECT_EQ(0, ark_get(async_ark, klen, s, klen, s, 0, &res));
 
-    errno=0; FVT_KV_INJECT_ALLOC_ERROR;
+    errno=0; KV_INJECT_ALLOC_ERROR;
     EXPECT_EQ(ENOMEM, ark_del(async_ark, klen, s, &res));
     EXPECT_EQ(0,      ark_del(async_ark, klen, s, &res));
 
     errno=0; ++async_io; async_err = ENOMEM;
-    FVT_KV_INJECT_ALLOC_ERROR;
+    KV_INJECT_ALLOC_ERROR;
     EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee1));
     while (async_io) usleep(50000);
@@ -346,7 +353,7 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = ENOMEM;
-    FVT_KV_INJECT_ALLOC_ERROR;
+    KV_INJECT_ALLOC_ERROR;
     EXPECT_EQ(0, ark_del_async_cb(async_ark, klen, s,
                                   kv_tst_io_errors_cb, 0xfee5));
     while (async_io) usleep(50000);
@@ -356,7 +363,7 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
                                   kv_tst_io_errors_cb, 0xfee6));
     while (async_io) usleep(50000);
 
-    errno=0; FVT_KV_SET_INJECT_INACTIVE;
+    errno=0; KV_SET_INJECT_INACTIVE;
     ASSERT_EQ(0, ark_delete(async_ark));
 }
 
@@ -366,29 +373,61 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
  ******************************************************************************/
 TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
 {
-    char     s[]  = {"12345678"};
-    uint32_t klen = 8;
-    int64_t  res  = 0;
+    char           s[]      = {"12345678"};
+    uint32_t       klen     = 8;
+    int64_t        res      = 0;
+    char          *path     = getenv("FVT_DEV");
+    char           data[KV_4K];
+    ark_io_list_t *bl_array = NULL;
+    _ARK          *arkp     = NULL;
 
-    FVT_KV_SET_INJECT_ACTIVE;
+    KV_SET_INJECT_ACTIVE;
 
-    ASSERT_EQ(0, ark_create(getenv("FVT_DEV"), &async_ark, ARK_KV_VIRTUAL_LUN));
+    ASSERT_EQ(0, ark_create(path, &async_ark, ARK_KV_VIRTUAL_LUN));
     EXPECT_TRUE(async_ark != NULL);
 
+    arkp = (_ARK*)async_ark;
+
+    bl_array = bl_chain_blocks(arkp->bl, 0, 1);
+    ASSERT_TRUE(NULL != bl_array);
+
+    errno=0; KV_INJECT_SCHD_READ_ERROR;
+    EXPECT_EQ(5, ea_async_io(arkp->ea, ARK_EA_READ, &data, bl_array, 1, 1));
+
+    errno=0; KV_INJECT_SCHD_WRITE_ERROR;
+    EXPECT_EQ(5, ea_async_io(arkp->ea, ARK_EA_WRITE, &data, bl_array, 1, 1));
+
+    errno=0; KV_INJECT_HARV_READ_ERROR;
+    EXPECT_EQ(5, ea_async_io(arkp->ea, ARK_EA_READ,  &data, bl_array, 1, 1));
+
+    errno=0; KV_INJECT_HARV_WRITE_ERROR;
+    EXPECT_EQ(5, ea_async_io(arkp->ea, ARK_EA_WRITE, &data, bl_array, 1, 1));
+
+    am_free(bl_array);
+
     /* sync */
-    errno=0; FVT_KV_INJECT_WRITE_ERROR;
+
+    errno=0; KV_INJECT_SCHD_WRITE_ERROR;
+    EXPECT_EQ(EIO,    ark_set(async_ark, klen, s, klen, s, &res));
+    errno=0; KV_INJECT_HARV_WRITE_ERROR;
     EXPECT_EQ(EIO,    ark_set(async_ark, klen, s, klen, s, &res));
     EXPECT_EQ(ENOENT, ark_get(async_ark, klen, s, klen, s, 0, &res));
 
     EXPECT_EQ(0, ark_set(async_ark, klen, s, klen, s, &res));
 
-    errno=0; FVT_KV_INJECT_READ_ERROR;
+    errno=0; KV_INJECT_SCHD_READ_ERROR;
     EXPECT_EQ(EIO, ark_get(async_ark, klen, s, klen, s, 0, &res));
 
-    errno=0; FVT_KV_INJECT_READ_ERROR;
+    errno=0; KV_INJECT_SCHD_READ_ERROR;
+    EXPECT_EQ(EIO, ark_exists(async_ark, klen, s, &res));
+
+    errno=0; KV_INJECT_HARV_READ_ERROR;
+    EXPECT_EQ(EIO, ark_get(async_ark, klen, s, klen, s, 0, &res));
+
+    errno=0; KV_INJECT_HARV_READ_ERROR;
     EXPECT_EQ(EIO, ark_exists(async_ark, klen, s, &res));
 #if 0
-    errno=0; FVT_KV_INJECT_WRITE_ERROR;
+    errno=0; KV_INJECT_WRITE_ERROR;
     EXPECT_EQ(EIO, ark_del(async_ark, klen, s, &res));
 #endif
 
@@ -397,7 +436,13 @@ TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
     /* async */
 
     errno=0; ++async_io; async_err = EIO;
-    FVT_KV_INJECT_WRITE_ERROR;
+    KV_INJECT_SCHD_WRITE_ERROR;
+    EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
+                                  kv_tst_io_errors_cb, 0xfee1));
+    while (async_io) usleep(50000);
+
+    errno=0; ++async_io; async_err = EIO;
+    KV_INJECT_HARV_WRITE_ERROR;
     EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee1));
     while (async_io) usleep(50000);
@@ -418,19 +463,31 @@ TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = EIO;
-    FVT_KV_INJECT_READ_ERROR;
+    KV_INJECT_SCHD_READ_ERROR;
     EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee5));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = EIO;
-    FVT_KV_INJECT_READ_ERROR;
+    KV_INJECT_SCHD_READ_ERROR;
+    EXPECT_EQ(0, ark_exists_async_cb(async_ark, klen, s,
+                                     kv_tst_io_errors_cb, 0xfee6));
+    while (async_io) usleep(50000);
+
+    errno=0; ++async_io; async_err = EIO;
+    KV_INJECT_HARV_READ_ERROR;
+    EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
+                                  kv_tst_io_errors_cb, 0xfee5));
+    while (async_io) usleep(50000);
+
+    errno=0; ++async_io; async_err = EIO;
+    KV_INJECT_HARV_READ_ERROR;
     EXPECT_EQ(0, ark_exists_async_cb(async_ark, klen, s,
                                      kv_tst_io_errors_cb, 0xfee6));
     while (async_io) usleep(50000);
 #if 0
     errno=0; ++async_io; async_err = EIO;
-    FVT_KV_INJECT_WRITE_ERROR;
+    KV_INJECT_WRITE_ERROR;
     EXPECT_EQ(0, ark_del_async_cb(async_ark, klen, s,
                                   kv_tst_io_errors_cb, 0xfee7));
     while (async_io) usleep(50000);
@@ -441,13 +498,15 @@ TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
                                   kv_tst_io_errors_cb, 0xfee8));
     while (async_io) usleep(50000);
 
-    errno=0; FVT_KV_SET_INJECT_INACTIVE;
+    errno=0; KV_SET_INJECT_INACTIVE;
     ASSERT_EQ(0, ark_delete(async_ark));
 }
 
 /**
  *******************************************************************************
  * \brief
+ *  -inject random errors to make sure no seg faults or worse happen
+ *  -errors will print from failed ark get/set/exist/del and thats ok
  ******************************************************************************/
 TEST(FVT_KV_ERROR_PATH, RANDOM_ERRORS)
 {
@@ -455,21 +514,20 @@ TEST(FVT_KV_ERROR_PATH, RANDOM_ERRORS)
     uint32_t ops   = 10;
     uint32_t vlen  = KV_4K;
     uint32_t secs  = 20;
+    char    *dev   = getenv("FVT_DEV");
 
-    if (getenv("FVT_DEV") == NULL)
+    if (dev != NULL && strncmp("/dev/", dev, 5) != 0)
     {
-        printf("SKIPPING, when running to memory\n");
+        ctxts=1;
     }
-    else
-    {
-        kv_async_init_ark_io_inject(ctxts, ops, vlen, secs);
-        kv_async_start_jobs();
 
-        printf("\n"); fflush(stdout);
+    kv_async_init_ark_io_inject(ctxts, ops, vlen, secs);
+    kv_async_start_jobs();
 
-        Sync_ark_io ark_io_job;
-        ark_io_job.run_multi_arks(ctxts, ops, vlen, secs);
+    printf("\n"); fflush(stdout);
 
-        kv_async_wait_jobs();
-    }
+    Sync_ark_io ark_io_job;
+    ark_io_job.run_multi_arks(ctxts, ops, vlen, secs);
+
+    kv_async_wait_jobs();
 }

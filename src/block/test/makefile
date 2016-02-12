@@ -55,7 +55,8 @@ LINKLIBS+=-lpthread -ludev
 endif
 
 VPATH += \
- ${ROOTPATH}/src/common
+ ${ROOTPATH}/src/common \
+ ${ROOTPATH}/src/kv
 
 
 GTESTS       = run_block_fvt
@@ -64,12 +65,14 @@ GTESTS64     = $(addsuffix 64, $(GTESTS))
 GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
 
 run_block_fvt_OFILES = fvt_block.o blk_api_tst.o cflash_tools_user.o
+blockio_OFILES       = ut.o
 
 DEPS=$(addprefix $(TESTDIR)/, $(run_block_fvt_OFILES:.o=.dep)) 
 
 CFLAGS += \
    -g -D__FVT__\
    -I$(ROOTPATH)/src/block \
+   -I$(ROOTPATH)/src/include \
    -I$(ROOTPATH)/src/test/framework/googletest/googletest/include 
 
 CXXFLAGS+=$(CFLAGS)

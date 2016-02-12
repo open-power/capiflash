@@ -29,31 +29,43 @@
 #include <pthread.h>
 #include "iv.h"
 
+#define BL_INITN 10000
+
 typedef struct ark_io_list
 {
   int64_t         blkno;
   int             a_tag;
 } ark_io_list_t;
 
-typedef struct _bl {
-  int64_t  n;
+typedef struct _bl
+{
+  int64_t  n;           // number of block list elements
   int64_t  w;
   int64_t  head;
   int64_t  count;
   int64_t  hold;
   pthread_rwlock_t iv_rwlock;
   IV *list;
-  //int64_t chain[];
+  int64_t  top;         // index of the next block list element to initialize
 } BL;
 
+// initializes/adds BL_INITN blocks to make them available for a take,
+// called when an IO needs blocks and there aren't enough available
+int bl_init_chain_link(BL *bl);
+
 // create a chain 0..n-1
-BL *bl_new(int64_t n,int w);
-void bl_adjust(BL *bl, uint64_t blks);
+BL *bl_new(int64_t n, int w);
+
+// reserve the first resN blocks,
+// must be called before any take,
+int bl_reserve(BL *bl, uint64_t resN);
+
 BL *bl_resize(BL *bl, int64_t n, int w);
 void bl_delete(BL *bl);
 
 // take returns a root to a chain of n blocks, neagative is error
 int64_t bl_take(BL *bl, int64_t n);
+void bl_check_take(BL *bl, int64_t n);
 
 // put a chain back, return the length of returned chain, negative is error
 int64_t bl_drop(BL *bl, int64_t b);
@@ -66,9 +78,6 @@ int64_t bl_len(BL *bl, int64_t b);
 
 // the next block in a chain
 int64_t bl_next(BL *bl, int64_t);
-
-// count occurrences of i in a chain rooted at b
-int64_t bl_cnt(BL *bl, int64_t b, int64_t i);
 
 // cause drops to be held until released to free pool
 void bl_hold (BL *bl);

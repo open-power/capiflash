@@ -27,7 +27,8 @@
 #include <stdint.h>
 
 
-typedef struct _iv {
+typedef struct _iv
+{
   uint64_t n;
   uint64_t m;
   uint64_t bits;
@@ -37,12 +38,11 @@ typedef struct _iv {
   uint64_t data[];
 } IV;
 
-IV      *iv_new(uint64_t n, uint64_t m);
-IV      *iv_resize(IV *iv, uint64_t n, uint64_t m);
+IV     *iv_new(uint64_t n, uint64_t m);
+IV     *iv_resize(IV *iv, uint64_t n, uint64_t m);
 void    iv_delete(IV *iv);
 
-void     iv_set(IV *iv, uint64_t i, uint64_t v);
-uint64_t iv_get(IV *iv, uint64_t i);
-
+int     iv_set(IV *iv, uint64_t i, uint64_t v);
+int64_t iv_get(IV *iv, uint64_t i);
 
 #endif

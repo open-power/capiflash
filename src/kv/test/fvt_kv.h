@@ -39,8 +39,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>
+#include <assert.h>
 #include <sys/time.h>
 #include <fvt_trace.h>
 
@@ -72,6 +72,17 @@
 
 #define ARK_DELETE \
     ASSERT_EQ(0, ark_delete(ark))
+
+#define TESTCASE_SKIP(_reason) \
+    printf("[  SKIPPED ] %s\n", _reason);
+
+#define TESTCASE_SKIP_IF_FILE                           \
+    char *dev = getenv("FVT_DEV");                      \
+    if (dev != NULL && strncmp("/dev/", dev, 5) != 0)   \
+    {                                                   \
+        TESTCASE_SKIP("FVT_DEV looks like a file");     \
+        return;                                         \
+    }
 
 #define KV_4K   4   *1024
 #define KV_8K   8   *1024

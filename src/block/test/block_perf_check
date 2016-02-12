@@ -64,16 +64,27 @@ else
     # use only /dev/sg* devices
     if [[ $(hostname) == cougar* ]]
     then
-     DEV1=/dev/sg14
-     DEV2=/dev/sg15
-     DEV3=/dev/sg19
-     DEV4=/dev/sg20
+     DEV1=/dev/sg9
+     DEV2=/dev/sg10
+     DEV3=/dev/sg11
+     DEV4=/dev/sg12
     elif [[ $(hostname) == p8tul2* ]]
     then
      DEV1=/dev/sg34
-     DEV2=/dev/sg38
+     DEV2=/dev/sg36
      DEV3=/dev/sg39
-     DEV4=/dev/sg43
+     DEV4=/dev/sg41
+    elif [[ $(hostname) == moriar* ]]
+    then
+     DEV1=/dev/sg4
+     DEV2=/dev/sg5
+     DEV3=/dev/sg6
+     DEV4=/dev/sg7
+    else
+     DEV1=/dev/sg4
+     DEV2=/dev/sg5
+     DEV3=/dev/sg6
+     DEV4=/dev/sg7
     fi
     _64=
 fi
@@ -96,12 +107,12 @@ function blockio
 {
   cmd="$cmd_dir/blockio$_64 -d $DEV1 -s 15 $_intrps > /tmp/out_p"
   eval $cmd
-  iops=$(cat /tmp/out_p|grep iops|awk  '{print $10}'|awk -F : '{print $2}')
+  iops=$(cat /tmp/out_p|grep iops|awk  '{print $11}'|awk -F : '{print $2}')
   echo "blockio:                  $iops"
 
   cmd="$cmd_dir/blockio$_64 -d $DEV1 -s 15 -q 1 $_intrps > /tmp/out_p"
   eval $cmd
-  iops=$(cat /tmp/out_p|grep iops|awk  '{print $10}'|awk -F : '{print $2}')
+  iops=$(cat /tmp/out_p|grep iops|awk  '{print $11}'|awk -F : '{print $2}')
   echo "blockio:            QD=1: $iops"
 
    rm -f /tmp/out_p
@@ -121,7 +132,7 @@ function blockio
    done
    wait
    iops=0
-   for d in $(cat /tmp/out_p|grep iops|awk  '{print $10}'|awk -F : '{print $2}')
+   for d in $(cat /tmp/out_p|grep iops|awk  '{print $11}'|awk -F : '{print $2}')
    do
       ((iops+=$d))
    done

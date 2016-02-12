@@ -706,7 +706,7 @@ int test_ctx_reset()
     struct ctx myctx;
     struct ctx *p_ctx= &myctx;
     pthread_t thread;
-    __u64 buf_size = 0x2000000; //32MB
+    __u64 buf_size = 0x2000000; //32MB 
     __u64 chunk = 10;
     __u64 stride = 0x1000;
     struct rwlargebuf rwbuf;
@@ -750,9 +750,8 @@ int test_ctx_reset()
         rc = do_io(p_ctx, stride);
         CHECK_RC(rc,"Normal IO failed after bad RCB");
 #ifdef _AIX
-        system("ulimit -d unlimited");
-        system("ulimit -s unlimited");
-        system("ulimit -m unlimited");
+        rc = setRUnlimited();
+        CHECK_RC(rc,"setRUnlimited() failed"); 
 #endif
     }
     //do large _transfer

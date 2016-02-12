@@ -744,6 +744,11 @@ int test_rw_close_hndl(int cmd)
     else if (3 == cmd)
     {
         //While IO ctx close
+#ifdef _AIX
+        // we need to close the poll()thread
+        // before detach call; please refer defect#983973,seq#17
+        pthread_cancel(thread);
+#endif
         debug("%d:detach context:0X%"PRIX64"\n",pid,p_ctx->context_id);
         ioctl_dk_capi_detach(p_ctx);
     }
@@ -761,7 +766,15 @@ int test_rw_close_hndl(int cmd)
     //pthread_join(rhthread, NULL);
     N_done = 0;
 
+#ifdef _AIX
+    if (3 != cmd)
+    {
+      pthread_cancel(thread);
+    }
+#else
     pthread_cancel(thread);
+#endif
+
     // do proper closing
     if (cmd == 1)
     {
@@ -967,7 +980,7 @@ int mc_test_rwbuff_global(int cmd)
         //allocate from heap
         //p_ctx = (struct ctx *)malloc(sizeof(struct ctx));
         //IOARCB req 16 Byte Allignment
-        p_ctx = (struct ctx *)aligned_alloc(16,sizeof(struct ctx));
+        posix_memalign((void**)&p_ctx, 16, sizeof(struct ctx));
         if (NULL == p_ctx)
         {
             fprintf(stderr,"Mem allocation failed\n");

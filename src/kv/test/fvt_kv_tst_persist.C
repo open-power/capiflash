@@ -29,76 +29,105 @@ extern "C"
 #include <fvt_kv.h>
 #include <fvt_kv_utils.h>
 #include <fvt_kv_utils_async_cb.h>
+#include <errno.h>
 }
 
 /**
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, PERSIST_FIXED_1kx1kx10000)
+TEST(FVT_KV_GOOD_PATH, PERSIST_FIXED_512x128x50000)
 {
     ARK     *ark  = NULL;
     kv_t    *fdb  = NULL;
-    uint32_t klen = 1024;
-    uint32_t vlen = 1024;
-    uint32_t LEN  = 10000;
+    kv_t    *mdb  = NULL;
+    uint32_t klen = 512;
+    uint32_t vlen = 128;
+    uint32_t LEN  = 50000;
     uint32_t i    = 0;
     int64_t  res  = 0;
+    char    *dev  = getenv("FVT_DEV_PERSIST");
     uint8_t  gvalue[vlen];
+    struct stat sbuf;
 
-    if (NULL != getenv("FVT_DEV_PERSIST"))
+    if (NULL == dev || stat(dev,&sbuf) != 0)
     {
-        printf("create ark\n");
-        ARK_CREATE_NEW_PERSIST;
-
-        fdb = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
-        ASSERT_TRUE(fdb != NULL);
-
-        printf("load ark\n");
-        fvt_kv_utils_load (ark, fdb, LEN);
-        printf("query db\n");
-        fvt_kv_utils_query(ark, fdb, vlen, LEN);
-
-        ARK_DELETE;
-
-        ARK_CREATE_PERSIST;
-
-        printf("re-opened ark, query db\n");
-        fvt_kv_utils_query(ark, fdb, vlen, LEN);
-        printf("delete db from ark\n");
-        fvt_kv_utils_del(ark, fdb, LEN);
-
-        printf("load ark with the same db\n");
-        fvt_kv_utils_load (ark, fdb, LEN);
-        printf("query db\n");
-        fvt_kv_utils_query(ark, fdb, vlen, LEN);
-
-        ARK_DELETE;
-
-        ARK_CREATE_NEW_PERSIST;
-
-        printf("re-open ark as new, verify empty\n");
-
-        for (i=0; i<LEN; i++)
-        {
-            ASSERT_EQ(ENOENT, ark_get(ark,
-                                      fdb[i].klen,
-                                      fdb[i].key,
-                                      fdb[i].vlen,
-                                      gvalue,
-                                      0,
-                                      &res));
-        }
-
-        kv_db_destroy(fdb, LEN);
-        ARK_DELETE;
+        TESTCASE_SKIP("FVT_DEV_PERSIST==NULL or file not found");
+        return;
     }
-    else
+
+    printf("create k/v databases\n"); fflush(stdout);
+    fdb = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
+    ASSERT_TRUE(fdb != NULL);
+    mdb = (kv_t*)kv_db_create_mixed(LEN, klen-1, vlen);
+    ASSERT_TRUE(mdb != NULL);
+
+    printf("create ark\n"); fflush(stdout);
+    ARK_CREATE_NEW_PERSIST;
+
+    printf("run 5 sec mixed REP_LOOP\n"); fflush(stdout);
+    fvt_kv_utils_REP_LOOP(ark,
+                          kv_db_create_mixed,
+                          kv_db_mixed_regen_values,
+                          klen+1,
+                          vlen,
+                          1000,
+                          5);
+
+    printf("load ark with fixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, fdb, LEN);
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+
+    printf("persist ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open ark and read persisted data\n"); fflush(stdout);
+    ARK_CREATE_PERSIST;
+
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+
+    printf("load ark with the mixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, mdb, LEN);
+    printf("query mixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, mdb, vlen, LEN);
+
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+    printf("delete fixed db from ark\n"); fflush(stdout);
+    fvt_kv_utils_del(ark, fdb, LEN);
+
+    printf("re-load ark with the fixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, fdb, LEN);
+    printf("query db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+
+    printf("delete mixed db from ark\n"); fflush(stdout);
+    fvt_kv_utils_del(ark, mdb, LEN);
+
+    printf("persist ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open ark without LOAD\n"); fflush(stdout);
+    ARK_CREATE_NEW_PERSIST;
+
+    printf("verify ark is empty\n"); fflush(stdout);
+
+    for (i=0; i<LEN; i++)
     {
-        printf("SKIPPING, FVT_DEV_PERSIST==NULL \n");
+        ASSERT_EQ(ENOENT, ark_get(ark,
+                                  fdb[i].klen,
+                                  fdb[i].key,
+                                  fdb[i].vlen,
+                                  gvalue,
+                                  0,
+                                  &res));
     }
+
+    kv_db_destroy(fdb, LEN);
+    ARK_DELETE;
 }
-
 
 /**
  *******************************************************************************
@@ -109,129 +138,178 @@ TEST(FVT_KV_GOOD_PATH, PERSIST)
     ARK     *ark    = NULL;
     kv_t    *fdb    = NULL;
     kv_t    *mdb    = NULL;
-    uint32_t klen   = 100;
-    uint32_t vlen   = 1024;
-    uint32_t LEN    = 10;
+    kv_t    *bdb    = NULL;
+    uint32_t klen   = 512;
+    uint32_t vlen   = 256;
+    uint32_t LEN    = 10000;
+    uint32_t BLEN   = 1000;
     uint32_t i      = 0;
     int64_t  res    = 0;
+    char    *dev    = getenv("FVT_DEV_PERSIST");
     uint8_t  gvalue[vlen];
+    struct stat sbuf;
 
-    if (NULL != getenv("FVT_DEV_PERSIST"))
+    if (NULL == dev || stat(dev,&sbuf) != 0)
     {
-        printf("create ark, load fixed db\n");
-        ARK_CREATE_NEW_PERSIST;
-
-        fdb = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
-        ASSERT_TRUE(fdb != NULL);
-        mdb = (kv_t*)kv_db_create_mixed(LEN, klen, vlen);
-        ASSERT_TRUE(mdb != NULL);
-
-        printf("run SGD_LOOP on fixed db\n");
-        fvt_kv_utils_SGD_LOOP(ark, kv_db_create_fixed, klen+10, vlen+10, LEN, 5);
-
-        printf("load ark with fixed db, query fixed db\n");
-        fvt_kv_utils_load (ark, fdb, LEN);
-        fvt_kv_utils_query(ark, fdb, vlen, LEN);
-
-        ARK_DELETE;
-
-        ARK_CREATE_PERSIST;
-
-        printf("re-opened ark, query fixed db\n");
-        fvt_kv_utils_query(ark, fdb, vlen, LEN);
-        printf("delete fixed db from ark\n");
-        fvt_kv_utils_del(ark, fdb, LEN);
-
-        printf("run SGD_LOOP on mixed db\n");
-        fvt_kv_utils_SGD_LOOP(ark, kv_db_create_mixed, klen+20, vlen+20, LEN, 5);
-
-        printf("load ark with mixed db\n");
-        fvt_kv_utils_load (ark, mdb, LEN);
-        printf("query mixed db\n");
-        fvt_kv_utils_query(ark, mdb, vlen, LEN);
-        printf("delete mixed db from ark\n");
-        fvt_kv_utils_del(ark, mdb, LEN);
-
-        printf("load ark with the mixed db\n");
-        fvt_kv_utils_load (ark, mdb, LEN);
-        printf("query mixed db\n");
-        fvt_kv_utils_query(ark, mdb, vlen, LEN);
-
-        ARK_DELETE;
-
-        ARK_CREATE_PERSIST;
-
-        printf("re-opened ark, query mixed db\n");
-        fvt_kv_utils_query(ark, mdb, vlen, LEN);
-        printf("delete mixed db from ark\n");
-        fvt_kv_utils_del(ark, mdb, LEN);
-
-        printf("run REP_LOOP on mixed db\n");
-        fvt_kv_utils_REP_LOOP(ark,
-                              kv_db_create_mixed,
-                              kv_db_mixed_regen_values,
-                              klen,
-                              vlen,
-                              LEN,
-                              5);
-
-        printf("load ark with the mixed db\n");
-        fvt_kv_utils_load (ark, mdb, LEN);
-        printf("query mixed db\n");
-        fvt_kv_utils_query(ark, mdb, vlen, LEN);
-
-        ARK_DELETE;
-
-        ARK_CREATE_NEW_PERSIST;
-
-        printf("re-open ark as new, verify empty\n");
-
-        for (i=0; i<LEN; i++)
-        {
-            ASSERT_EQ(ENOENT, ark_get(ark,
-                                      mdb[i].klen,
-                                      mdb[i].key,
-                                      mdb[i].vlen,
-                                      gvalue,
-                                      0,
-                                      &res));
-        }
-
-        ARK_DELETE;
-
-        printf("re-open ark as readonly\n");
-
-        ARK_CREATE_PERSIST_READONLY;
-
-        printf("load ark with the mixed db\n");
-        fvt_kv_utils_load (ark, mdb, LEN);
-        printf("query mixed db\n");
-        fvt_kv_utils_query(ark, mdb, vlen, LEN);
-
-        ARK_DELETE;
-
-        ARK_CREATE_PERSIST;
-
-        printf("re-open ark, verify empty\n");
-
-        for (i=0; i<LEN; i++)
-        {
-            ASSERT_EQ(ENOENT, ark_get(ark,
-                                      mdb[i].klen,
-                                      mdb[i].key,
-                                      mdb[i].vlen,
-                                      gvalue,
-                                      0,
-                                      &res));
-        }
-
-        ARK_DELETE;
-
-        kv_db_destroy(fdb, LEN);
-        kv_db_destroy(mdb, LEN);
+        TESTCASE_SKIP("FVT_DEV_PERSIST==NULL or file not found");
+        return;
     }
-    else
+
+    printf("create k/v databases\n"); fflush(stdout);
+    fdb = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
+    ASSERT_TRUE(fdb != NULL);
+    bdb = (kv_t*)kv_db_create_fixed(BLEN, klen+1, KV_1M);
+    ASSERT_TRUE(bdb != NULL);
+    mdb = (kv_t*)kv_db_create_mixed(LEN, klen-1, vlen);
+    ASSERT_TRUE(mdb != NULL);
+
+    printf("create new ark\n"); fflush(stdout);
+    ARK_CREATE_NEW_PERSIST;
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open empty ark\n"); fflush(stdout);
+    ARK_CREATE_PERSIST;
+
+    printf("load ark with fixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, fdb, LEN);
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open ark containing fixed db\n"); fflush(stdout);
+    ARK_CREATE_PERSIST;
+
+    printf("run SGD_LOOP on fixed db\n"); fflush(stdout);
+    fvt_kv_utils_SGD_LOOP(ark, kv_db_create_fixed, klen+10, vlen+10,1000,5);
+
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open ark containing fixed db\n"); fflush(stdout);
+    ARK_CREATE_PERSIST;
+
+    printf("load ark with BIG db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, bdb, BLEN);
+    printf("query BIG db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, bdb, KV_1M, BLEN);
+
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+
+    printf("run REP_LOOP on fixed db\n"); fflush(stdout);
+    fvt_kv_utils_REP_LOOP(ark,
+                          kv_db_create_fixed,
+                          kv_db_fixed_regen_values,
+                          klen+100,
+                          vlen,
+                          5000,
+                          5);
+
+    printf("delete BIG db from ark\n"); fflush(stdout);
+    fvt_kv_utils_del(ark, bdb, BLEN);
+
+    printf("load ark with the mixed db\n"); fflush(stdout);
+    fvt_kv_utils_load(ark, mdb, LEN);
+    printf("query mixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, mdb, vlen, LEN);
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open ark with fixed and mixed db\n"); fflush(stdout);
+    ARK_CREATE_PERSIST;
+
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, vlen, LEN);
+    printf("delete fixed db from ark\n"); fflush(stdout);
+    fvt_kv_utils_del(ark, fdb, LEN);
+
+    printf("query mixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, mdb, vlen, LEN);
+    printf("delete mixed db from ark\n"); fflush(stdout);
+    fvt_kv_utils_del(ark, mdb, LEN);
+
+    printf("run REP_LOOP on mixed db\n"); fflush(stdout);
+    fvt_kv_utils_REP_LOOP(ark,
+                          kv_db_create_mixed,
+                          kv_db_mixed_regen_values,
+                          klen+256,
+                          vlen,
+                          100,
+                          5);
+
+    printf("load ark with the mixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, mdb, LEN);
+    printf("query mixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, mdb, vlen, LEN);
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("open new ark\n"); fflush(stdout);
+    ARK_CREATE_NEW_PERSIST;
+
+    printf("verify empty\n"); fflush(stdout);
+    for (i=0; i<LEN; i++)
     {
-        printf("SKIPPING, FVT_DEV_PERSIST==NULL \n");
+        ASSERT_EQ(ENOENT, ark_get(ark,
+                                  mdb[i].klen,
+                                  mdb[i].key,
+                                  mdb[i].vlen,
+                                  gvalue,
+                                  0,
+                                  &res));
     }
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open ark as readonly\n"); fflush(stdout);
+    ARK_CREATE_PERSIST_READONLY;
+
+    printf("load ark with the mixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, mdb, LEN);
+    printf("query mixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, mdb, vlen, LEN);
+
+    printf("run REP_LOOP on mixed db\n"); fflush(stdout);
+    fvt_kv_utils_REP_LOOP(ark,
+                          kv_db_create_mixed,
+                          kv_db_mixed_regen_values,
+                          klen,
+                          vlen,
+                          LEN,
+                          5);
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("open new ark\n"); fflush(stdout);
+    ARK_CREATE_PERSIST;
+
+    printf("verify empty\n"); fflush(stdout);
+    for (i=0; i<LEN; i++)
+    {
+        ASSERT_EQ(ENOENT, ark_get(ark,
+                                  mdb[i].klen,
+                                  mdb[i].key,
+                                  mdb[i].vlen,
+                                  gvalue,
+                                  0,
+                                  &res));
+    }
+
+    printf("delete ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    kv_db_destroy(fdb, LEN);
+    kv_db_destroy(mdb, LEN);
+    kv_db_destroy(bdb, BLEN);
 }

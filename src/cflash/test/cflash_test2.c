@@ -481,7 +481,7 @@ void *exploit_chunk(void *arg)
         pthread_mutex_unlock(&mutex);
         if (rc != 0)
         {
-            fprintf(stderr, "ctx: %d:mc_open: failed,rc %d\n", p_ctx->ctx_hndl,rc);
+            fprintf(stderr, "ctx: %d:create_res: failed,rc %d\n", p_ctx->ctx_hndl,rc);
             g_error = -1;
             return NULL;
         }
@@ -653,7 +653,7 @@ int mc_size_regress_internal()
     //__u64 nlba; //unused
     __u64 stride=0x1000;
     __u32 i;
-    int mc_size_regrss_l = 2;
+    int mc_size_regrss_l = 1;
     mc_stat_t l_mc_stat;
     pthread_t thread;
     pid = getpid();
@@ -922,7 +922,7 @@ int test_mc_good_error_afu_dev()
     int rc = 0;;
     int status=0;
     int i;
-    int lloop = 5;
+    int lloop = 1;
     //char buffer[MC_PATHLEN];
     int j;
     struct flash_disk fldisks[MAX_FDISK];
@@ -1004,7 +1004,7 @@ int mc_test_ctx_regress(int cmd)
     if (long_run_enable)
         stride = p_ctx->blk_len;
     else
-        stride = 0x100;
+        stride = 0x1000;
     pthread_create(&thread,NULL,ctx_rrq_rx, p_ctx);
 
     rc = create_res(p_ctx);
@@ -1032,7 +1032,7 @@ int test_mc_regress_ctx_crt_dstr(int cmd)
 {
     int rc;
     int i;
-    int lrun=2;
+    int lrun=1;
     char *str = getenv("LONG_RUN");
     if (str != NULL)
     {

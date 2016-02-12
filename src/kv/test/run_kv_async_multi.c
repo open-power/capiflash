@@ -22,16 +22,64 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-
+/**
+ *******************************************************************************
+ * \file
+ * \brief
+ *   Key/Value ARK Database Aynchronous I/O Driver
+ * \details
+ *   This runs I/O to the Key/Value ARK Database using ASYNC IO.              \n
+ *   Each ark does set/get/exists/delete in a loop for a list of              \n
+ *   keys/values. This code essentially runs write/read/compare/delete.       \n
+ *                                                                            \n
+ *   Example:                                                                 \n
+ *                                                                            \n
+ *   Run to memory with 4 arks:                                               \n
+ *   run_kv_async_multi                                                       \n
+ *   ctxt:4 async_ops:60 k/v:16x65536:                                        \n
+ *   ASYNC: op/s:253200 io/s:2278800 secs:20                                  \n
+ *                                                                            \n
+ *   Run to a file with 1 ark:                                                \n
+ *   run_kv_async_multi /kvstore                                              \n
+ *   ctxt:1 async_ops:60 k/v:16x65536:                                        \n
+ *   ASYNC: op/s:27600 io/s:248400 secs:20                                    \n
+ *                                                                            \n
+ *   Run to a file as a physical lun with persisted data with 1 ark:          \n
+ *   run_kv_async_multi -p /kvstore                                           \n
+ *   Attempting to run with physical lun                                      \n
+ *   ctxt:1 async_ops:60 k/v:16x65536:                                        \n
+ *   ASYNC: op/s:25200 io/s:226800 secs:20                                    \n
+ *                                                                            \n
+ *   Run to a capi dev with 4 arks:                                           \n
+ *   run_kv_async_multi /dev/sg10                                             \n
+ *   ctxt:4 async_ops:60 k/v:16x65536:                                        \n
+ *   ASYNC: op/s:21818 io/s:196363 secs:22                                    \n
+ *                                                                            \n
+ *   Run to a capi dev as a physical lun with persisted data with 1 ark:      \n
+ *   run_kv_async_multi -p /dev/sg10                                          \n
+ *   Attempting to run with physical lun                                      \n
+ *   ctxt:1 async_ops:60 k/v:16x65536:                                        \n
+ *   ASYNC: op/s:21600 io/s:194400 secs:20                                    \n
+ *                                                                            \n
+ *   Run to 4 capi devs with 4 arks each:                                     \n
+ *   run_kv_async_multi /dev/sg9 /dev/sg10 /dev/sg11 /dev/sg12                \n
+ *   ctxt:4 async_ops:60 k/v:16x65536:                                        \n
+ *   ctxt:4 async_ops:60 k/v:16x65536:                                        \n
+ *   ctxt:4 async_ops:60 k/v:16x65536:                                        \n
+ *   ctxt:4 async_ops:60 k/v:16x65536:                                        \n
+ *   ASYNC: op/s:38090 io/s:342818 secs:22                                    \n
+ *
+ *******************************************************************************
+ */
 #include <arkdb.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #define KV_ASYNC_MAX_CONTEXTS      40
 #define KV_ASYNC_MAX_CTXT_PER_DEV  4
@@ -326,8 +374,8 @@ void kv_async_init_io(char    *dev,
     uint32_t         job     = 0;
     uint32_t         ctxt    = 0;
 
-    printf("dev:%s ctxt:%d async_ops:%d k/v:%dx%d: \n",
-            dev, KV_ASYNC_CTXT_PER_DEV, jobs, klen, vlen);
+    printf("ctxt:%d async_ops:%d k/v:%dx%d: \n",
+            KV_ASYNC_CTXT_PER_DEV, jobs, klen, vlen);
     fflush(stdout);
 
     init_kv_db();
@@ -431,38 +479,49 @@ int main(int argc, char **argv)
     uint32_t    i    = 1;
     uint32_t    ctxt = 0;
 
-    if (1 == argc)
+    if (argv[1] != NULL && argv[1][0] == '?')
     {
         printf("usage: run_kv_async_multi [-p] <dev1> <dev2> ...\n");
-        printf("   ex: run_kv_async_multi /dev/cxl/afu0.0s /dev/cxl/afu1.0s\n");
-        printf("   ex: run_kv_async_multi /dev/sdb /dev/sdh /dev/sdq\n");
+        printf("   ex: run_kv_async_multi /dev/sd2 /dev/sd3 /dev/sd4\n");
         printf("   ex: run_kv_async_multi -p /dev/sg4 /dev/sg8\n");
         exit(0);
     }
     bzero(pCTs, sizeof(pCTs));
 
-    if (0 == strncmp(argv[1], "-p", 7))
+    /* if running to a file, cannot do multi-context */
+    if (argv[1] != NULL && strncmp(argv[1], "/dev/", 5) != 0)
+    {
+        KV_ASYNC_CTXT_PER_DEV = 1;
+    }
+
+    if (argv[1] != NULL && 0 == strncmp(argv[1], "-p", 2))
     {
         printf("Attempting to run with physical lun\n");
         ark_create_flag       = ARK_KV_PERSIST_STORE;
         KV_ASYNC_CTXT_PER_DEV = 1;
         i                     = 2;
     }
+
+    if (argv[1] == NULL)
+    {
+        kv_async_init_io(NULL,
+                         KV_ASYNC_JOBS_PER_CTXT,
+                         KV_ASYNC_KLEN,
+                         KV_ASYNC_VLEN,
+                         KV_ASYNC_NUM_KV);
+        KV_ASYNC_CONTEXTS += KV_ASYNC_CTXT_PER_DEV;
+    }
     else
     {
-        //KV_ASYNC_CTXT_PER_DEV  = 1;
-        KV_ASYNC_CTXT_PER_DEV  = 4;
-        KV_ASYNC_JOBS_PER_CTXT = 60;
-    }
-
-    while (argv[i] != NULL && KV_ASYNC_CONTEXTS <= KV_ASYNC_MAX_CONTEXTS)
-    {
-        kv_async_init_io(argv[i++],
-                        KV_ASYNC_JOBS_PER_CTXT,
-                        KV_ASYNC_KLEN,
-                        KV_ASYNC_VLEN,
-                        KV_ASYNC_NUM_KV);
-        KV_ASYNC_CONTEXTS += KV_ASYNC_CTXT_PER_DEV;
+        while (argv[i] != NULL && KV_ASYNC_CONTEXTS <= KV_ASYNC_MAX_CONTEXTS)
+        {
+            kv_async_init_io(argv[i++],
+                             KV_ASYNC_JOBS_PER_CTXT,
+                             KV_ASYNC_KLEN,
+                             KV_ASYNC_VLEN,
+                             KV_ASYNC_NUM_KV);
+            KV_ASYNC_CONTEXTS += KV_ASYNC_CTXT_PER_DEV;
+        }
     }
     start = time(0);
 

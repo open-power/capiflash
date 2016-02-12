@@ -35,9 +35,10 @@
 extern "C"
 {
 #include <fvt_kv.h>
-#include <fvt_kv_inject.h>
 #include <fvt_kv_utils_async_cb.h>
 #include <kv_utils_db.h>
+#include <kv_inject.h>
+#include <errno.h>
 }
 
 #define KV_ASYNC_EASY           16
@@ -45,7 +46,7 @@ extern "C"
 #define KV_ASYNC_LOW_STRESS     128
 #define KV_ASYNC_HIGH_STRESS    512
 #define KV_ASYNC_JOB_Q          KV_ASYNC_HIGH_STRESS
-#define KV_ASYNC_MAX_CONTEXTS   508
+#define KV_ASYNC_MAX_CONTEXTS   500
 
 #define KV_ASYNC_CT_RUNNING        0x80000000
 #define KV_ASYNC_CT_PERF           0x40000000
@@ -189,7 +190,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
         if (0   != errcode)    printf("ark_get failed, errcode=%d\n", errcode);
         if (tag != pCB->tag)   printf("ark_get bad tag\n");
         if (res != p_kv->vlen) printf("ark_get bad vlen\n");
-        if (IS_GTEST) {        EXPECT_EQ(0, miscompare);}
+        if (IS_GTEST) {        EXPECT_TRUE(0 == miscompare);}
 
         /* end of db len sequence, move to next step */
         if (pCB->len_i == pCB->len)
@@ -460,37 +461,28 @@ static void kv_async_perf_done(async_CB_t *pCB)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-uint32_t kv_async_init_ctxt_perf(uint32_t ctxt, uint32_t npool, uint32_t secs)
+void kv_async_init_ctxt_perf(uint32_t ctxt, uint32_t npool, uint32_t secs)
 {
     char            *env_FVT = getenv("FVT_DEV");
     async_context_t *pCT     = pCTs+ctxt;
 
-    if (ctxt < 0 || ctxt > KV_ASYNC_MAX_CONTEXTS)
-    {
-        printf("FFDC: kv_async_init_ctxt %d %X\n", ctxt, ctxt);
-        return EINVAL;
-    }
+    ASSERT_TRUE(ctxt >= 0 && ctxt <= KV_ASYNC_MAX_CONTEXTS);
     memset(pCT,       0, sizeof(async_context_t));
     memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
 
-    if (ark_create_verbose(env_FVT, &pCT->ark,
+    ASSERT_EQ(0, ark_create_verbose(env_FVT, &pCT->ark,
                                         1048576,
                                         4096,
                                         1048576,
                                         npool,
                                         256,
                                         8*1024,
-                                        ARK_KV_VIRTUAL_LUN))
-    {
-        printf("ark_create failed for ctxt:%d\n", ctxt);
-        return ENOMEM;
-    }
-    if (NULL == pCT->ark) return ENOMEM;
+                                        ARK_KV_VIRTUAL_LUN));
+    ASSERT_TRUE(NULL != pCT->ark);
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;
     pCT->secs   = secs;
-    KV_TRC(pFT, "init_ctxt ctxt:%d ark:%p", ctxt, pCT->ark);
-    return 0;
+    KV_TRC(pFT, "init_ctxt ctxt:%d ark:%p secs:%d", ctxt, pCT->ark, pCT->secs);
 }
 
 /**
@@ -502,11 +494,7 @@ void kv_async_init_ctxt(uint32_t ctxt, uint32_t secs)
     char            *env_FVT = getenv("FVT_DEV");
     async_context_t *pCT     = pCTs+ctxt;
 
-    if (ctxt < 0 || ctxt > KV_ASYNC_MAX_CONTEXTS)
-    {
-        printf("FFDC: kv_async_init_ctxt %d %X\n", ctxt, ctxt);
-        return;
-    }
+    ASSERT_TRUE(ctxt >= 0 && ctxt <= KV_ASYNC_MAX_CONTEXTS);
     memset(pCT,       0, sizeof(async_context_t));
     memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
 
@@ -514,7 +502,7 @@ void kv_async_init_ctxt(uint32_t ctxt, uint32_t secs)
                                     1048576,
                                     4096,
                                     1048576,
-                                    20,
+                                    1,
                                     256,
                                     8*1024,
                                     ARK_KV_VIRTUAL_LUN));
@@ -892,7 +880,7 @@ void kv_async_init_ark_io_inject(uint32_t num_ctxt,
 {
     uint32_t i=0;
 
-    FVT_KV_SET_INJECT_ACTIVE;
+    KV_SET_INJECT_ACTIVE;
 
     kv_async_init_ark_io(num_ctxt, jobs, vlen, secs);
 
@@ -963,7 +951,7 @@ uint32_t kv_async_init_perf_io(uint32_t num_ctxt,
     printf("."); fflush(stdout);
     for (ctxt=0; ctxt<num_ctxt; ctxt++)
     {
-        if (kv_async_init_ctxt_perf(ctxt, npool, secs)) return ENOMEM;
+        kv_async_init_ctxt_perf(ctxt, npool, secs);
 
         for (job=0; job<jobs; job++)
         {
@@ -1107,10 +1095,18 @@ void kv_async_run_jobs(void)
             if (elapse >= inject &&
                 pCTs[i].flags & KV_ASYNC_CT_ERROR_INJECT)
             {
-                KV_TRC_FFDC(pFT, "FFDC: INJECT ERRORS");
-                FVT_KV_INJECT_READ_ERROR;
-                FVT_KV_INJECT_WRITE_ERROR;
-                FVT_KV_INJECT_ALLOC_ERROR;
+                KV_TRC_FFDC(pFT, "FFDC: INJECT ERRORS %d", inject);
+                if (inject)
+                {
+                    KV_INJECT_SCHD_READ_ERROR;
+                    KV_INJECT_SCHD_WRITE_ERROR;
+                }
+                else
+                {
+                    KV_INJECT_HARV_READ_ERROR;
+                    KV_INJECT_HARV_WRITE_ERROR;
+                }
+                KV_INJECT_ALLOC_ERROR;
                 ++inject;
             }
 

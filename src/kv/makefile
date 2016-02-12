@@ -28,7 +28,7 @@ ROOTPATH = ../..
 
 OBJS = ut.o cl.o ea.o ll.o bv.o iv.o si.o vi.o bl.o bt.o arkdb.o am.o ari.o \
 arp.o arp_set.o arp_get.o arp_del.o arp_exist.o tag.o ea_mod.o queue.o      \
-hash.o tg.o ht.o
+hash.o tg.o ht.o kv_inject.o
 
 OBJS64 = $(subst .o,.64o,$(OBJS))
 
@@ -46,7 +46,8 @@ endif
 
 LIBPATHS = -L${ROOTPATH}/img
 
-CFLAGS += $(KV_CFLAGS)
+CFLAGS   += $(KV_CFLAGS) -I$(ROOTPATH)/src/include
+CFLAGS64 += $(CFLAGS)
 
 SUBDIRS = test.d 
 

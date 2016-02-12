@@ -61,7 +61,7 @@ bool cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid)
     /*------------------------------------------------------------------------*/
     /*  Local Variables                                                       */
     /*------------------------------------------------------------------------*/
-    int fd = NULL;
+    int fd = 0;
     bool rc = false;
     struct dk_cxlflash_manage_lun manage_lun = {{0}};
     int retrycount=0;
@@ -227,7 +227,7 @@ int extract_lun_from_vpd(const char* i_sgdevname, uint8_t* o_lun)
         if (l_vpd_file)
         {
             //read page 83 data from Flash 900
-            n = fread(l_vpd_buffer, 1, 0x58, l_vpd_file);
+            n = fread(l_vpd_buffer, 1, MAX_VPD_SIZE, l_vpd_file);
         }
         else
         {
@@ -248,9 +248,9 @@ int extract_lun_from_vpd(const char* i_sgdevname, uint8_t* o_lun)
         {
             TRACED("Didn't get valid page 83 data for %s", l_pci_path);
         }
-        if(l_vpd_header->page_length != 0x55)
+        if(l_vpd_header->page_length == 0x00)
         {
-            TRACED("Didn't get valid page data length for %s", l_pci_path);
+            TRACEI("Didn't get valid page data length for %s", l_pci_path);
         }
         i=offsetof(pg83header_t, data);
         l_pg83data = (void*)(l_vpd_header->data);

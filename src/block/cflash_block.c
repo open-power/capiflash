@@ -689,7 +689,7 @@ inline int CBLK_IN_CACHE(cflsh_chunk_t *chunk,void *buf, cflash_offset_t lba, si
 
 
 /*
- * NAME:        CBLK_BUILD_ISSUE_RW_CMD
+ * NAME:        cblk_build_issue_rw_cmd
  *
  * FUNCTION:    Builds and issues a READ16/WRITE16 command
  *
@@ -705,7 +705,7 @@ inline int CBLK_IN_CACHE(cflsh_chunk_t *chunk,void *buf, cflash_offset_t lba, si
  *              
  */
 
-inline int CBLK_BUILD_ISSUE_RW_CMD(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cflash_offset_t lba, 
+int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cflash_offset_t lba, 
 				   size_t nblocks, int flags, int lib_flags,uint8_t op_code,
 				   cblk_arw_status_t *status)
 {
@@ -910,9 +910,12 @@ inline int CBLK_BUILD_ISSUE_RW_CMD(cflsh_chunk_t *chunk, int *cmd_index, void *b
     if (op_code == SCSI_READ_16) {
 
 	local_flags = CFLASH_READ_DIR_OP;
+	chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_READ;
+
     } else if (op_code == SCSI_WRITE_16) {
 
 	local_flags = CFLASH_WRITE_DIR_OP;
+	chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_WRITE;
 	
     }
 
@@ -1174,18 +1177,6 @@ inline int CBLK_BUILD_ISSUE_RW_CMD(cflsh_chunk_t *chunk, int *cmd_index, void *b
 	    chunk->stats.max_num_act_writes = MAX(chunk->stats.num_act_writes,chunk->stats.max_num_act_writes);
 
 	}
-    }
-
-
-
-    if (op_code == SCSI_READ_16) {
-	    
-        cmd->cmdi->flags |= CFLSH_MODE_READ;
-	    
-    } else if (op_code == SCSI_WRITE_16) {
-
-        cmd->cmdi->flags |= CFLSH_MODE_WRITE;
-
     }
 
 
@@ -2096,7 +2087,7 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
     }
 
 
-    rc = CBLK_BUILD_ISSUE_RW_CMD(chunk,&cmd_index,buf,lba,nblocks,flags,0,SCSI_READ_16,NULL);
+    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,0,SCSI_READ_16,NULL);
 
 
     if (rc) {
@@ -2290,7 +2281,7 @@ int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
 
     }
 
-    rc = CBLK_BUILD_ISSUE_RW_CMD(chunk,&cmd_index,buf,lba,nblocks,flags,0,SCSI_WRITE_16,NULL);
+    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,0,SCSI_WRITE_16,NULL);
 
 
     if (rc) {
@@ -2475,11 +2466,11 @@ static inline int _cblk_aread(cflsh_chunk_t *chunk,void *buf,cflash_offset_t lba
     }
     /* 
      * NOTE: If data was read from the cache, then the rc 
-     *       from CBLK_BUILD_ISSUE_RW_CMD will be greater
-     *       than 0. If CBLK_BUILD_ISSUE_RW_CMD fails, then
+     *       from cblk_build_issue_rw_cmd will be greater
+     *       than 0. If cblk_build_issue_rw_cmd fails, then
      *       rc = -1.
      */
-    rc = CBLK_BUILD_ISSUE_RW_CMD(chunk,&cmd_index,buf,lba,nblocks,flags,CFLASH_ASYNC_OP,SCSI_READ_16,status);
+    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,CFLASH_ASYNC_OP,SCSI_READ_16,status);
 
     if (rc) {
 
@@ -2648,7 +2639,7 @@ static inline int _cblk_awrite(cflsh_chunk_t *chunk,void *buf,cflash_offset_t lb
 	return -1;
     }
 
-    rc = CBLK_BUILD_ISSUE_RW_CMD(chunk,&cmd_index,buf,lba,nblocks,flags,CFLASH_ASYNC_OP,SCSI_WRITE_16,status);
+    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,CFLASH_ASYNC_OP,SCSI_WRITE_16,status);
 
     if (rc) {
 
@@ -2798,15 +2789,37 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 
     *status = 0;
 
-    if (chunk->flags & CFLSH_CHNK_NO_BG_TD && harvest) {
+    if (chunk->flags & CFLSH_CHNK_NO_BG_TD && harvest)
+    {
+        int do_poll=1, lib_flags = CFLASH_ASYNC_OP;
 
-	/*
-	 * Check if any commands completed since the last time we
-	 * checked, but do not wait for any to complete.
-	 */
+        if (!(flags & CBLK_ARESULT_BLOCKING)) 
+	{
 
-	rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk,tag,&transfer_size,FALSE,CFLASH_ASYNC_OP);
+	    lib_flags |= CFLASH_SHORT_POLL;
+	}
 
+        /* peek at the cmd if a tag was provided
+         * -if the cmd is complete, skip the harvest
+         */
+        if (!(flags & CBLK_ARESULT_USER_TAG)  &&
+            *tag >= 0                         &&
+            *tag < chunk->num_cmds)
+        {
+            CFLASH_BLOCK_LOCK(chunk->lock);
+            if ((cmdi = &(chunk->cmd_info[*tag])) &&
+                cmdi->in_use                 &&
+                cmdi->state == CFLSH_MGM_CMP)
+	    {
+                do_poll=0;
+            }
+            CFLASH_BLOCK_UNLOCK(chunk->lock);
+        }
+        if (do_poll) 
+	{
+
+            rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk,tag,&transfer_size,FALSE,lib_flags);
+	}
     }
 
     CFLASH_BLOCK_LOCK(chunk->lock);
@@ -3021,15 +3034,20 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
     if (flags & CBLK_ARESULT_USER_TAG) {
 	
 	cmd = NULL;
+	CBLK_TRACE_LOG_FILE(9,"search for user_tag:%d from 0 to %d",
+	        *tag, chunk->num_cmds);
 
 	for (i = 0; i < chunk->num_cmds;i++) {
 
-	    if (chunk->cmd_info[i].user_tag == *tag) {
+	    if (chunk->cmd_info[i].in_use                      &&
+	        chunk->cmd_info[i].flags & CFLSH_CMD_INFO_UTAG &&
+	        chunk->cmd_info[i].user_tag == *tag) {
 
 		/*
 		 * We found the user tag provided
 		 */
-
+	        CBLK_TRACE_LOG_FILE(9,"found user_tag:%d at %d",
+	                chunk->cmd_info[i].user_tag, i);
 		cmd = &(chunk->cmd_start[i]);
 
 		break;
@@ -3078,6 +3096,7 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 
 	rc = -1;
 	CBLK_TRACE_LOG_FILE(1,"null cmdi for cmd_index = 0x%x",cmd->index);
+	CFLASH_BLOCK_UNLOCK(chunk->lock);
 
 	return rc;
 
@@ -3130,7 +3149,10 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 	if (chunk->flags & CFLSH_CHNK_NO_BG_TD) {
 
 
-	    rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk,tag,&transfer_size,TRUE,CFLASH_ASYNC_OP); 
+	    CFLASH_BLOCK_UNLOCK(chunk->lock);
+	    rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk, &cmd->index, &transfer_size,
+	                                  TRUE, CFLASH_ASYNC_OP);
+	    CFLASH_BLOCK_LOCK(chunk->lock); 
 
 	} else {
 	    /*

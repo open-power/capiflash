@@ -104,8 +104,11 @@ int ioctl_7_1_119_120( int flag )
     //int cfdisk = MAX_FDISK;
     pid = getpid();
     rc = get_flash_disks(fdisk, FDISKS_SHARED);
-    if ( rc == 0 )
-        return 1;
+    if( rc == 0 )
+      {
+          TESTCASE_SKIP("Required Shared disk coming from  two adapter");
+          return 0;
+      }
 
     for ( i=0;i<10;i++)
     {

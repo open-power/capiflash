@@ -241,7 +241,7 @@ int ark_get(ARK *ark, uint64_t klen, void *key, uint64_t vbuflen,
  * @retval ENOSPC Not enough space left in key/value store
  */
 int ark_del_async_cb(ARK *ark, uint64_t klen, void *key, 
-		     void (*cb)(int errcode, uint64_t dt,int64_t res), 
+                     void (*cb)(int errcode, uint64_t dt,int64_t res),
                      uint64_t dt);
 int ark_del(ARK *ark, uint64_t klen, void *key, int64_t *res);
 
@@ -281,7 +281,7 @@ int ark_del(ARK *ark, uint64_t klen, void *key, int64_t *res);
  * @retval ENOSPC Not enough space left in key/value store
  */
 int ark_exists_async_cb(ARK *ark, uint64_t klen, void *key,
-			void (*cb)(int errcode, uint64_t dt, int64_t res), 
+                        void (*cb)(int errcode, uint64_t dt, int64_t res),
                         uint64_t dt);
 int ark_exists(ARK *ark, uint64_t klen, void *key, int64_t *res);
 

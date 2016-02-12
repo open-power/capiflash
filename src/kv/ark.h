@@ -52,7 +52,8 @@ typedef struct ark_stats {
   volatile uint64_t byte_cnt;
 } ark_stats_t;
 
-#define ARK_P_VERSION_1   1
+#define ARK_P_VERSION_1       1
+#define ARK_P_VERSION_2       2
 
 #define ARK_PERSIST_CONFIG    1
 #define ARK_PERSIST_END       2
@@ -105,15 +106,16 @@ typedef struct p_ark
 #define ARK_VERBOSE_VLIMIT_DEF    256
 #define ARK_VERBOSE_BLKBITS_DEF    34
 #define ARK_VERBOSE_GROW_DEF     1024
-#define ARK_VERBOSE_NTHRDS_DEF     20
+#define ARK_VERBOSE_NTHRDS_DEF      1
 
 #define ARK_MAX_ASYNC_OPS         128
-#define ARK_MAX_TASK_OPS           32 
+#define ARK_MAX_TASK_OPS           48
 
 typedef struct _ark {
   uint64_t flags;
   uint32_t persload;
-  uint64_t persblocks;
+  uint64_t pers_cs_bytes;    // amt required for only the Control Structures
+  uint64_t pers_max_blocks;  // amt required to persist a full ark
   char    *persdata;
   uint64_t size;
   uint64_t bsize;
@@ -234,22 +236,24 @@ typedef struct _ari {
 
 #define ARK_CMD_INIT         1
 #define ARK_CMD_DONE         2
-#define ARK_IO_HARVEST       3
-#define ARK_SET_START        4
-#define ARK_SET_PROCESS_INB  5
-#define ARK_SET_WRITE        6
-#define ARK_SET_FINISH       7
-#define ARK_GET_START        8
-#define ARK_GET_PROCESS      9
-#define ARK_GET_FINISH       10
-#define ARK_DEL_START        11
-#define ARK_DEL_PROCESS      12 
-#define ARK_DEL_FINISH       13
-#define ARK_EXIST_START      14
-#define ARK_EXIST_FINISH     15
-#define ARK_RAND_START       16
-#define ARK_FIRST_START      17
-#define ARK_NEXT_START       18
+#define ARK_IO_SCHEDULE      3
+#define ARK_IO_HARVEST       4
+#define ARK_IO_DONE          5
+#define ARK_SET_START        6
+#define ARK_SET_PROCESS_INB  7
+#define ARK_SET_WRITE        8
+#define ARK_SET_FINISH       9
+#define ARK_GET_START        10
+#define ARK_GET_PROCESS      11
+#define ARK_GET_FINISH       12
+#define ARK_DEL_START        13
+#define ARK_DEL_PROCESS      14
+#define ARK_DEL_FINISH       15
+#define ARK_EXIST_START      16
+#define ARK_EXIST_FINISH     17
+#define ARK_RAND_START       18
+#define ARK_FIRST_START      19
+#define ARK_NEXT_START       20
 
 // operation 
 typedef struct _tcb {
@@ -281,7 +285,7 @@ typedef struct _tcb {
 
 typedef struct _iocb
 {
-  struct _ea      *ea; // in memory store space
+  struct _ea     *ea; // in memory store space
   int32_t         op;
   void           *addr;
   ark_io_list_t  *blist;
@@ -290,7 +294,10 @@ typedef struct _iocb
   uint64_t        new_start;
   uint64_t        cnt;
   int32_t         tag;
-  uint32_t        io_errno;
+  uint32_t        issT;
+  uint32_t        cmpT;
+  uint32_t        hmissN;
+  uint32_t        io_error;
   uint32_t        io_done;
 } iocb_t;
 
@@ -307,7 +314,7 @@ int ark_next_async_tag(_ARK *ark, uint64_t klen, void *key, _ARI *_arip, int32_t
 
 int ark_anyreturn(_ARK *ark, int *tag, int64_t *res);
 
-int ea_async_io_mod(_ARK *_arkp, int op, void *addr, ark_io_list_t *blist, 
-                int64_t nblks, int start, int32_t tag, int32_t io_done);
+void ea_async_io_init(_ARK *_arkp, int op, void *addr, ark_io_list_t *blist,
+                      int64_t nblks, int start, int32_t tag, int32_t io_done);
 
 #endif

@@ -439,7 +439,7 @@ xerror:
 // Signal handler for test_spio_killprocess
 void callme(int sig_num)
 {
-    printf("\nGot Signal : %d from child.. Proceeding now..\n",sig_num);
+    printf("Got Signal : %d from child.. Proceeding now..\n",sig_num);
 }
 
 // 7.1.200 : Send signal to kill process when it has cmds queued.
@@ -886,7 +886,8 @@ int test_attach_reuse_diff_proc()
     if (nDisk < 2)
     {
         fprintf(stderr,"Failed to find 2 flash disks from same adapter..\n");
-        return -1;
+        TESTCASE_SKIP("Need disk from same adapter");
+        return 0;
     }
 
     // sanity check for AIX!

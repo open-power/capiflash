@@ -33,6 +33,9 @@ extern int g_errno;
 extern pid_t pid;
 extern char cflash_path[MC_PATHLEN];
 static int threadRC;
+#ifdef _AIX
+extern int irPFlag ;
+#endif
 
 char *diskList[MC_PATHLEN];
 int  diskCount = 0 ;
@@ -210,6 +213,7 @@ int test_dcqp_ioctl(int flag)   //func@DK_CAPI_QUERY_PATH
             fprintf(stderr," Nothing to do with default call\n");
             rc =99;
     }
+
     close(p_ctx->fd);
     return rc;
 }
@@ -395,7 +399,8 @@ int test_dca_error_ioctl(int flag)  // func@DK_CAPI_ATTACH error path
     if (count < 2)
     {
         fprintf(stderr,"%d:Attention:System doesn't fullfil test req,Need 2 disks from a same adapter\n",pid);
-        return 100;
+        TESTCASE_SKIP("Need disk from same adapter");
+        return 0;
     }
     //open CAPI Flash disk device
     strcpy(p_ctx->dev,disks[0].dev);
@@ -614,9 +619,30 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
     {
         prepDiskList(cflash_path);
 
-        if ( diskCount == 0 )
-            CHECK_RC(1,"WARNING : need to export FVT_DEV=/dev/d1,/dev/d2 \n");
+        if ( diskCount <= 1 )
+        {
+            debug("WARNING : need to export FVT_DEV=/dev/d1,/dev/d2 \n");
+            debug("run_cflash_fvt automatically finds it now \n");
 
+            diskCount = get_flash_disks( disks, FDISKS_SAME_ADPTR );
+            if ( diskCount < 2 )
+	    {
+               TESTCASE_SKIP("Need Two disk from same Adapter");
+               return 0 ;
+            }
+
+            diskList[0] = malloc( strlen(disks[0].dev)+1);
+            if ( NULL == diskList[0])
+               CHECK_RC(1, "malloc() failed");
+
+	    diskList[1] = malloc( strlen(disks[1].dev)+1);
+            if ( NULL == diskList[1])
+               CHECK_RC(1, "malloc() failed");
+
+            strcpy(diskList[0],disks[0].dev);
+            strcpy(diskList[1],disks[1].dev); 
+
+	}
         memset(p_ctx_1, 0, sizeof(struct ctx));
         memset(p_ctx, 0, sizeof(struct ctx));
 
@@ -1292,6 +1318,14 @@ int test_dcud_error_ioctl(int flag)  // DK_CAPI_USER_DIRECT  error path
     struct ctx *p_ctx = &u_ctx;
     struct ctx *p_ctx_bkp = &u_ctx_bkp;
     pid = getpid();
+
+#ifdef _AIX
+    if ( flag == 4 )
+    {
+       irPFlag = 1; //TEST_DCUD_TWICE_SAME_CONTX_DEVNO 
+    }
+#endif
+
     rc = ctx_init(p_ctx);
     CHECK_RC(rc, "Context init failed");
     *p_ctx_bkp=*p_ctx;

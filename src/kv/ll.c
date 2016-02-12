@@ -23,9 +23,9 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 #include <stdlib.h>
-#include <errno.h>
 #include "am.h"
 #include "ll.h"
+#include <errno.h>
 
 LL *ll_cons(void *dat, LL *ll) {
   LL *ret = am_malloc(sizeof(LL));

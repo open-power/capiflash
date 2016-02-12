@@ -27,11 +27,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#include <errno.h>
+#include <arkdb_trace.h>
 
 #include "am.h"
 #include "vi.h"
 #include "bt.h"
+#include <errno.h>
 
 #include <arkdb_trace.h>
 
@@ -81,6 +82,7 @@ int bt_growif(BT **bt, BT **bt_orig, uint64_t *lim, uint64_t size) {
     btret = am_realloc(*bt_orig, newsize);
     if (btret == NULL)
     {
+      KV_TRC_FFDC(pAT, "bt realloc failed");
       // An error was encountered with realloc
       // Do not lose the original bt, just retur
       // the error
@@ -113,9 +115,10 @@ int bt_init(BT *bt) {
 }
 
 
-void bt_delete(BT *bt) {
-  KV_TRC(pAT, "bt %p", bt);
-  am_free(bt);
+void bt_delete(BT *bt)
+{
+  if (bt) {am_free(bt); KV_TRC_DBG(pAT, "bt %p", bt);}
+  else    {KV_TRC_FFDC(pAT, "bt NULL");}
 }
 
 int64_t bt_exists(BT *bt, uint64_t kl, uint8_t *k) {
@@ -243,10 +246,10 @@ int64_t bt_del_def(BT *bto, BT *bti, uint64_t kl, uint8_t *k, uint8_t *ref, uint
     src += vi_dec64(src, &pvl);
     if (pkl==kl && memcmp(src,k,kl)==0) {
       if (ref) {
-	if (pvl > bti->max) 
-	  memcpy(ref, src + pkl, bti->def);
-	else
-	  memset(ref, 0x00, bti->def);
+        if (pvl > bti->max)
+          memcpy(ref, src + pkl, bti->def);
+        else
+          memset(ref, 0x00, bti->def);
       }
       *ovlen = pvl;
       del = 1;

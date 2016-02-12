@@ -260,8 +260,6 @@ int test_traditional_IO( int flag, int disk_num )
 
 
             // now initiate rmdev and cfgdev for other // need to run it for longer time
-            for ( i=0; i<10; i++ )
-            {
                 for ( j=0;j<10;j++)
                 {
                     sprintf(str, "rmdev -l %s", disk_name1);
@@ -276,7 +274,6 @@ int test_traditional_IO( int flag, int disk_num )
                     if ( rc != 0 )
                         return 1;
                 }
-            }
             // Wait for IO thread to complete
             i=0;
             break;

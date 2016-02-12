@@ -61,9 +61,15 @@ int create_multiple_vluns_216(struct ctx *p_ctx)
 {
     int rc,j;
     struct flash_disk fldisks[MAX_FDISK];
+    int cfdisk = 0 ;
     __u64 chunks[10];
 
-    get_flash_disks(fldisks,FDISKS_SAME_ADPTR);
+    cfdisk = get_flash_disks(fldisks,FDISKS_SAME_ADPTR);
+    if (cfdisk < 1)
+    {
+        fprintf(stderr,"Must have 1 flash disks..\n");
+        TESTCASE_SKIP("Need disk from same adapter");
+    }
     // use the first disk
     //create atleast 10 chunks on each on PLUN
     for (j=0; j < 10; j++)

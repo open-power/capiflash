@@ -24,16 +24,15 @@
 /* IBM_PROLOG_END_TAG                                                     */
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 #include <fcntl.h>
 
 #include "bl.h"
 #include "ea.h"
-#include "capiblock.h"
 #include "am.h"
 
-#include <test/fvt_kv_inject.h>
+#include <kv_inject.h>
 #include <arkdb_trace.h>
+#include <errno.h>
 
 static int cflsh_blk_lib_init = 0;
 
@@ -50,171 +49,175 @@ static int cflsh_blk_lib_init = 0;
 #endif /* !_AIX */
 
 
-EA *ea_new(const char *path, uint64_t bsize, int basyncs, 
+EA *ea_new(const char *path, uint64_t bsize, int basyncs,
            uint64_t *size, uint64_t *bcount, uint64_t vlun)
 {
-  int      rc    = 0;
-  size_t   plen  = 0;
-  uint8_t *store = NULL;
-  EA      *ea    = NULL;
-  chunk_id_t chkid = NULL_CHUNK_ID;
-  chunk_ext_arg_t ext = 0;
+    int             rc    = 0;
+    size_t          plen  = 0;
+    uint8_t        *store = NULL;
+    EA             *ea    = NULL;
+    chunk_id_t      chkid = NULL_CHUNK_ID;
+    chunk_ext_arg_t ext   = 0;
 
+    if (!(fetch_and_or(&cflsh_blk_lib_init,1)))
+    {
+        // We need to call cblk_init once before
+        // we use any other cblk_ interfaces
+        rc = cblk_init(NULL,0);
+        if (rc)
+        {
+            KV_TRC_FFDC(pAT, "cblk_init failed path %s bsize %"PRIu64" "
+                             "size %"PRIu64" bcount %"PRIu64", errno = %d",
+                             path, bsize, *size, *bcount, errno);
+            goto error_exit;
+        }
+    }
 
+    ea = am_malloc(sizeof(EA));
+    if (NULL == ea)
+    {
+        KV_TRC_FFDC(pAT, "Out of memory path %s bsize %"PRIu64" size %"PRIu64" "
+                         "bcount %"PRIu64", errno = %d",
+                         path, bsize, *size, *bcount, errno);
+        goto error_exit;
+    }
 
-  if (!(fetch_and_or(&cflsh_blk_lib_init,1))) {
-
-
-      // We need to call cblk_init once before 
-      // we use any other cblk_ interfaces
-
-      rc = cblk_init(NULL,0);
-
-      if (rc) {
-
-	  KV_TRC_FFDC(pAT, "cblk_init failed path %s bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64", errno = %d",
-		      path, bsize, *size, *bcount, errno);
-
-	  return ea;
-      }
-  }
-
-  ea = am_malloc(sizeof(EA));
-  if ( NULL == ea )
-  {
-    errno = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory path %s bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64", errno = %d",
-            path, bsize, *size, *bcount, errno);
-  }
-  else
-  {
     // We need to check the path parameter to see if
     // we are going to use memory or a file/capi
     // device (to be determined by the block layer)
     if ( (NULL == path) || (strlen(path) == 0) )
     {
-      // Using memory for store
-      ea->st_type = EA_STORE_TYPE_MEMORY;
+        KV_TRC(pAT, "EA_STORE_TYPE_MEMORY");
+        // Using memory for store
+        ea->st_type = EA_STORE_TYPE_MEMORY;
 
-      store = malloc(*size);
-      if ( NULL == store )
-      {
-        errno = ENOMEM;
-        KV_TRC_FFDC(pAT, "Out of memory for store path %s bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64", errno = %d",
-                path, bsize, *size, *bcount, errno);
-        am_free(ea);
-        ea = NULL;
-      }
-      else
-      {
+        store = malloc(*size);
+        if (NULL == store)
+        {
+            errno = ENOMEM;
+            KV_TRC_FFDC(pAT, "Out of memory for store path %s bsize %"PRIu64" "
+                             "size %"PRIu64" bcount %"PRIu64", errno = %d",
+                             path, bsize, *size, *bcount, errno);
+            goto error_exit;
+        }
+
         *bcount = ((*size) / bsize);
         ea->st_memory = store;
-      }
     }
     else
     {
+        KV_TRC(pAT, "EA_STORE_TYPE_FILE(%s)", path);
 
-      
-      // Using a file.  We don't care if it's an actual
-      // file or a CAPI device, we let block layer
-      // decide and we just use the chunk ID that is
-      // passed back from the cblk_open call.
-      ea->st_type = EA_STORE_TYPE_FILE;
-          
-      // Check to see if we need to create the store on a
-      // physical or virtual LUN.  Previously, in GA1,
-      // we keyed off the size and if it was 0, then we
-      // asked for the LUN to be physical.  Now, the user
-      // can specify with a flag.
-      if ( vlun == 0 )
-      {
-        chkid = cblk_open((const char *)path, 
-                           basyncs, O_RDWR, ext, 0);
-        if ( NULL_CHUNK_ID != chkid )
+        // Using a file.  We don't care if it's an actual
+        // file or a CAPI device, we let block layer
+        // decide and we just use the chunk ID that is
+        // passed back from the cblk_open call.
+        ea->st_type = EA_STORE_TYPE_FILE;
+
+        // Check to see if we need to create the store on a
+        // physical or virtual LUN.  Previously, in GA1,
+        // we keyed off the size and if it was 0, then we
+        // asked for the LUN to be physical.  Now, the user
+        // can specify with a flag.
+        if ( vlun == 0 )
         {
-          rc = cblk_get_size(chkid, (size_t *)bcount, 0);
-          if ( (rc != 0) || (*bcount == 0) )
-          {
-            // An error was encountered, close the chunk
+            KV_TRC(pAT, "cblk_open PHYSICAL LUN: %s", path);
+            chkid = cblk_open(path, basyncs, O_RDWR, ext,
+                              CBLK_OPN_NO_INTRP_THREADS);
 
-            // If we are here, and the call to cblk_get_size() 
-            // was successful then that means bcount is 0
-            if ( rc == 0 )
+            if (NULL_CHUNK_ID == chkid)
             {
-              rc = ENOSPC;
+                printf("cblk_open physical lun failed\n");
+                KV_TRC_FFDC(pAT, "cblk_open phys lun failed path:%s bsize:%ld "
+                                 "size:%ld bcount:%ld, errno:%d",
+                                 path, bsize, *size, *bcount, errno);
+                goto error_exit;
             }
 
-            cblk_close(chkid, 0);
-            chkid = NULL_CHUNK_ID;
-            KV_TRC_FFDC(pAT, "cblk_get_size failed path %s bsize %"PRIu64" size %"PRIu64""
-                        "bcount %"PRIu64", errno = %d",
-                        path, bsize, *size, *bcount, errno);
-          }
-          else
-          {
+            rc = cblk_get_size(chkid, (size_t *)bcount, 0);
+            if ( (rc != 0) || (*bcount == 0) )
+            {
+                // An error was encountered, close the chunk
+                cblk_close(chkid, 0);
+                chkid = NULL_CHUNK_ID;
+                KV_TRC_FFDC(pAT, "cblk_get_size failed path %s bsize %"PRIu64" "
+                                 "size %"PRIu64" bcount %"PRIu64", errno = %d",
+                                 path, bsize, *size, *bcount, errno);
+                goto error_exit;
+            }
+
             // Set the size to be returned
             *size = *bcount * bsize;
-          }
         }
-      }
-      else
-      {
-        chkid = cblk_open((const char *)path, basyncs, O_RDWR, ext, 
-                             CBLK_OPN_VIRT_LUN);
-        if ( NULL_CHUNK_ID != chkid )
+        else
         {
-          // A specific size was passed in so we try to set the
-	  // size of the chunk.
-          *bcount = *size / bsize;
-          rc = cblk_set_size(chkid, (size_t)*bcount, 0);
-          if ( rc != 0 )
-          {
-            // An error was encountered, close the chunk
-            cblk_close(chkid, 0);
-            chkid = NULL_CHUNK_ID;
-            KV_TRC_FFDC(pAT, "cblk_set_size failed path %s bsize %"PRIu64" size %"PRIu64""
-                        " bcount %"PRIu64", errno = %d",
-                        path, bsize, *size, *bcount, errno);
-          }
-        }
-      }
+            KV_TRC(pAT, "cblk_open VIRTUAL LUN: %s", path);
+            chkid = cblk_open(path, basyncs, O_RDWR, ext,
+                              CBLK_OPN_VIRT_LUN|CBLK_OPN_NO_INTRP_THREADS);
 
-      if ( NULL_CHUNK_ID == chkid )
-      {
-        printf("cblk_open failed\n");
-        am_free(ea);
-        ea = NULL;
-        KV_TRC_FFDC(pAT, "cblk_open failed path %s bsize %"PRIu64" size %"PRIu64""
-	            " bcount %"PRIu64", errno = %d",
-	            path, bsize, *size, *bcount, errno);
-      }
-      else
-      {
+            if (NULL_CHUNK_ID == chkid)
+            {
+                printf("cblk_open virtual lun failed\n");
+                KV_TRC_FFDC(pAT, "cblk_open virt lun failed path:%s bsize:%ld "
+                                 "size:%ld bcount:%ld, errno:%d",
+                                 path, bsize, *size, *bcount, errno);
+                goto error_exit;
+            }
+
+            // A specific size was passed in so we try to set the
+            // size of the chunk.
+            *bcount = *size / bsize;
+            rc = cblk_set_size(chkid, (size_t)*bcount, 0);
+            if ( rc != 0 )
+            {
+                printf("cblk_set_size failed for %ld\n", *bcount);
+                // An error was encountered, close the chunk
+                cblk_close(chkid, 0);
+                chkid = NULL_CHUNK_ID;
+                KV_TRC_FFDC(pAT, "cblk_set_size failed path %s bsize %"PRIu64" "
+                                 "size %"PRIu64" bcount %"PRIu64", errno = %d",
+                                 path, bsize, *size, *bcount, errno);
+                goto error_exit;
+            }
+        }
+
         // Save off the chunk ID and the device name
-        ea->st_flash = chkid;
-        plen = strlen(path) + 1;
+        ea->st_flash  = chkid;
+        plen          = strlen(path) + 1;
         ea->st_device = (char *)am_malloc(plen);
+        if (!ea->st_device)
+        {
+            cblk_close(chkid, 0);
+            KV_TRC_FFDC(pAT, "MALLOC st_device failed (%s) plen=%ld errno:%d",
+                        path, plen, errno);
+            goto error_exit;
+        }
+
         memset(ea->st_device, 0, plen);
         strncpy(ea->st_device, path, plen);
-      }
     }
 
-    if (ea != NULL)
-    {
-      // Fill in the EA struct
-      pthread_rwlock_init(&(ea->ea_rwlock), NULL);
-      ea->bsize = bsize;
-      ea->bcount = *bcount;
-      ea->size = *size;
-    }
-  }
+    // Fill in the EA struct
+    pthread_rwlock_init(&(ea->ea_rwlock), NULL);
+    ea->bsize  = bsize;
+    ea->bcount = *bcount;
+    ea->size   = *size;
 
-  KV_TRC(pAT, "path %s bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64"",
-          path, bsize, *size, *bcount);
-  return ea;
+    KV_TRC(pAT, "path %s bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64"",
+           path, bsize, *size, *bcount);
+    goto done;
+
+error_exit:
+    am_free(ea);
+    ea = NULL;
+    if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOSPC;}
+
+done:
+    return ea;
 }
 
-int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount) {
+int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
+{
   uint64_t size = bcount * bsize;
   int rc        = 0;
 
@@ -232,7 +235,7 @@ int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount) {
     } 
     else {
       errno = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory to resize ea %p bsize %lu bcount %lu, errno = %d",
+      KV_TRC_FFDC(pAT, "ENOMEM, resize ea %p bsize %lu bcount %lu, errno = %d",
               ea, bsize, bcount, errno);
       rc = 1;
     }
@@ -246,6 +249,13 @@ int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount) {
     {
       ea->bcount = bcount;
       ea->size = size;
+    }
+    else
+    {
+        errno = ENOSPC;
+        KV_TRC_FFDC(pAT, "cblk_set_size failed ea %p bsize %lu bcount %lu, "
+                         "errno = %d",
+                         ea, bsize, bcount, errno);
     }
   }
 
@@ -294,23 +304,29 @@ int ea_write(EA *ea, uint64_t lba, void *src) {
 
 int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, int nthrs)
 {
-  int64_t  i = 0;
-  int64_t  j = 0;
-  int64_t  comps  = 0;
-  int      num = 0;
+  int64_t  i       = 0;
+  int64_t  j       = 0;
+  int64_t  comps   = 0;
+  int      num     = 0;
   int      max_ops = 0;
-  int     rc = 0;
-  int     a_rc = 0;
-  uint64_t status = 0;
-  uint8_t *p_addr = NULL;
-  uint8_t *m_addr = NULL;
+  void    *m_rc    = NULL;
+  int      rc      = 0;
+  int      a_rc    = 0;
+  uint64_t status  = 0;
+  uint8_t *p_addr  = NULL;
+  uint8_t *m_addr  = NULL;
+  char     *ot     = NULL;
 
   ARK_SYNC_EA_READ(ea);
+
+  if (op == ARK_EA_READ) {ot="IO_RD";}
+  else                   {ot="IO_WR";}
 
   if ( ea->st_type == EA_STORE_TYPE_MEMORY)
   {
     // Loop through the block list to issue the IO
-    for(i = 0; i < len; i++) {
+    for(i = 0; i < len; i++)
+    {
 
       p_addr = ((uint8_t*)addr) + (i * ea->bsize);
 
@@ -319,45 +335,24 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
       // Read out the value from the in-memor block
       m_addr = ea->st_memory + (blist[i].blkno * ea->bsize);
 
-      if (op == ARK_EA_READ)
+      if (op == ARK_EA_READ) {m_rc = memcpy(p_addr, m_addr, ea->bsize);}
+      else                   {m_rc = memcpy(m_addr, p_addr, ea->bsize);}
+
+      if (check_sched_error_injects(op)) {m_rc=NULL;}
+      if (check_harv_error_injects(op))  {m_rc=NULL;}
+
+      if (m_rc == NULL)
       {
-        if (FVT_KV_READ_ERROR_INJECT)
-        {
-            FVT_KV_CLEAR_READ_ERROR; rc = errno = EIO;
-            KV_TRC_FFDC(pAT, "READ_ERROR_INJECT rc = %d", EIO);
-            break;
-        }
-        if ( memcpy(p_addr, m_addr, ea->bsize) == NULL )
-        {
           rc = errno;
           break;
-        }
-      }
-      else
-      {
-        if (FVT_KV_WRITE_ERROR_INJECT)
-        {
-            FVT_KV_CLEAR_WRITE_ERROR; rc = errno = EIO;
-            KV_TRC_FFDC(pAT, "WRITE_ERROR_INJECT rc = %d", EIO);
-            break;
-        }
-        if ( memcpy(m_addr, p_addr, ea->bsize) == NULL )
-        {
-          rc = errno;
-	  break;
-        }
       }
     }
   }
   else
   {
-    // Because we have 4 pool threads, we want to ensure
-    // that at any given time, if all threads are running
-    // large K/V operations, we don't hang because
-    // we exhausted the async command slots in the block
-    // layer. So we divide up the cmd slots among
-    // the 4 threads and go 1 more less to be sure
-    max_ops = (ARK_EA_BLK_ASYNC_CMDS / nthrs) - 1;
+    // divide up the cmd slots among
+    // the threads and go 3 less
+    max_ops = (ARK_EA_BLK_ASYNC_CMDS / nthrs) - 3;
 
     // Loop through the block list to issue the IO
     while ((comps < len) && (rc == 0))
@@ -374,44 +369,29 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
         // blocks.  Upon return, we can either get an error
         // (rc == -1), the data will be available (rc == number
         // of blocks read), or IO has been scheduled (rc == 0).
-        if (op== ARK_EA_READ)
+        if (op == ARK_EA_READ)
         {
-            if (FVT_KV_READ_ERROR_INJECT)
-            {
-                FVT_KV_CLEAR_READ_ERROR; rc = errno = EIO;
-                KV_TRC_FFDC(pAT, "READ_ERROR_INJECT rc = %d", EIO);
-                break;
-            }
-
-            KV_TRC_IO(pAT, "RD: id:%d blkno:%"PRIi64"",
-                    ea->st_flash,
-                    blist[i].blkno);
-          //printf("cblk_aread for block: %"PRIu64"\n", blist[i].blkno);
-          rc = cblk_aread(ea->st_flash, p_addr, blist[i].blkno, 1, 
-			  &(blist[i].a_tag), NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+            rc = cblk_aread(ea->st_flash, p_addr, blist[i].blkno, 1,
+                    &(blist[i].a_tag), NULL,CBLK_ARW_WAIT_CMD_FLAGS);
         }
         else
         {
-            if (FVT_KV_WRITE_ERROR_INJECT)
-            {
-                FVT_KV_CLEAR_WRITE_ERROR; rc = errno = EIO;
-                KV_TRC_FFDC(pAT, "WRITE_ERROR_INJECT rc = %d", EIO);
-                break;
-            }
-
-            KV_TRC_IO(pAT, "WR: id:%d blkno:%"PRIi64"",
-                    ea->st_flash,
-                    blist[i].blkno);
-          rc = cblk_awrite(ea->st_flash, p_addr, blist[i].blkno, 1, 
-                        &(blist[i].a_tag), NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+            rc = cblk_awrite(ea->st_flash, p_addr, blist[i].blkno, 1,
+                    &(blist[i].a_tag), NULL,CBLK_ARW_WAIT_CMD_FLAGS);
         }
+
+        if (check_sched_error_injects(op)) {rc=-1;}
+
+        KV_TRC_IO(pAT, "%s:  id:%d blkno:%"PRIi64" rc:%d",
+                ot, ea->st_flash, blist[i].blkno, rc);
 
         if ( rc == -1 )
         {
           // Error was encountered.  Don't issue any more IO
           rc = errno;
-          KV_TRC_FFDC(pAT, "cblk_aread/awrite failed, IO ERROR, blkno:%"PRIi64"\
- tag:%d, errno = %d", blist[i].blkno, blist[i].a_tag, errno);
+          KV_TRC_FFDC(pAT, "IO_ERR: cblk_aread/awrite failed, "
+                           "blkno:%"PRIi64" tag:%d, errno = %d",
+                           blist[i].blkno, blist[i].a_tag, errno);
           break;
         }
 
@@ -438,13 +418,12 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
         }
 
         do
-	{
+        {
           a_rc = cblk_aresult(ea->st_flash, &(blist[j].a_tag), 
                             &status, CBLK_ARESULT_BLOCKING);
-          KV_TRC_IO(pAT, "RT: id:%d blkno:%"PRIi64" status:%"PRIi64"",
-                  ea->st_flash,
-                  blist[i].blkno,
-                  status);
+
+          if (check_harv_error_injects(op))  {a_rc=-1;}
+
           // There was an error, check to see if we haven't
           // encoutnered an error previously and if not, then
           // set rc.  Continue processing so that we harvest
@@ -455,6 +434,13 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
             {
               rc = errno;
             }
+            KV_TRC_IO(pAT, "IO_ERR: id:%d blkno:%ld status:%ld a_rc:%d",
+                    ea->st_flash, blist[j].blkno, status, a_rc);
+          }
+          else
+          {
+              KV_TRC_IO(pAT, "IO_CMP: id:%d blkno:%ld status:%ld a_rc:%d",
+                      ea->st_flash, blist[j].blkno, status, a_rc);
           }
 
           // If a_rc is 0, that means we got interrupted somehow
@@ -473,29 +459,34 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
   return rc;
 }
 
-int ea_delete(EA *ea) {
-  int rc = 0;
+int ea_delete(EA *ea)
+{
+    int rc = 0;
 
-  if ( ea->st_type == EA_STORE_TYPE_MEMORY )
-  {
-      KV_TRC(pAT, "ea %p ea->st_memory %p", ea, ea->st_memory);
-    // Simple free the block of store
-    free(ea->st_memory);
-  }
-  else
-  {
-    // Call to close out the chunk and free the space
-    // for the device name
-    rc = cblk_close(ea->st_flash, 0);
-    am_free(ea->st_device);
-  }
+    if ( ea->st_type == EA_STORE_TYPE_MEMORY )
+    {
+        KV_TRC(pAT, "free ea %p ea->st_memory %p", ea, ea->st_memory);
+        // Simple free the block of store
+        if (ea->st_memory)
+        {
+            free(ea->st_memory);
+            ea->st_memory=NULL;
+        }
+    }
+    else
+    {
+        // Call to close out the chunk and free the space
+        // for the device name
+        rc = cblk_close(ea->st_flash, 0);
+        am_free(ea->st_device);
+    }
 
-  if ( rc == 0 )
-  {
-    KV_TRC(pAT, "ea %p", ea);
-    am_free(ea);
-  }
-  
-  return rc;
+    if ( rc == 0 )
+    {
+        KV_TRC(pAT, "free ea %p", ea);
+        am_free(ea);
+    }
+
+    return rc;
 }
 

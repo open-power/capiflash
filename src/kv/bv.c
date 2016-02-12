@@ -25,11 +25,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
 #include "am.h"
 #include "ut.h"
 #include "bv.h"
+#include <errno.h>
 
 #define BPW 8
 #define WRD uint8_t

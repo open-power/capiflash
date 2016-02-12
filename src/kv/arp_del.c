@@ -28,29 +28,26 @@
 #include <unistd.h>
 #include <string.h>
 
-#include <sys/errno.h>
-
 #include "ut.h"
 #include "vi.h"
 
 #include "arkdb.h"
 #include "ark.h"
+#include "arp.h"
 #include "am.h"
 
 #include <arkdb_trace.h>
-
-int ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp);
-int ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp);
+#include <errno.h>
 
 // if success returns size of value deleted
-int ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
+void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t         *scbp       = &(_arkp->poolthreads[tid]);
   rcb_t         *rcbp       = &(_arkp->rcbs[tcbp->rtag]);
+  tcb_t         *iotcbp     = &(_arkp->tcbs[rcbp->ttag]);
+  iocb_t        *iocbp      = &(_arkp->iocbs[rcbp->ttag]);
   ark_io_list_t *bl_array   = NULL;
   int32_t        rc         = 0;
-  int32_t        state      = ARK_CMD_DONE;
 
   // Acquire the block that contains the hash entry
   // control information.
@@ -61,24 +58,34 @@ int ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // key in question is not in the store.
   if ( tcbp->hblk == 0 )
   {
-    KV_TRC_FFDC(pAT, "rc = ENOENT: key %p, klen %"PRIu64"",
-                 rcbp->key, rcbp->klen);
+    KV_TRC_FFDC(pAT, "rc = ENOENT: key %p, klen %"PRIu64" ttag:%d",
+                 rcbp->key, rcbp->klen, tcbp->ttag);
     rcbp->res = -1;
     rcbp->rc = ENOENT;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_del_start_err;
   }
 
   // Check to see if we need to grow the in buffer
   // to hold the hash entry
   tcbp->blen = bl_len(_arkp->bl, tcbp->hblk);
+  if (tcbp->blen <= 0)
+  {
+    KV_TRC_FFDC(pAT, "rc = ENOENT: key %p, klen %"PRIu64" ttag:%d",
+                 rcbp->key, rcbp->klen, tcbp->ttag);
+    rcbp->res   = -1;
+    rcbp->rc    = ENOENT;
+    tcbp->state = ARK_CMD_DONE;
+    goto ark_del_start_err;
+  }
   rc = bt_growif(&(tcbp->inb), &(tcbp->inb_orig), &(tcbp->inblen), 
                   (tcbp->blen * _arkp->bsize));
   if (rc != 0)
   {
+    KV_TRC_FFDC(pAT, "bt_growif failed ttag:%d", tcbp->ttag);
     rcbp->res = -1;
     rcbp->rc = rc; 
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_del_start_err;
   }
 
@@ -86,46 +93,39 @@ int ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   bl_array = bl_chain(_arkp->bl, tcbp->hblk, tcbp->blen);
   if (bl_array == NULL)
   {
+    KV_TRC_FFDC(pAT, "bl_chain failed ttag:%d", tcbp->ttag);
     rcbp->rc = ENOMEM;
     rcbp->res = -1;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_del_start_err;
   }
 
   tcbp->old_btsize = tcbp->inb->len;
   scbp->poolstats.io_cnt += tcbp->blen;
 
+  KV_TRC_IO(pAT, "read hash entry ttag:%d", tcbp->ttag);
   // Schedule the IO to read the hash entry from storage
-  rc = ea_async_io_mod(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array, 
-                   tcbp->blen, 0, tcbp->ttag, ARK_DEL_PROCESS);
-  if (rc < 0)
+  ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array,
+                       tcbp->blen, 0, tcbp->ttag, ARK_DEL_PROCESS);
+  if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
+      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
   {
-    rcbp->rc = -rc;
-    rcbp->res = -1;
-    state = ARK_CMD_DONE;
-    goto ark_del_start_err;
-  }
-  else if (rc == 0)
-  {
-    state = ARK_IO_HARVEST;
-  }
-  else
-  {
-    state = ark_del_process(_arkp, tid, tcbp);
+      ark_del_process(_arkp, tid, tcbp);
   }
 
 ark_del_start_err:
 
-  return state;
+  return;
 }
 
-int ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
+void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t         *scbp       = &(_arkp->poolthreads[tid]);
   rcb_t         *rcbp       = &(_arkp->rcbs[tcbp->rtag]);
+  tcb_t         *iotcbp     = &(_arkp->tcbs[rcbp->ttag]);
+  iocb_t        *iocbp      = &(_arkp->iocbs[rcbp->ttag]);
   ark_io_list_t *bl_array   = NULL;
   int32_t        rc         = 0;
-  int32_t        state      = ARK_CMD_DONE;
   uint64_t       blkcnt     = 0;
   uint64_t       oldvlen    = 0;
   int64_t        dblk       = 0;
@@ -134,9 +134,10 @@ int ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
                   (tcbp->blen * _arkp->bsize));
   if (rc != 0)
   {
+    KV_TRC_FFDC(pAT, "bt_growif failed ttag:%d", tcbp->ttag);
     rcbp->res = -1;
     rcbp->rc = rc;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
     goto ark_del_process_err;
   }
 
@@ -168,19 +169,22 @@ int ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->nblk = ark_take_pool(_arkp, &(scbp->poolstats), blkcnt);
       if (tcbp->nblk == -1)
       {
+        KV_TRC_FFDC(pAT, "ark_take_pool %ld failed ttag:%d",
+                    blkcnt, tcbp->ttag);
         rcbp->rc = ENOSPC;
         rcbp->res = -1;
-	state = ARK_CMD_DONE;
-	goto ark_del_process_err;
+        tcbp->state = ARK_CMD_DONE;
+        goto ark_del_process_err;
       }
 
       // Create a list of the blocks to write.
       bl_array = bl_chain(_arkp->bl, tcbp->nblk, blkcnt);
       if (bl_array == NULL)
       {
+        KV_TRC_FFDC(pAT, "bl_chain failed ttag:%d", tcbp->ttag);
         rcbp->rc = ENOMEM;
         rcbp->res = -1;
-	state = ARK_CMD_DONE;
+        tcbp->state = ARK_CMD_DONE;
         goto ark_del_process_err;
       }
 
@@ -188,23 +192,14 @@ int ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       scbp->poolstats.byte_cnt -= (tcbp->old_btsize + oldvlen);
       scbp->poolstats.byte_cnt += tcbp->oub->len;
 
+      KV_TRC_IO(pAT, "write updated hash entry ttag:%d", tcbp->ttag);
       // Schedule the WRITE IO of the updated hash entry.
-      rc = ea_async_io_mod(_arkp, ARK_EA_WRITE, (void *)tcbp->oub, 
+      ea_async_io_init(_arkp, ARK_EA_WRITE, (void *)tcbp->oub,
                        bl_array, blkcnt, 0, tcbp->ttag, ARK_DEL_FINISH);
-      if (rc < 0)
+      if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
+          ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
       {
-        rcbp->rc = -rc;
-        rcbp->res = -1;
-	state = ARK_CMD_DONE;
-        goto ark_del_process_err;
-      }
-      else if (rc == 0)
-      {
-        state = ARK_IO_HARVEST;
-      }
-      else
-      {
-        state = ark_del_finish(_arkp, tid, tcbp);
+          ark_del_finish(_arkp, tid, tcbp);
       }
     }
     else
@@ -213,32 +208,32 @@ int ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       scbp->poolstats.byte_cnt += tcbp->oub->len;
       scbp->poolstats.kv_cnt--;
 
+      KV_TRC_IO(pAT, "no write required for hash entry ttag:%d", tcbp->ttag);
       // Nothing left in this hash entry, so let's clear out
       // the hash entry control block to show there is no
       // data in the store for this hash entry
       HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, tcbp->ttag, 0));
 
       rcbp->rc = 0;
-      state = ARK_CMD_DONE;
+      tcbp->state = ARK_CMD_DONE;
     }
   }
   else
   {
-    KV_TRC_FFDC(pAT, "rc = ENOENT: key %p, klen %"PRIu64"",
-                 rcbp->key, rcbp->klen);
+    KV_TRC_FFDC(pAT, "rc = ENOENT: key %p, klen %"PRIu64" ttag:%d",
+                 rcbp->key, rcbp->klen, tcbp->ttag);
     rcbp->rc = ENOENT;
     rcbp->res = -1;
-    state = ARK_CMD_DONE;
+    tcbp->state = ARK_CMD_DONE;
   }
 
 ark_del_process_err:
 
-  return state;
+  return;
 }
 
-int ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
+void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
 {
-  int32_t state = ARK_CMD_DONE;
   rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
   scb_t  *scbp  = &(_arkp->poolthreads[tid]);
 
@@ -248,6 +243,7 @@ int ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
   // new block info.
   HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, tcbp->ttag, tcbp->nblk));
 
-  return state;
+  tcbp->state = ARK_CMD_DONE;
+  return;
 }
 

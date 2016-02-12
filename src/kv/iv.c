@@ -26,17 +26,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#include <errno.h>
 #include "am.h"
 
 #include "ut.h"
 #include "iv.h"
 #include <arkdb_trace.h>
-
+#include <errno.h>
 
 #define IVINLINE // inline
 #define IVSAFE   // if (i<0 & i>=bv->n) exit(987);
-  
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 IV *iv_new(uint64_t n, uint64_t m) {
 
   uint64_t bits  = n * m;
@@ -52,20 +55,23 @@ IV *iv_new(uint64_t n, uint64_t m) {
   else
   {
     memset(iv,0x00, bytes);
-    iv->n = n;
-    iv->m = m;
-    iv->bits = bits;
-    iv->words = words;
-    iv->mask = 1;
+    iv->n      =  n;
+    iv->m      = m;
+    iv->bits   = bits;
+    iv->words  = words;
+    iv->mask   = 1;
     iv->mask <<= m;
-    iv->mask -= 1;
-    iv->bar = 64 - m;
+    iv->mask  -= 1;
+    iv->bar    = 64 - m;
   }
-
-  KV_TRC(pAT, "iv %p n %"PRIu64" m %"PRIu64"", iv, n, m);
+  KV_TRC(pAT, "iv:%p n:%ld m:%ld", iv, n, m);
   return iv;
 }
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 IV *iv_resize(IV *piv, uint64_t n, uint64_t m) {
 
   uint64_t bits  = n * m;
@@ -80,39 +86,62 @@ IV *iv_resize(IV *piv, uint64_t n, uint64_t m) {
   }
   else
   {
-    iv->n = n;
-    iv->m = m;
-    iv->bits = bits;
-    iv->words = words;
-    iv->mask = 1;
+    iv->n      = n;
+    iv->m      = m;
+    iv->bits   = bits;
+    iv->words  = words;
+    iv->mask   = 1;
     iv->mask <<= m;
-    iv->mask -= 1;
-    iv->bar = 64 - m;
+    iv->mask  -= 1;
+    iv->bar    = 64 - m;
   }
 
   KV_TRC_DBG(pAT, "iv %p n %"PRIu64" m %"PRIu64"", piv, n, m);
   return iv;
 }
 
-void iv_set(IV *iv, uint64_t i, uint64_t v) {
-  uint64_t pos = i * iv->m;
-  uint64_t w = pos >> 6;
-  uint64_t b = pos & 63;
-  uint64_t shift;
-  uint64_t msk0;
-  uint64_t msk1;
-  uint64_t val;
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int iv_set(IV *iv, uint64_t i, uint64_t v)
+{
+  int       rc    = -1;
+  uint64_t  pos   = 0;
+  uint64_t  w     = 0;
+  uint64_t  b     = 0;
+  uint64_t  shift = 0;
+  uint64_t  msk0  = 0;
+  uint64_t  msk1  = 0;
+  uint64_t  val   = -1;
 
+  if (!iv)
+  {
+      KV_TRC_FFDC(pAT, "iv NULL i:%ld", i);
+      goto exception;
+  }
+  if (i >= iv->n)
+  {
+      KV_TRC_FFDC(pAT, "i:%ld is invalid n:%ld", i, iv->n);
+      goto exception;
+  }
+
+  pos = i * iv->m;
+  w   = pos >> 6;
+  b   = pos & 63;
 
   v &= iv->mask;
-  if (b <= iv->bar) {
+  if (b <= iv->bar)
+  {
     shift = iv->bar - b;
     msk1   = iv->mask << shift;
     msk0  = ~msk1;
     val   = v << shift;
     val |= (iv->data[w] & msk0);
     iv->data[w] =  val;
-  } else {
+  }
+  else
+  {
     shift = b - iv->bar;
     msk1  = iv->mask >> shift;
     msk0  = ~msk1;
@@ -126,40 +155,79 @@ void iv_set(IV *iv, uint64_t i, uint64_t v) {
     val |= (iv->data[w+1] & msk0);
     iv->data[w+1] = val;
   }
+  rc=0;
+
+exception:
+   return rc;
 }
-  
-uint64_t iv_get(IV *iv, uint64_t i) {
-  uint64_t bp = i * iv->m;
-  uint64_t w = bp >> 6;
-  uint64_t b = bp & 63;
-  uint64_t shift;
-  uint64_t val0;
-  uint64_t val1;
-  uint64_t msk0;
-  uint64_t msk1;
-  uint64_t val;
-  if (b <= iv->bar) {
-    shift = iv->bar - b;
-    val = iv->mask & (iv->data[w] >> shift);
-  } else {
-    shift = b - iv->bar;
-    msk0 = iv->mask>>shift;
-    msk1 = iv->mask >> (iv->m-shift);
-    val0 = (msk0  & iv->data[w]) << shift;
-    val1 = msk1 & (iv->data[w+1] >> (64-shift));
-    val = val0 | val1;
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int64_t iv_get(IV *iv, uint64_t i)
+{
+  uint64_t  pos   = 0;
+  uint64_t  w     = 0;
+  uint64_t  b     = 0;
+  uint64_t  shift = 0;
+  uint64_t  val0  = 0;
+  uint64_t  val1  = 0;
+  uint64_t  msk0  = 0;
+  uint64_t  msk1  = 0;
+  int64_t   val   = -1;
+
+  if (!iv)
+  {
+      KV_TRC_FFDC(pAT, "iv NULL i:%ld", i);
+      goto exception;
   }
+  if (i >= iv->n)
+  {
+      KV_TRC_FFDC(pAT, "i:%ld is invalid n:%ld", i, iv->n);
+      goto exception;
+  }
+
+  pos = i * iv->m;
+  w   = pos >> 6;
+  b   = pos & 63;
+
+  if (b <= iv->bar)
+  {
+    shift = iv->bar - b;
+    val   = (int64_t)(iv->mask & (iv->data[w] >> shift));
+  }
+  else
+  {
+    shift = b - iv->bar;
+    msk0  = iv->mask>>shift;
+    msk1  = iv->mask >> (iv->m-shift);
+    val0  = (msk0  & iv->data[w]) << shift;
+    val1  = msk1 & (iv->data[w+1] >> (64-shift));
+    val   = (int64_t)(val0 | val1);
+  }
+
+exception:
   return val;
 }
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 /* void iv_resize(IV *iv, uint64_t n) { */
 /*   uint64_t bits  = n * iv->m; */
 /*   uint64_t words = divup(bits, 64); */
 /*   uint64_t bytes = sizeof(IV) + words * sizeof(uint64_t); */
-/*   IV *iv = realloc(bytes); */
-  
-void    iv_delete(IV *iv) {
+/*   IV *iv = realloc(bytes); *
+******************************************************************************/
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+void iv_delete(IV *iv)
+{
     KV_TRC(pAT, "iv %p", iv);
     am_free(iv);
 }
-

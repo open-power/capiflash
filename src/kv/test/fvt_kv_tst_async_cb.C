@@ -133,6 +133,8 @@ TEST(FVT_KV_GOOD_PATH, ASYNC_CB_2_CONTEXT)
     uint32_t ctxt = 0;
     uint32_t secs = 5;
 
+    TESTCASE_SKIP_IF_FILE;
+
     kv_async_init_ctxt          (ctxt, secs);
     kv_async_init_job_low_stress(ctxt++);
     kv_async_init_ctxt          (ctxt, secs);
@@ -148,6 +150,8 @@ TEST(FVT_KV_GOOD_PATH, ASYNC_CB_10_CONTEXT)
 {
     uint32_t ctxt = 0;
     uint32_t secs = 5;
+
+    TESTCASE_SKIP_IF_FILE;
 
     for (ctxt=0; ctxt<10; ctxt++)
     {

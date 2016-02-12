@@ -45,12 +45,12 @@ uint64_t ht_pos(HT *ht, uint8_t *buf, uint64_t n);
 HT  *ht_new(uint64_t n, uint64_t m);
 void ht_delete(HT *ht);
 
-void      ht_set(HT *ht, uint64_t pos, uint64_t val);
-uint64_t ht_get(HT *ht, uint64_t pos);
+void    ht_set(HT *ht, uint64_t pos, uint64_t val);
+int64_t ht_get(HT *ht, uint64_t pos);
 
-void      ht_clr(HT *ht, uint64_t pos);
+void ht_clr(HT *ht, uint64_t pos);
 
-int      ht_vldp(HT *ht, uint64_t pos);
+int  ht_vldp(HT *ht, uint64_t pos);
 
 uint64_t ht_cnt(HT *ht);
 

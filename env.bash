@@ -47,9 +47,8 @@ fi
 export MCP_PATH=/opt/mcp/toolchains/fr_SL1_2014-05-12-194021
 
 #configure advanced toolchain for linux
-AT70PATH=/opt/at7.0
 AT71PATH=/opt/at7.1
-AT80PATH=/opt/at8.0
+AT90PATH=/opt/at9.0-2-rc2
 
 if [ -d $MCP_PATH ]; then
     echo "INFO: Found MCP: $MCP_PATH ."
@@ -61,12 +60,10 @@ fi
 
 
 
-if [ -d $AT70PATH ]; then
-    export ADV_TOOLCHAIN_PATH=$AT70PATH
-elif [ -d $AT71PATH ]; then
+if [ -d $AT71PATH ]; then
     export ADV_TOOLCHAIN_PATH=$AT71PATH
-elif [ -d $AT80PATH ]; then
-    export ADV_TOOLCHAIN_PATH=$AT80PATH
+elif [ -d $AT90PATH ]; then
+    export ADV_TOOLCHAIN_PATH=$AT90PATH
 else
     echo "WARNING: no toolchain was found. Will fall back to system defaults. YMMV."
 fi

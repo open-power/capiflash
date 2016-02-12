@@ -26,13 +26,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <errno.h>
 
 #include "am.h"
 
 #include "sq.h"
 
 #include <arkdb_trace.h>
+#include <errno.h>
 
 int  sq_sizeof(int n, int m) {return sizeof(SQ) + n*m;}
 int  sq_count(SQP sq)        {return sq->cnt;}

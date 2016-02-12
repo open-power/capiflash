@@ -53,6 +53,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_CTXT_10_PTH_10_SMALL_BLOCKS)
     uint32_t LEN      = 100;
     uint32_t secs     = 5;
 
+    TESTCASE_SKIP_IF_FILE;
+
     Sync_pth sync_pth;
 
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, vlen, LEN, secs);
@@ -69,6 +71,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_CTXT_10_PTH_32_BIG_BLOCKS)
     uint32_t vlen     = KV_64K;
     uint32_t LEN      = 20;
     uint32_t secs     = 5;
+
+    TESTCASE_SKIP_IF_FILE;
 
     Sync_pth sync_pth;
 
@@ -100,67 +104,121 @@ TEST(FVT_KV_GOOD_PATH, SYNC_ASYNC_EASY)
     kv_async_wait_jobs();
 }
 
+void pr_perf_fail(const char *s, uint32_t x, uint32_t y)
+{
+    printf("*******************************\n");
+    printf("* FAILURE: %s: %d < %d\n", s, x, y);
+    printf("*******************************\n");
+}
+
 /**
  *******************************************************************************
  * \brief
  ******************************************************************************/
-#ifdef _AIX
-TEST(FVT_KV_GOOD_PATH, DISABLED_SYNC_ASYNC_PERF)
-#else
 TEST(FVT_KV_GOOD_PATH, SYNC_ASYNC_PERF)
-#endif
 {
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 128;
-    uint32_t npool    = 20;
+    uint32_t npool    = 1;
     uint32_t vlen     = 16;
     uint32_t LEN      = 500;
     uint32_t secs     = 15;
     uint32_t ios      = 0;
     uint32_t ops      = 0;
-
-    if (getenv("FVT_DEV") == NULL)
-    {
-        printf("NOT_EXECUTED for memory\n");
-        return;
-    }
+    uint32_t e_ios    = 0;
+    uint32_t e_ops    = 0;
 
     Sync_pth sync_pth;
 
-    num_ctxt = 1;
+    num_ctxt = 1; e_ops=e_ios=70000;
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN,secs,&ops,&ios);
-    EXPECT_GT(ops, 72000);
-    EXPECT_GT(ios, 72000);
-    usleep(1000000);
+    if (ops < e_ops) pr_perf_fail("ops", ops, e_ops);
+    if (ios < e_ios) pr_perf_fail("ios", ios, e_ios);
 
-    num_ctxt = 1; vlen = KV_64K; secs = 10; num_pth = 40;
+    num_ctxt=1; vlen=KV_64K; num_pth=40; e_ops=11500; e_ios=112000;
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN,secs,&ops,&ios);
-    EXPECT_GT(ops, 11500);
-    EXPECT_GT(ios, 112000);
-    usleep(1000000);
+    if (ops < e_ops) pr_perf_fail("ops", ops, e_ops);
+    if (ios < e_ios) pr_perf_fail("ios", ios, e_ios);
 
-    num_ctxt = 1; vlen = KV_500K; num_pth = 20;
+#ifndef _AIX
+    num_ctxt = 1; vlen = KV_500K; num_pth = 20;  e_ops=2200; e_ios=150000;
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN,secs,&ops,&ios);
-    EXPECT_GT(ops, 2200);
-    EXPECT_GT(ios, 150000);
-    usleep(1000000);
+    if (ops < e_ops) pr_perf_fail("ops", ops, e_ops);
+    if (ios < e_ios) pr_perf_fail("ios", ios, e_ios);
+#endif
 
-    num_ctxt = 4; vlen = 16; num_pth = 128;
-    sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN,secs,&ops,&ios);
-    EXPECT_GT(ops, 182000);
-    EXPECT_GT(ios, 182000);
-    usleep(1000000);
+    TESTCASE_SKIP_IF_FILE;
 
-    num_ctxt = 4; num_pth = 20; vlen = KV_64K;
+    num_ctxt = 4; vlen = 16; num_pth = 128; e_ops=e_ios=100000; secs=25;
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN,secs,&ops,&ios);
-    EXPECT_GT(ops, 19000);
-    EXPECT_GT(ios, 180000);
-    usleep(1000000);
+    if (ops < e_ops) pr_perf_fail("ops", ops, e_ops);
+    if (ios < e_ios) pr_perf_fail("ios", ios, e_ios);
 
-    num_ctxt = 20; vlen = 16; num_pth = 128; npool = 4;
+    num_ctxt = 4; num_pth = 20; vlen = KV_64K; e_ops=19000;e_ios=180000;secs=25;
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN,secs,&ops,&ios);
-    EXPECT_GT(ops, 110000);
-    EXPECT_GT(ios, 110000);
+    if (ops < e_ops) pr_perf_fail("ops", ops, e_ops);
+    if (ios < e_ios) pr_perf_fail("ios", ios, e_ios);
+
+    num_ctxt = 20; vlen = 16; num_pth = 20; e_ops=e_ios=110000; secs=25;
+    sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN,secs,&ops,&ios);
+    if (ops < e_ops) pr_perf_fail("ops", ops, e_ops);
+    if (ios < e_ios) pr_perf_fail("ios", ios, e_ios);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SYNC_ASYNC_NPOOL_4)
+{
+    uint32_t num_ctxt = 1;
+    uint32_t ops      = 20;
+    uint32_t npool    = 4;
+    uint32_t klen     = 16;
+    uint32_t vlen     = 128;
+    uint32_t LEN      = 500;
+    uint32_t secs     = 15;
+
+    kv_async_init_perf_io(num_ctxt, ops, npool, klen, vlen, LEN, secs);
+    kv_async_start_jobs();
+
+    printf("\n"); fflush(stdout);
+
+    Sync_ark_io ark_io_job;
+    ark_io_job.run_multi_arks(num_ctxt, ops, vlen, secs);
+
+    printf("ASYNC: ");
+
+    kv_async_wait_jobs();
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SYNC_ASYNC_NPOOL_20)
+{
+    uint32_t num_ctxt = 1;
+    uint32_t ops      = 20;
+    uint32_t npool    = 20;
+    uint32_t klen     = 16;
+    uint32_t vlen     = 16;
+    uint32_t LEN      = 500;
+    uint32_t secs     = 15;
+
+    TESTCASE_SKIP_IF_FILE;
+
+    kv_async_init_perf_io(num_ctxt, ops, npool, klen, vlen, LEN, secs);
+    kv_async_start_jobs();
+
+    printf("\n"); fflush(stdout);
+
+    Sync_ark_io ark_io_job;
+    ark_io_job.run_multi_arks(num_ctxt, ops, vlen, secs);
+
+    printf("ASYNC: ");
+
+    kv_async_wait_jobs();
 }
 
 /**
@@ -175,9 +233,10 @@ TEST(FVT_KV_GOOD_PATH, SYNC_ASYNC_MAGNUS_DIFFICULTUS)
     uint32_t LEN      = 5;
     uint32_t secs     = 10;
 
+    TESTCASE_SKIP_IF_FILE;
+
 #ifdef _AIX
-    char    *env_FVT_DEV = getenv("FVT_DEV");
-    if (env_FVT_DEV == NULL)
+    if (dev == NULL)
     {
         printf("NOT_EXECUTED for memory on AIX\n");
         return;

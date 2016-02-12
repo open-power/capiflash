@@ -135,10 +135,9 @@ endif
 GITREVISION:=$(shell git rev-list HEAD | wc -l)-$(shell git rev-parse --short HEAD)
 CUSTOMFLAGS += -DGITREVISION='"${GITREVISION}"'
 
-
 CFLAGS += ${COMMONFLAGS} \
 	 -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} \
-	-R '/opt/at7.1/lib64:$$ORIGIN/../lib:$$ORIGIN:/lib:/usr/lib:/opt/ibm/capikv/lib' \
+	-R '$$ADV_TOOLCHAIN_PATH/lib64:$$ORIGIN/../lib:$$ORIGIN:/lib:/usr/lib:/opt/ibm/capikv/lib' \
 	${INCFLAGS}
 #if ALLOW_WARNINGS is NOT defined, we assume we are compiling production code
 #as such, we adhere to strict compile flags. If this is defined then we warn
@@ -325,6 +324,17 @@ $(foreach _gtest,$(GTESTS_DIR),$(eval $(call GTESTS_template,$(_gtest))))
 CHECK_HEADER = $(shell echo \\\#include $(1) | \
                $(CC) $(CFLAGS) -E - > /dev/null 2>&1 && echo y || echo n)
 
+#Get cxlflash_ioctl.h if we can't find it on the default include path. Note that if the host system already has one in the system's include libs,
+#we won't download a new file. To download a new file, delete the existing one...
+${ROOTPATH}/src/include/scsi/cxlflash_ioctl.h:
+ifeq ($(call CHECK_HEADER,"<scsi/cxlflash_ioctl.h>"),n)
+	@echo "WARNING: Downloading new cxlflash_ioctl.h from Jenkins"
+	mkdir -p ${ROOTPATH}/src/include/scsi
+	wget -P ${ROOTPATH}/src/include/scsi -q http://hydepark.aus.stglabs.ibm.com:8081/job/ga2-kernel/lastSuccessfulBuild/artifact/linux/include/uapi/scsi/cxlflash_ioctl.h
+endif
+
+
+
 $(GTESTS_DIR):
 	$(CXX) $(CFLAGS) $(LDFLAGS) $($(@)_GTESTS_OFILES) $(GTEST_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
 #-------------------------------------------------------------------------------
@@ -354,7 +364,8 @@ ${LIBRARIES}: ${OBJECTS}
 ${EXTRA_PARTS} ${PROGRAMS}: ${LIBRARIES}
 $(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(GTEST_TARGETS)
 
-dep:       ${SUBDIRS:.d=.dep} ${DEPS}
+#cxlflash_ioctl.h dep is necessary to cause the "wget" wagon to go download a header from the CI server... look below for the appropriate rule / recipe
+dep:       ${SUBDIRS:.d=.dep} ${DEPS} ${ROOTPATH}/src/include/scsi/cxlflash_ioctl.h
 code_pass: ${SUBDIRS} ${LIBRARIES} ${EXTRA_PARTS} ${PROGRAMS}
 test:      ${SUBDIRS:.d=.test} ${BIN_TESTS} ${GTESTS_DIR} ${GTESTS_NM_DIR}
 fvt:       ${SUBDIRS:.d=.fvt}

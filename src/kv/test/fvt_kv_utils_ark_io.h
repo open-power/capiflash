@@ -86,11 +86,14 @@ class Sync_ark_io
     static void get(void *args)
     {
         ark_io_args_t *sg_args = (ark_io_args_t*)args;
-        ARK     *ark    = sg_args->ark;
-        kv_t    *db     = sg_args->db;
-        int64_t res     = 0;
-        int32_t i       = 0;
-        uint8_t gvalue[sg_args->vlen];
+        ARK      *ark   = sg_args->ark;
+        kv_t     *db    = sg_args->db;
+        int64_t  res    = 0;
+        int32_t  i      = 0;
+        uint8_t *gvalue = NULL;
+
+        gvalue = (uint8_t*)malloc(sg_args->vlen);
+        assert(gvalue);
 
         /* query all key/value pairs from the fixed db */
         for (i=sg_args->LEN-1; i>=0; i--)
@@ -111,6 +114,7 @@ class Sync_ark_io
             if (db[i].vlen != res)
                 printf("ark_exists bad length\n");
         }
+        free(gvalue);
     }
 
     static void del(void *args)

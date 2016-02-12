@@ -32,8 +32,6 @@ uint64_t divceil(uint64_t n, uint64_t m);
 
 char *rndalpha(int n, int m);
 
-void expandif(void **buf, uint64_t *len, uint64_t req);
-
 double time_per_tick(int n, int del);
 
 
@@ -43,9 +41,9 @@ static __inline__ ticks getticks(void)
 {
      unsigned int x, x0, x1;
      do {
-	  __asm__ __volatile__ ("mftbu %0" : "=r"(x0));
-	  __asm__ __volatile__ ("mftb %0" : "=r"(x));
-	  __asm__ __volatile__ ("mftbu %0" : "=r"(x1));
+          __asm__ __volatile__ ("mftbu %0" : "=r"(x0));
+          __asm__ __volatile__ ("mftb %0" : "=r"(x));
+          __asm__ __volatile__ ("mftbu %0" : "=r"(x1));
      } while (x0 != x1);
 
      return (((uint64_t)x0) << 32) | x;
@@ -62,9 +60,9 @@ static __inline__ ticks getticks(void)
 }
 #endif
 
-static __inline__ double elapsed(ticks t1, ticks t0)			
-{									
-  return (double)t1 - (double)t0;					
+static __inline__ double elapsed(ticks t1, ticks t0)
+{
+  return (double)t1 - (double)t0;
 }
 
 #endif //__UT_H__

@@ -39,7 +39,7 @@ extern "C"
 #include <kv_utils_db.h>
 }
 
-#define MAX_PTH_PER_CONTEXT 128
+#define MAX_PTH_PER_CONTEXT 256
 
 /**
  *******************************************************************************
@@ -85,11 +85,14 @@ class Sync_pth
     static void get(void *args)
     {
         set_get_args_t *sg_args = (set_get_args_t*)args;
-        ARK     *ark    = sg_args->ark;
-        kv_t    *db     = sg_args->db;
-        int64_t res     = 0;
-        int32_t i       = 0;
-        uint8_t gvalue[sg_args->vlen];
+        ARK      *ark   = sg_args->ark;
+        kv_t     *db    = sg_args->db;
+        int64_t  res    = 0;
+        int32_t  i      = 0;
+        uint8_t *gvalue = NULL;
+
+        gvalue = (uint8_t*)malloc(sg_args->vlen);
+        ASSERT_TRUE(gvalue != NULL);
 
         /* query all key/value pairs from the fixed db */
         for (i=sg_args->LEN-1; i>=0; i--)
@@ -101,6 +104,7 @@ class Sync_pth
             EXPECT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
             EXPECT_EQ(db[i].vlen, res);
         }
+        free(gvalue);
     }
 
     static void del(void *args)

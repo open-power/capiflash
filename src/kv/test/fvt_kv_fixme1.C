@@ -26,9 +26,9 @@
 
 extern "C"
 {
+#include <kv_inject.h>
 #include <fvt_kv.h>
 #include <fvt_kv_utils.h>
-#include <fvt_kv_inject.h>
 #include <fvt_kv_utils_async_cb.h>
 #include <fvt_kv_utils_ark_io.h>
 }

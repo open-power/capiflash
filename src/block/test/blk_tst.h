@@ -76,6 +76,8 @@ extern void *blk_fvt_comp_data_buf;
 #define FV_ARESULT_NEXT_TAG     0x4
 #define FV_NO_INRPT		0x8
 
+#define TESTCASE_SKIP(_reason) \
+    printf("[  SKIPPED ] %s\n", _reason);
 
 #define DEBUG_0(A)                              \
     do                                          \
@@ -152,6 +154,7 @@ void blk_get_statistics (chunk_id_t id, int flags, int *ret, int *err);
 void blk_thread_tst(int *ret, int *err);
 void blk_multi_luns_thread_tst(int *ret, int *err);
 void blocking_io_tst (chunk_id_t id, int *ret, int *err);
+void user_tag_io_tst (chunk_id_t id, int *ret, int *err);
 void io_perf_tst (chunk_id_t id, int *ret, int *err);
 int fork_and_clone(int *ret, int *err, int mode);
 int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode);

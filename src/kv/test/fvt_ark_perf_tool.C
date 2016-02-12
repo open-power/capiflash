@@ -69,10 +69,10 @@ int main(int argc, char **argv)
     uint32_t klen  = 16;
     uint32_t vlen  = 16;
     uint32_t secs  = 5;
-    uint32_t pths  = 20;
+    uint32_t pths  = 128;
     uint32_t jobs  = 128;
     uint32_t ctxts = 1;
-    uint32_t npool = 20;
+    uint32_t npool = 1;
     uint32_t LEN   = 200;
     uint32_t ro    = FALSE;
     uint32_t wo    = FALSE;
@@ -86,7 +86,6 @@ int main(int argc, char **argv)
 
     while (FF != (c=getopt(argc, argv, "k:v:l:s:c:t:n:j:rwmbVSAh")))
     {
-        //printf("c=%c %x\n", c, c);
         switch (c)
         {
             case 'k': kparm = optarg; break;
@@ -221,8 +220,8 @@ int main(int argc, char **argv)
         if (async)
         {
             if (verbo)
-                printf("\n  ctxts:1 %dx%dx%d npool:20 rw:%d sync:%d async:%d\
- path:%s\n", klen, vlen, LEN, rw, sync, async, penv);
+                printf("\n  ctxts:1 %dx%dx%d npool:%d rw:%d sync:%d async:%d\
+ path:%s\n", klen, vlen, LEN, npool, rw, sync, async, penv);
 
             kv_async_job_perf(128, klen, vlen, LEN);
         }

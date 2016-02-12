@@ -92,6 +92,8 @@ unset CUSTOMFLAGS
 unset BLOCK_FILEMODE_ENABLED
 unset BLOCK_MC_ENABLED
 unset TARGET_PLATFORM
+unset BLOCK_KERNEL_MC_ENABLED
+
 ulimit -c unlimited #allow core files to be generated
 
 if [[ -h customrc ]]

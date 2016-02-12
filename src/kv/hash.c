@@ -26,17 +26,24 @@
 #include <strings.h>
 #include "am.h"
 #include "hash.h"
+#include <arkdb_trace.h>
 
 hash_t *hash_new(uint64_t n) {
   hash_t *hash = am_malloc(sizeof(hash_t) + n * sizeof(uint64_t));
-  bzero(hash, sizeof(hash_t) + n * sizeof(uint64_t));
-  hash->n = n;
+  if (hash)
+  {
+      bzero(hash, sizeof(hash_t) + n * sizeof(uint64_t));
+      hash->n = n;
+  }
+  else
+      {KV_TRC_FFDC(pAT, "HASH malloc FAILED");}
   return hash;
 }
 
 void hash_free(hash_t *hash)
 {
-  am_free(hash);
+  if (hash) {am_free(hash);}
+  else      {KV_TRC_FFDC(pAT, "hash_free NULL");}
   return;
 }
 

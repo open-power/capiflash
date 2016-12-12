@@ -577,7 +577,7 @@ void send_readm(struct ctx *p_ctx, __u64 start_lba, __u64 stride) {
 
 // compare wbuf & rbuf
 void rw_cmp_buf(struct ctx *p_ctx, __u64 start_lba, __u64 stride) {
-    int i;
+    int i, rc;
     char buf[32];
     int read_fd, write_fd, readm_fd;
 
@@ -591,15 +591,17 @@ void rw_cmp_buf(struct ctx *p_ctx, __u64 start_lba, __u64 stride) {
 	    send_readm(p_ctx, start_lba, stride); // sends NUM_CMDS reads
 
 	    sprintf(buf, "read.%d", pr_id);
-	    read_fd = open(buf, O_RDWR|O_CREAT);
+	    read_fd = open(buf, O_RDWR,O_CREAT);
 	    sprintf(buf, "write.%d", pr_id);
-	    write_fd = open(buf, O_RDWR|O_CREAT);
+	    write_fd = open(buf, O_RDWR,O_CREAT);
 	    sprintf(buf, "readm.%d", pr_id);
-	    readm_fd = open(buf, O_RDWR|O_CREAT);
+	    readm_fd = open(buf, O_RDWR,O_CREAT);
 
-	    write(read_fd,  &p_ctx->rbuf[i][0], sizeof(p_ctx->rbuf[i]));
-	    write(write_fd, &p_ctx->wbuf[i][0], sizeof(p_ctx->wbuf[i]));
-	    write(readm_fd, &p_ctx->rbufm[i][0], sizeof(p_ctx->rbufm[i]));
+	    rc = write(read_fd,  &p_ctx->rbuf[i][0], sizeof(p_ctx->rbuf[i]));
+	    rc = write(write_fd, &p_ctx->wbuf[i][0], sizeof(p_ctx->wbuf[i]));
+	    rc = write(readm_fd, &p_ctx->rbufm[i][0], sizeof(p_ctx->rbufm[i]));
+	    if ( rc != 0 )
+	    	printf("%d: write error on readm \n",rc);
 
 	    close(read_fd);
 	    close(write_fd);
@@ -721,14 +723,14 @@ main(int argc, char *argv[])
 #else
     sprintf(ctx_file, "ctx.%d", pr_id);
     unlink(ctx_file);
-    ctx_fd = open(ctx_file, O_RDWR|O_CREAT);
+    ctx_fd = open(ctx_file, O_RDWR,O_CREAT);
     if (ctx_fd < 0) {
 	fprintf(stderr, "open failed: file %s, errno %d", ctx_file, errno);
 	exit(-1);
     }
 
     // mmap a struct ctx 
-    ftruncate(ctx_fd, sizeof(struct ctx));
+    rc = ftruncate(ctx_fd, sizeof(struct ctx));
     map = mmap(NULL, sizeof(struct ctx),
 	       PROT_READ|PROT_WRITE, MAP_SHARED, ctx_fd, 0);
     if (map == MAP_FAILED) {

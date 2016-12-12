@@ -117,7 +117,7 @@ else
 	CXX_RAW = g++ 
 	CC = ${CC_RAW}
 	CXX = ${CXX_RAW}
-	LD = ld
+	LD = gcc    # ld
 	OBJDUMP = objdump
 	#if we are NOT using the atx.x stuff, prepend nothing.
         RPATH_PREPEND =

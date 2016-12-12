@@ -694,7 +694,7 @@ int mc_size_regress_internal()
         CHECK_RC(rc, "mc_size");
         if ( i % 10 == 0)
         {
-            system("date");
+            rc = system("date");
             printf("%d: loop %d(%d) done...\n", pid, i, mc_size_regrss_l);
         }
         fflush(stdout);
@@ -721,7 +721,7 @@ int mc_test_chunk_regress(int cmd)
     char *str = getenv("LONG_RUN");
     if (str != NULL)
     {
-        system("date");
+        rc = system("date");
         printf("%d: Do %s Regress for %d context processes\n",
                pid, __func__, max_p);
         if (4 == cmd)
@@ -760,7 +760,7 @@ int mc_test_chunk_regress(int cmd)
 
 int mc_test_chunk_regress_long()
 {
-    int rc;
+    int rc, rc2;
     int i;
     int lrun=1;
     char *str = getenv("LONG_RUN");
@@ -780,7 +780,9 @@ int mc_test_chunk_regress_long()
         debug("Loop %d(%d) done...\n", i, lrun);
         if (i%10 == 0)
         {
-            system("date");
+            rc2 = system("date");
+            if (rc2)
+		printf("Invalid date\n");
             printf("Loop %d(%d) done...\n", i, lrun);
             fflush(stdout);
         }
@@ -1030,7 +1032,7 @@ int mc_test_ctx_regress(int cmd)
 
 int test_mc_regress_ctx_crt_dstr(int cmd)
 {
-    int rc;
+    int rc, rc2;
     int i;
     int lrun=1;
     char *str = getenv("LONG_RUN");
@@ -1040,7 +1042,7 @@ int test_mc_regress_ctx_crt_dstr(int cmd)
         lrun = 400; //for 4 Hrs
         if (3 == cmd)
             lrun = 100;
-        system("date");
+        rc2 = system("date");
         printf("%s : %d : Regress loop : %d\n", __func__, __LINE__, lrun);
         fflush(stdout);
     }
@@ -1055,7 +1057,9 @@ int test_mc_regress_ctx_crt_dstr(int cmd)
         debug("Loop %d(%d) done...\n", i, lrun);
         if (i%10 == 0)
         {
-            system("date");
+            rc2 = system("date");
+	    if ( rc2 )
+		printf("Invalid date\n");
             printf("%d: Loop %d(%d) done...\n", getpid(), i, lrun);
             fflush(stdout);
         }

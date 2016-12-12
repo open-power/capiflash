@@ -31,7 +31,7 @@ int test1()
 
 int mc_test_engine(mc_test_t test_name)
 {
-    int rc = 0;
+    int rc = 0, rc2;
     if (get_fvt_dev_env()) return -1;
 #ifdef _AIX
     //system("ctctrl -c cflashdd -r  memtraceoff");
@@ -40,15 +40,15 @@ int mc_test_engine(mc_test_t test_name)
         system("ctctrl -c cflashdd -r  -q");
 #else
     if (DEBUG)
-        system("echo \"module cxlflash +p\" > /sys/kernel/debug/dynamic_debug/control");
+        rc = system("echo \"module cxlflash +p\" > /sys/kernel/debug/dynamic_debug/control");
     displayBuildinfo();
 #endif
 
     if (DEBUG)
     {
-        system("echo;echo ---------------------- Test Start Timestamp ----------------------");
-        system("date");
-        system("echo ------------------------------------------------------------------; echo");
+        rc = system("echo;echo ---------------------- Test Start Timestamp ----------------------");
+        rc = system("date");
+        rc = system("echo ------------------------------------------------------------------; echo");
     }
 
     if (fork() == 0)
@@ -798,9 +798,11 @@ int mc_test_engine(mc_test_t test_name)
 
     if (DEBUG)
     {
-        system("echo;echo ---------------------- Test End Timestamp ----------------------");
-        system("date");
-        system("echo ----------------------------------------------------------------; echo");
+        rc2 = system("echo;echo ---------------------- Test End Timestamp ----------------------");
+        rc2 = system("date");
+        rc2 = system("echo ----------------------------------------------------------------; echo");
+	if ( rc2 ) 
+		printf("system() error \n");
     }
 
     return rc;

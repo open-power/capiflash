@@ -830,7 +830,7 @@ void *run_pvthread_loop(void *data)
                      */
 
                     fd = open ("/dev/urandom", O_RDONLY);
-                    read (fd, comp_data_buf, BUFSIZE);
+                    rc = read (fd, comp_data_buf, BUFSIZE);
                     close (fd);
 
                     rc = cblk_write(pvt_data->chunk_id,comp_data_buf,lba,num_blocks,0);
@@ -905,7 +905,7 @@ void *run_pvthread_loop(void *data)
                      */
 
                     fd = open ("/dev/urandom", O_RDONLY);
-                    read (fd, comp_data_buf, BUFSIZE);
+                    rc = read (fd, comp_data_buf, BUFSIZE);
                     close (fd);
 
                     rc = cblk_awrite(pvt_data->chunk_id,comp_data_buf,lba,num_blocks,&wtag,NULL,0);

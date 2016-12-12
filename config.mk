@@ -23,14 +23,61 @@
 #
 # IBM_PROLOG_END_TAG
 
-#select a default target architecture
-#if no target arch is set, select PPC64BE for convenience.
+# Select default values if not set
+# using customrc.p8elblkkermc config file
+#-----------------------------------------
+# export MAKECMD=make
+# export CUSTOMFLAGS="-mcpu=power8 -mtune=power8"
+# export BLOCK_FILEMODE_ENABLED=0
+# export BLOCK_MC_ENABLED=1
+# export BLOCK_KERNEL_MC_ENABLED=1
+# export TARGET_PLATFORM="PPC64EL"
+#-----------------------------------------
+#if no target arch is set, select current platform for convenience.
 ifndef TARGET_PLATFORM
-    TARGET_PLATFORM=PPC64BE
+    UNAME=$(shell uname -m)
+    ifeq ( $(UNAME),ppc64le)
+       TARGET_PLATFORM=PPC64EL
+    else
+       TARGET_PLATFORM=PPC64BE
+    endif
 endif
 #If the target architecture is set, pass an architecture
 #down as a #define to the underlying code
-ARCHFLAGS += -DTARGET_ARCH_${TARGET_PLATFORM}
+export ARCHFLAGS += -DTARGET_ARCH_${TARGET_PLATFORM}
+
+# ADV_TOOLCHAIN_PATH
+AT71PATH=/opt/at7.1
+AT90PATH=/opt/at9.0-2-rc2
+ifneq ($(AT71PATH),)
+    export ADV_TOOLCHAIN_PATH=$AT71PATH
+else
+ export ADV_TOOLCHAIN_PATH=$AT90PATH
+endif
+ifeq ( $(ADV_TOOLCHAIN_PATH),)
+    USE_ADVANCED_TOOLCHAIN=no
+endif
+
+ifeq ( $(USE_ADVANCED_TOOLCHAIN),yes)
+   export CUSTOMFLAGS="-mcpu=power8 -mtune=power8"
+   export PATH=${ADV_TOOLCHAIN_PATH}/bin:${ADV_TOOLCHAIN_PATH}/sbin:${PATH}
+else
+   USE_ADVANCED_TOOLCHAIN=no
+   export CUSTOMFLAGS="-mcpu=power8"
+endif
+
+#
+ifndef BLOCK_FILEMODE_ENABLED
+   export BLOCK_FILEMODE_ENABLED=0
+endif
+
+ifndef BLOCK_MC_ENABLED
+   export BLOCK_MC_ENABLED=1
+endif
+
+ifndef BLOCK_KERNEL_MC_ENABLED
+   export BLOCK_KERNEL_MC_ENABLED=1
+endif
 
 #Determine if this a linux or AIX system
 

@@ -1598,38 +1598,38 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_1M_xfersize_physical)
     if (lun_sz < nblks)
         nblks = lun_sz;
 
-        xfersz = nblks;
-        cmd = FV_WRITE;
-        lba = 1;
+    xfersz = nblks;
+    cmd = FV_WRITE;
+    lba = 1;
 
-        blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
+    blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
     
-        EXPECT_EQ(xfersz, (size_t)ret);
-        if ((int)xfersz != ret) {
+    EXPECT_EQ(xfersz, (size_t)ret);
+    if ((int)xfersz != ret) {
            fprintf(stderr,"Write failed 1M xfersz \n");
            blk_open_tst_cleanup();
            return;
-        }
+    }
 
-        cmd = FV_READ;
-        lba = 1;
-        // read what was wrote  xfersize
-        blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
+    cmd = FV_READ;
+    lba = 1;
+    // read what was wrote  xfersize
+    blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
 
-        EXPECT_EQ(xfersz, (size_t)ret);
-        if ((int)xfersz != ret) {
+    EXPECT_EQ(xfersz, (size_t)ret);
+    if ((int)xfersz != ret) {
            fprintf(stderr,"Read failed 1M xfersz \n");
            blk_open_tst_cleanup();
            return;
-        }
-        // compare buffers
+    }
+    // compare buffers
     
-        blk_fvt_cmp_buf(xfersz, &ret);
-        if (ret != 0) {
+    blk_fvt_cmp_buf(xfersz, &ret);
+    if (ret != 0) {
            fprintf(stderr,"Compare failed 1M xfersz \n");
            blk_open_tst_cleanup();
-        }
-        ASSERT_EQ(0, ret);
+    }
+    ASSERT_EQ(0, ret);
 
     blk_open_tst_cleanup();
 }
@@ -1692,38 +1692,38 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_phys_lun_large_xfer_test)
     if (lun_sz < nblks)
         nblks = lun_sz;
 
-        xfersz = nblks;
-        cmd = FV_WRITE;
-        lba = 1;
-
-        blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
+    xfersz = nblks;
+    cmd = FV_WRITE;
+    lba = 1;
     
-        EXPECT_EQ(xfersz, (size_t)ret);
-        if ((int)xfersz != ret) {
-           fprintf(stderr,"Write failed 1M+ xfersz \n");
-           blk_open_tst_cleanup();
-           return;
-        }
-
-        cmd = FV_READ;
-        lba = 1;
-        // read what was wrote  xfersize
-        blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
-
-        EXPECT_EQ(xfersz, (size_t)ret);
-        if ((int)xfersz != ret) {
-           fprintf(stderr,"Read failed 1M+ xfersz \n");
-           blk_open_tst_cleanup();
-           return;
-        }
-        // compare buffers
+    blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
     
-        blk_fvt_cmp_buf(xfersz, &ret);
-        if (ret != 0) {
-           fprintf(stderr,"Compare failed 1M+ xfersz \n");
-           blk_open_tst_cleanup();
-        }
-        ASSERT_EQ(0, ret);
+    EXPECT_EQ(xfersz, (size_t)ret);
+    if ((int)xfersz != ret) {
+       fprintf(stderr,"Write failed 1M+ xfersz \n");
+       blk_open_tst_cleanup();
+       return;
+    }
+    
+    cmd = FV_READ;
+    lba = 1;
+    // read what was wrote  xfersize
+    blk_fvt_io(id, cmd, lba, xfersz, &ret, &er_no, io_flags, open_flags); 
+    
+    EXPECT_EQ(xfersz, (size_t)ret);
+    if ((int)xfersz != ret) {
+       fprintf(stderr,"Read failed 1M+ xfersz \n");
+       blk_open_tst_cleanup();
+       return;
+    }
+    // compare buffers
+    
+    blk_fvt_cmp_buf(xfersz, &ret);
+    if (ret != 0) {
+       fprintf(stderr,"Compare failed 1M+ xfersz \n");
+       blk_open_tst_cleanup();
+    }
+    ASSERT_EQ(0, ret);
 
     blk_open_tst_cleanup();
 }

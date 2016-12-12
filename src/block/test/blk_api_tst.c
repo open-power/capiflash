@@ -468,7 +468,7 @@ int blk_fvt_alloc_list_io_bufs(int size)
     bzero(blk_fvt_comp_data_buf,BLK_FVT_BUFSIZE*size);
     /* fill compare buffer with pattern */
     fd = open ("/dev/urandom", O_RDONLY);
-    read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*size);
+    ret = read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*size);
     close (fd);
     return(0);
 }
@@ -646,7 +646,7 @@ blk_fvt_intrp_io_tst(chunk_id_t id,
 
     /* fill compare buffer with pattern */
     fd = open("/dev/urandom", O_RDONLY);
-    read(fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE);
+    rc = read(fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE);
     close(fd);
 
     // testflag 1 - NO_INTRP      set, null status,  io_flags ARW_USER  set
@@ -893,7 +893,7 @@ void *blk_io_loop(void *data)
                     }
 
                     fd = open ("/dev/urandom", O_RDONLY);
-                    read (fd, comp_data_buf, BLK_FVT_BUFSIZE);
+                    rc = read (fd, comp_data_buf, BLK_FVT_BUFSIZE);
                     close (fd);
 
                     rc = cblk_write(blk_data->chunk_id[x],comp_data_buf,blk_number,1,0);
@@ -973,7 +973,7 @@ void *blk_io_loop(void *data)
                     }
 
                     fd = open ("/dev/urandom", O_RDONLY);
-                    read (fd, comp_data_buf, BLK_FVT_BUFSIZE);
+                    rc = read (fd, comp_data_buf, BLK_FVT_BUFSIZE);
                     close (fd);
 
                     rc = cblk_awrite(blk_data->chunk_id[x],comp_data_buf,blk_number,1,&tag,NULL,0);
@@ -1249,7 +1249,7 @@ void blocking_io_tst (chunk_id_t id, int *ret, int *err)
     for (i=0; i < 1000; i++,lba++) {
         /* fill compare buffer with pattern */
         fd = open ("/dev/urandom", O_RDONLY);
-        read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE);
+        rc = read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE);
         close (fd);
         rc = cblk_awrite(id,blk_fvt_comp_data_buf,lba,nblocks,&cmdtag[i],NULL,arflg);
         DEBUG_3("\n***** cblk_awrite rc = 0x%d, tag = %d, lba =0x%lx\n",rc, cmdtag[i], lba);
@@ -1465,7 +1465,7 @@ void io_perf_tst (chunk_id_t id, int *ret, int *err)
 
     /* fill compare buffer with pattern */
     fd = open ("/dev/urandom", O_RDONLY);
-    read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*num_cmds);
+    rc = read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*num_cmds);
     close (fd);
 
     for (x=0; x<loops ; x++, y++) {
@@ -1627,7 +1627,7 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
                 DEBUG_1("\nmax_context: Child = %d, OPENED \n", i+1 );
                 close_now = 0;
                 while ( !close_now) {
-                    read(pipefds[i*2], &close_now, sizeof(int));
+                    status = read(pipefds[i*2], &close_now, sizeof(int));
                     DEBUG_2("\nChild %d, Received %d \n",pid, close_now);
                 }
                 DEBUG_2("\nChild %d, Received Parent's OK =%d \n",pid, close_now);
@@ -1639,8 +1639,8 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
                 child_ret = j;
                 child_err = errno;
                 /* Send errcode thru ouput side */
-                write(fds[(i*2)+1],&child_ret, sizeof(int));
-                write(fds[(i*2)+1],&child_err, sizeof(int));
+                status = write(fds[(i*2)+1],&child_ret, sizeof(int));
+                status = write(fds[(i*2)+1],&child_err, sizeof(int));
 
                 /* exit error */
                 exit(1);
@@ -1652,7 +1652,7 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
     sleep (5);        
     for (i = 0; i < cntx; i++) {
         ok_to_close = 1;
-        write(pipefds[(i*2)+1], &ok_to_close, sizeof(int));
+        status = write(pipefds[(i*2)+1], &ok_to_close, sizeof(int));
         DEBUG_1("\nparent sends ok_to_close to %d \n",i+1);
     }
     ret_code = errcode = 0;
@@ -1670,8 +1670,8 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
                 if (WIFEXITED(status)) {
                     DEBUG_2("child =%d, status 0x%x \n",i,status);
                     if (WEXITSTATUS(status)) { 
-                        read(fds[(i*2)], &ret_code, sizeof(ret_code));
-                        read(fds[(i*2)], &errcode, sizeof(errcode));
+                        status = read(fds[(i*2)], &ret_code, sizeof(ret_code));
+                        status = read(fds[(i*2)], &errcode, sizeof(errcode));
                         DEBUG_3("\nchild %d errcode %d, ret_code %d\n",
                                 i, errcode, ret_code);
                     } else {
@@ -1768,7 +1768,7 @@ int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode)
 
 
     // create pipe to be used by child  to pass back status
-    pipe(fd);
+    rc = pipe(fd);
 
     if (blk_fvt_setup(1) < 0)
         return (-1);
@@ -1808,8 +1808,8 @@ int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode)
             child_ret = rc;
             child_err = errno;
             /* Send errcode thru ouput side */
-            write(fd[1],&child_ret, sizeof(int));
-            write(fd[1],&child_err, sizeof(int));
+            rc = write(fd[1],&child_ret, sizeof(int));
+            rc = write(fd[1],&child_err, sizeof(int));
             DEBUG_1("Sending child_ret %d\n",child_ret);
             cblk_close(id,0);
             exit (1);
@@ -1835,10 +1835,10 @@ int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode)
                 if (WIFEXITED(child_status)) {
                     DEBUG_2("child =%d, child_status 0x%x \n",child_pid,child_status);
                     if (WEXITSTATUS(child_status)) { 
-                        read(fd[0], &ret_code, sizeof(ret_code));
+                        rc = read(fd[0], &ret_code, sizeof(ret_code));
                         DEBUG_2("\nchild %d retcode %d\n",
                                 child_pid, ret_code);
-                        read(fd[0], &errcode, sizeof(errcode));
+                        rc = read(fd[0], &errcode, sizeof(errcode));
                         DEBUG_2("\nchild %d errcode %d\n",
                                 child_pid, errcode);
                     } else {
@@ -1898,7 +1898,7 @@ int fork_and_clone(int *ret, int *err, int mode)
 
     // create pipe to be used by child  to pass back status
 
-    pipe(fd);
+    rc = pipe(fd);
 
     if (blk_fvt_setup(1) < 0)
         return (-1);
@@ -1952,8 +1952,8 @@ int fork_and_clone(int *ret, int *err, int mode)
             child_ret = rc;
             child_err = errno;
             /* Send errcode thru ouput side */
-            write(fd[1],&child_ret, sizeof(int));
-            write(fd[1],&child_err, sizeof(int));
+            rc = write(fd[1],&child_ret, sizeof(int));
+            rc = write(fd[1],&child_err, sizeof(int));
             DEBUG_2("Sending child ret=%d, err=%d\n",child_ret, child_err);
             cblk_close(id,0);
             exit (1);
@@ -1969,8 +1969,8 @@ int fork_and_clone(int *ret, int *err, int mode)
             child_ret = rc;
             child_err = errno;
             /* Send errcode thru ouput side */
-            write(fd[1],&child_ret, sizeof(int));
-            write(fd[1],&child_err, sizeof(int));
+            rc = write(fd[1],&child_ret, sizeof(int));
+            rc = write(fd[1],&child_err, sizeof(int));
             DEBUG_2("Sending child ret=%d, err=%d\n",child_ret, child_err);
             cblk_close(id,0);
             exit (1);
@@ -1982,8 +1982,8 @@ int fork_and_clone(int *ret, int *err, int mode)
             child_ret = rc;
             child_err = errno;
             /* Send errcode thru ouput side */
-            write(fd[1],&child_ret, sizeof(int));
-            write(fd[1],&child_err, sizeof(int));
+            rc = write(fd[1],&child_ret, sizeof(int));
+            rc = write(fd[1],&child_err, sizeof(int));
             DEBUG_2("Sending child ret=%d, err=%d\n",child_ret, child_err);
             cblk_close(id,0);
             exit (1);

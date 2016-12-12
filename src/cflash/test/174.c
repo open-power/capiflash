@@ -35,7 +35,7 @@ int test_traditional_IO( int flag, int disk_num )
 {
 
 
-    int rc;
+    int rc, rc2;
     struct ctx myctx[20];
     struct ctx *p_ctx[20];
     char *disk_name,*disk_name1,temp[MC_PATHLEN], *str=NULL;
@@ -106,7 +106,9 @@ int test_traditional_IO( int flag, int disk_num )
                 }
             }
             sprintf(str, "cfgmgr -l %s ", disk_name);
-            system(str);
+            rc2=system(str);
+	    if ( rc2 )
+		printf("%s failed\n",str);
             // Wait for IO thread to complete
             break;
 
@@ -149,7 +151,7 @@ int test_traditional_IO( int flag, int disk_num )
                 }
             }
             sprintf(str, "cfgmgr -l %s ", disk_name);
-            system(str);
+            rc2=system(str);
 
             break;
 
@@ -237,10 +239,10 @@ int test_traditional_IO( int flag, int disk_num )
             else rc=0;
             close(p_ctx[i]->fd);
 
-            system("varyonvg NEW_VG; lspv");
-            system("varyoffvg NEW_VG; exportvg NEW_VG");
+            rc2=system("varyonvg NEW_VG; lspv");
+            rc2=system("varyoffvg NEW_VG; exportvg NEW_VG");
             sprintf(str, "chdev -l %s -a pv=clear", disk_name);
-            system(str);
+            rc2=system(str);
 
             return rc;
             //7.1.187
@@ -323,7 +325,7 @@ int test_traditional_IO( int flag, int disk_num )
             // disabling disk 1
             // changing reserve policy to no_reserve
             sprintf(str," chdev -l %s -a reserve_policy=no_reserve", disk_name);
-            system(str);
+            rc2=system(str);
             sprintf(str, "chpath -s disable -l %s -i 0", disk_name);
             rc=system(str);
 
@@ -353,7 +355,7 @@ int test_traditional_IO( int flag, int disk_num )
                 }
             }
             sprintf(str, "chpath -s enable -l %s -i 0", disk_name);
-            system(str);
+            rc2=system(str);
 
             return rc;
             //7.1.214

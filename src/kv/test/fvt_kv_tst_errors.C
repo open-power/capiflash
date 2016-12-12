@@ -53,7 +53,7 @@ int32_t  async_err = 0;
 void kv_tst_io_errors_cb(int errcode, uint64_t dt, int64_t res)
 {
     --async_io;
-    if (async_err != errcode) printf("tag=%"PRIx64"\n", dt);
+    if (async_err != errcode) printf("tag=%" PRIx64"\n", dt);
     ASSERT_EQ(async_err, errcode);
 }
 

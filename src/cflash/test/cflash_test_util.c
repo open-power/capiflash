@@ -1500,11 +1500,11 @@ int send_rw_lsize(struct ctx *p_ctx, struct rwlargebuf *p_rwb,
                    buf_len))
         {
             sprintf(buf,"read.%d",pid);
-            rfd = open(buf,O_RDWR|O_CREAT);
+            rfd = open(buf,O_RDWR,O_CREAT);
             sprintf(buf,"write.%d",pid);
-            wfd = open(buf,O_RDWR|O_CREAT);
-            write(rfd,p_rwb->rbuf[i],buf_len);
-            write(wfd,p_rwb->rbuf[i],buf_len);
+            wfd = open(buf,O_RDWR,O_CREAT);
+            rc = write(rfd,p_rwb->rbuf[i],buf_len);
+            rc = write(wfd,p_rwb->rbuf[i],buf_len);
             close(rfd);
             close(wfd);
             printf("%d: miscompare at start_lba 0X%"PRIX64"\n",
@@ -2492,7 +2492,7 @@ int get_flash_disks(struct flash_disk disks[], int type)
     debug("%d: Refer /tmp/flist file for sample format\n", pid);
 
 #ifndef _AIX
-    system("rm /tmp/flist_sameAdap /tmp/flist_diffAdap /tmp/flist_disk_shared >/dev/null 2>&1");
+    rc = system("rm /tmp/flist_sameAdap /tmp/flist_diffAdap /tmp/flist_disk_shared >/dev/null 2>&1");
 #endif
     if( exportFlag == 0)
     {
@@ -4473,6 +4473,7 @@ int ctx_init_reuse(struct ctx *p_ctx)
 void displayBuildinfo()
 {
     int i=0;
+    int rc=0;
     static int entrycounter=0;
     FILE *fptr;
     char buf[1024];
@@ -4484,16 +4485,18 @@ void displayBuildinfo()
     printf("Kernel Level:\n");
     printf("-------------------------------------------\n");
     fflush(stdout);
-    system("uname -a");
-    system("dpkg -l | grep -w `uname -a | awk '{print $3}'|cut -f2 -d-` | grep -i linux");
+    rc = system("uname -a");
+    if ( rc )
+	printf("Invalid uname -a output\n");
+    rc = system("dpkg -l | grep -w `uname -a | awk '{print $3}'|cut -f2 -d-` | grep -i linux");
     printf("\ncat /opt/ibm/capikv/version.txt:\n");
     printf("-------------------------------------------\n");
     fflush(stdout);
-    system("cat /opt/ibm/capikv/version.txt");
+    rc = system("cat /opt/ibm/capikv/version.txt");
     printf("\nAFU level:\n");
     printf("-------------------------------------------\n");
     fflush(stdout);
-    system("ls /dev/cxl/afu[0-9]*.0m > /tmp/afuF");
+    rc = system("ls /dev/cxl/afu[0-9]*.0m > /tmp/afuF");
 
     fptr = fopen("/tmp/afuF", "r");
     while (fgets(buf,1024, fptr) != NULL)
@@ -4510,12 +4513,12 @@ void displayBuildinfo()
         }
 
         sprintf(cmd, "/opt/ibm/capikv/afu/cxl_afu_dump %s | grep Version", buf);
-        system(cmd);
+        rc = system(cmd);
     }
     fclose(fptr);
     printf("-------------------------------------------\n");
     fflush(stdout);
-    system("update_flash -d");
+    rc = system("update_flash -d");
     printf("-------------------------------------------\n\n");
     fflush(stdout);
 }

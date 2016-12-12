@@ -859,7 +859,7 @@ int max_ctx_rcvr_except_last_one()
 {
     int max_p = MAX_OPENS;
     int i;
-    int rc;
+    int rc, rc2;
     bool do_recover = true;
     int msgid;
     struct mymsgbuf msg_buf;
@@ -868,7 +868,7 @@ int max_ctx_rcvr_except_last_one()
     char cmdToRun[MAXBUFF];
     const char *configCmdP = "echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes";
 #endif
-    system("ipcrm -Q 0x1234 >/dev/null 2>&1");
+    rc = system("ipcrm -Q 0x1234 >/dev/null 2>&1");
 
     for (i = 0; i < max_p-1; i++)
     {
@@ -954,7 +954,9 @@ int max_ctx_rcvr_except_last_one()
     }
     rc = wait4all();
     printf("%d: rc for wait4all(): %d\n", getpid(), rc);
-    system("ipcrm -Q 0x1234");
+    rc2 = system("ipcrm -Q 0x1234");
+    if ( rc2 )
+        printf("%d: rc for system(\"ipcrm -Q 0x1234\"): %d\n", getpid(), rc);
     return rc;
 }
 

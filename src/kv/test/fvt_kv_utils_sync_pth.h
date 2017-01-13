@@ -37,9 +37,10 @@ extern "C"
 {
 #include <fvt_kv.h>
 #include <kv_utils_db.h>
+#include <errno.h>
 }
 
-#define MAX_PTH_PER_CONTEXT 256
+#define MAX_PTH_PER_CONTEXT 2048
 
 /**
  *******************************************************************************
@@ -72,12 +73,18 @@ class Sync_pth
         kv_t    *db  = sg_args->db;
         int64_t res  = 0;
         int32_t i    = 0;
+        int     rc   = 0;
 
         /* load all key/value pairs from the fixed db into the ark */
         for (i=0; i<sg_args->LEN; i++)
         {
-            EXPECT_EQ(0, ark_set(ark, db[i].klen, db[i].key, db[i].vlen,
-                                 db[i].value, &res));
+            while (EAGAIN == (rc=ark_set(ark,
+                                         db[i].klen,
+                                         db[i].key,
+                                         db[i].vlen,
+                                         db[i].value,
+                                         &res))) {usleep(10000);}
+            EXPECT_EQ(0, rc);
             EXPECT_EQ(db[i].vlen, res);
         }
     }
@@ -89,6 +96,7 @@ class Sync_pth
         kv_t     *db    = sg_args->db;
         int64_t  res    = 0;
         int32_t  i      = 0;
+        int      rc     = 0;
         uint8_t *gvalue = NULL;
 
         gvalue = (uint8_t*)malloc(sg_args->vlen);
@@ -97,11 +105,21 @@ class Sync_pth
         /* query all key/value pairs from the fixed db */
         for (i=sg_args->LEN-1; i>=0; i--)
         {
-            EXPECT_EQ(0, ark_get(ark, db[i].klen, db[i].key, db[i].vlen,
-                                 gvalue, 0, &res));
+            while (EAGAIN == (rc=ark_get(ark,
+                                         db[i].klen,
+                                         db[i].key,
+                                         db[i].vlen,
+                                         gvalue,
+                                         0,
+                                         &res))) {usleep(10000);}
+            EXPECT_EQ(0, rc);
             EXPECT_EQ(db[i].vlen, res);
             EXPECT_EQ(0, memcmp(db[i].value,gvalue,db[i].vlen));
-            EXPECT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
+            while (EAGAIN == (rc=ark_exists(ark,
+                                            db[i].klen,
+                                            db[i].key,
+                                            &res))) {usleep(10000);}
+            EXPECT_EQ(0, rc);
             EXPECT_EQ(db[i].vlen, res);
         }
         free(gvalue);
@@ -114,11 +132,16 @@ class Sync_pth
         kv_t    *db  = sg_args->db;
         int64_t res  = 0;
         int32_t i    = 0;
+        int     rc   = 0;
 
         /* delete all key/value pairs from the fixed db */
         for (i=0; i<sg_args->LEN; i++)
         {
-            EXPECT_EQ(0, ark_del(ark, db[i].klen, db[i].key, &res));
+            while (EAGAIN == (rc=ark_del(ark,
+                                         db[i].klen,
+                                         db[i].key,
+                                         &res))) {usleep(10000);}
+            EXPECT_EQ(0, rc);
             EXPECT_EQ(db[i].vlen, res);
         }
     }
@@ -255,6 +278,16 @@ class Sync_pth
 
     void run_multi_ctxt(uint32_t num_ctxt,
                         uint32_t num_pth,
+                        uint32_t vlen,
+                        uint32_t nasync,
+                        uint32_t basync,
+                        uint32_t LEN,
+                        uint32_t secs);
+
+    void run_multi_ctxt(uint32_t num_ctxt,
+                        uint32_t num_pth,
+                        uint32_t nasync,
+                        uint32_t basync,
                         uint32_t npool,
                         uint32_t vlen,
                         uint32_t LEN,

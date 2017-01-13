@@ -16,7 +16,7 @@
 
 # Points to the root of Google Test, relative to where this file is.
 # Remember to tweak this if you move this file.
-GTEST_DIR =$(ROOTPATH)/src/test/framework/googletest/googletest
+GTEST_DIR =$(ROOTPATH)/${GTESTDIR}
 
 UNAME=$(shell uname)
 

@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <string.h>
 
+#include <sys/stat.h>
 #include <sys/time.h>
 
 #include "ct.h"
@@ -42,6 +43,7 @@
 #include "ark.h"
 #include "arp.h"
 #include "am.h"
+#include <ticks.h>
 
 #include <arkdb_trace.h>
 #include <errno.h>
@@ -65,17 +67,17 @@ int ark_wait_tag(_ARK *_arkp, int tag, int *errcode, int64_t *res)
 
   if (rcbp->stat == A_COMPLETE)
   {
-    *res = rcbp->res;
-    *errcode = rcbp->rc;
-    rcbp->stat = A_NULL;
-    tag_bury(_arkp->rtags, tag);
+      *res = rcbp->res;
+      *errcode = rcbp->rc;
+      rcbp->stat = A_NULL;
+      tag_bury(_arkp->rtags, tag);
   }
   else
   {
     rc = EINVAL;
     KV_TRC_FFDC(pAT, "tag = %d rc = %d", tag, rc);
   }
-  
+
   pthread_mutex_unlock(&(rcbp->alock));
 
   return rc;
@@ -85,24 +87,24 @@ int ark_wait_tag(_ARK *_arkp, int tag, int *errcode, int64_t *res)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ark_anyreturn(_ARK *_arkp, int *tag, int64_t *res) {
+int ark_anyreturn(_ARK *_arkp, int *tag, int64_t *res)
+{
   int i;
   int astart = _arkp->astart;
   int nasyncs = _arkp->nasyncs;
   int itag = -1;
 
-  for (i = 0; i < _arkp->nasyncs; i++) {
-    itag = (astart + i) % nasyncs;
-    if (_arkp->rcbs[itag].stat == A_COMPLETE) {
-      //KV_TRC_IO(pAT, pAT, "Found completion tag %d", itag);
-      *tag = itag;
-      *res = _arkp->rcbs[(astart+i) % nasyncs].res;
-      KV_TRC_IO(pAT, "A_COMPLETE: arp %p res %"PRIi64"", _arkp->rcbs+itag,
-                                             _arkp->rcbs[itag].res);
-      _arkp->rcbs[itag].stat = A_NULL;
-      tag_bury(_arkp->rtags, itag);
-      return 0;
-    }
+  for (i = 0; i < _arkp->nasyncs; i++)
+  {
+      itag = (astart + i) % nasyncs;
+      if (_arkp->rcbs[itag].stat == A_COMPLETE)
+      {
+          *tag = itag;
+          *res = _arkp->rcbs[(astart+i) % nasyncs].res;
+          _arkp->rcbs[itag].stat = A_NULL;
+          tag_bury(_arkp->rtags, itag);
+          return 0;
+      }
   }
   _arkp->astart++;
   _arkp->astart %= nasyncs;
@@ -193,9 +195,9 @@ void ark_drop_pool(_ARK *_arkp, ark_stats_t *stats, uint64_t blk)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ark_enq_cmd(int cmd, _ARK *_arkp, uint64_t klen, void *key, 
+int ark_enq_cmd(int cmd, _ARK *_arkp, uint64_t klen, void *key,
                 uint64_t vlen,void *val,uint64_t voff,
-                void (*cb)(int errcode, uint64_t dt,int64_t res), 
+                void (*cb)(int errcode, uint64_t dt,int64_t res),
                 uint64_t dt, int pthr, int *ptag)
 {
   int32_t   rtag = -1;
@@ -214,31 +216,32 @@ int ark_enq_cmd(int cmd, _ARK *_arkp, uint64_t klen, void *key,
   rc = tag_unbury(_arkp->rtags, &rtag);
   if (rc == 0)
   {
-    rcbp = &(_arkp->rcbs[rtag]);
-    rcbp->ark = _arkp;
-    rcbp->cmd = cmd;
-    rcbp->rtag = rtag;
-    rcbp->ttag = -1;
-    rcbp->stat = A_INIT;
-    rcbp->klen = klen;
-    rcbp->key = key;
-    rcbp->vlen = vlen;
-    rcbp->val = val;
-    rcbp->voff = voff;
-    rcbp->cb = cb;
-    rcbp->dt = dt;
-    rcbp->rc = 0;
-    rcbp->hold = -1;
-    rcbp->res = -1;
+    rcbp        = &(_arkp->rcbs[rtag]);
+    rcbp->stime = getticks();
+    rcbp->ark   = _arkp;
+    rcbp->cmd   = cmd;
+    rcbp->rtag  = rtag;
+    rcbp->ttag  = -1;
+    rcbp->stat  = A_INIT;
+    rcbp->klen  = klen;
+    rcbp->key   = key;
+    rcbp->vlen  = vlen;
+    rcbp->val   = val;
+    rcbp->voff  = voff;
+    rcbp->cb    = cb;
+    rcbp->dt    = dt;
+    rcbp->rc    = 0;
+    rcbp->hold  = -1;
+    rcbp->res   = -1;
 
     // If the caller has asked to run on a specific thread, then
     // do so.  Otherwise, use the key to find which thread
     // will handle command
     if (pthr == -1)
     {
-      rcbp->pos = hash_pos(_arkp->ht, key, klen);
+      rcbp->pos   = hash_pos(_arkp->ht, key, klen);
       rcbp->sthrd = rcbp->pos / _arkp->npart;
-      pt = rcbp->pos / _arkp->npart;
+      pt          = rcbp->pos / _arkp->npart;
     }
     else
     {
@@ -258,7 +261,7 @@ int ark_enq_cmd(int cmd, _ARK *_arkp, uint64_t klen, void *key,
   }
   else
   {
-    KV_TRC_DBG(pAT, "NO_TAG: %"PRIu64"", dt);
+    KV_TRC_DBG(pAT, "NO_TAG: %"PRIx64"", dt);
   }
 
 ark_enq_cmd_err:
@@ -276,13 +279,13 @@ ark_enq_cmd_err:
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ark_rand_pool(_ARK *_arkp, int id, tcb_t *tcbp) {
+void ark_rand_pool(_ARK *_arkp, int id, tcb_t *tcbp)
+{
   // find the hashtable position
   rcb_t   *rcbp = &(_arkp->rcbs[tcbp->rtag]);
   int32_t  found = 0;
   int32_t  i = 0;
   int32_t  ea_rc = 0;
-  int32_t  state = ARK_CMD_DONE;
   uint8_t  *buf = NULL;
   uint8_t  *pos = NULL;
   uint64_t hblk;
@@ -405,7 +408,7 @@ int ark_rand_pool(_ARK *_arkp, int id, tcb_t *tcbp) {
   }
 
 ark_rand_pool_err:
-  return state;
+  tcbp->state = ARK_CMD_DONE;
 }
 
 /**
@@ -415,12 +418,12 @@ ark_rand_pool_err:
  *  arp->res returns the length of the key\n
  *  arp->val is for the ARI structure...both for passing in and returning.
  ******************************************************************************/
-int ark_first_pool(_ARK *_arkp, int id, tcb_t *tcbp) {
+void ark_first_pool(_ARK *_arkp, int id, tcb_t *tcbp)
+{
   rcb_t   *rcbp = &(_arkp->rcbs[tcbp->rtag]);
   _ARI *_arip = NULL;
   uint64_t i;
   int32_t  rc = 0;
-  int32_t  state = ARK_CMD_DONE;
   int32_t  found = 0;
   uint8_t  *buf = NULL;
   uint8_t  *pos = NULL;
@@ -548,7 +551,7 @@ ark_first_pool_err:
     _arip->bt = NULL;
   }
 
-  return state;
+  tcbp->state = ARK_CMD_DONE;
 }
 
 /**
@@ -558,12 +561,12 @@ ark_first_pool_err:
  *  arp->res returns the length of the key\n
  *  arp->val is for the ARI structure...both for passing in and returning.
  ******************************************************************************/
-int ark_next_pool(_ARK *_arkp, int id, tcb_t  *tcbp) {
+void ark_next_pool(_ARK *_arkp, int id, tcb_t *tcbp)
+{
   rcb_t    *rcbp = &(_arkp->rcbs[tcbp->rtag]);
   _ARI     *_arip = (_ARI *)rcbp->val;
   uint64_t i;
   int32_t  rc = 0;
-  int32_t  state = ARK_CMD_DONE;
   int32_t  found = 0;
   int32_t  kcnt = 0;
   uint8_t  *buf = NULL;
@@ -753,7 +756,7 @@ ark_next_pool_err:
     _arip->bt = NULL;
   }
 
-  return state;
+  tcbp->state = ARK_CMD_DONE;
 }
 
 /**
@@ -761,48 +764,45 @@ ark_next_pool_err:
  * \brief
  *  reduce memory footprint if possible after an io is complete
  ******************************************************************************/
-void
-cleanup_task_memory(_ARK *_arkp, tcb_t *tcbp, int tid)
+void cleanup_task_memory(_ARK *_arkp, tcb_t *tcbp, int tid)
 {
-  if ((tcbp->inb != NULL) && (tcbp->inblen > (3*_arkp->bsize)))
-  {
-    KV_TRC_DBG(pAT,"REDUCE INB: tid:%d %"PRIu64" to %"PRIu64"",
-            tid, tcbp->inblen, _arkp->bsize);
-    bt_delete(tcbp->inb);
-    tcbp->inb = bt_new(0, _arkp->vlimit, sizeof(uint64_t), 
-                                       &(tcbp->inblen),
-                                       &(tcbp->inb_orig));
-  }
-
-  if ((tcbp->oub != NULL) && (tcbp->oublen > (3*_arkp->bsize)))
-  {
-    KV_TRC_DBG(pAT,"REDUCE OTB: tid:%d %"PRIu64" to %"PRIu64"",
-            tid, tcbp->oublen, _arkp->bsize);
-    bt_delete(tcbp->oub);
-    tcbp->oub = bt_new(0, _arkp->vlimit, sizeof(uint64_t), 
-                                       &(tcbp->oublen),
-                                       &(tcbp->oub_orig));
-  }
-
-  if ((tcbp->vb != NULL) && (tcbp->vbsize > (_arkp->bsize * 256)))
-  {
-    KV_TRC_DBG(pAT,"REDUCE VAB: tid:%d %"PRIu64" to %"PRIu64"",
-            tid, tcbp->vbsize, _arkp->bsize * 256);
-    am_free(tcbp->vb_orig);
-    tcbp->vbsize = _arkp->bsize * 256;
-    tcbp->vb_orig = am_malloc(tcbp->vbsize);
-    if (tcbp->vb_orig != NULL)
+    if (tcbp->inb != NULL && tcbp->inblen > 2*_arkp->bsize)
     {
-      tcbp->vb = ptr_align(tcbp->vb_orig);
+        KV_TRC_DBG(pAT,"REDUCE INB: tid:%d %"PRIu64" to %"PRIu64"",
+                tid, tcbp->inblen, _arkp->bsize);
+        bt_delete(tcbp->inb_orig);
+        tcbp->inb = bt_new(0, _arkp->vlimit, sizeof(uint64_t),
+                           &(tcbp->inblen), &(tcbp->inb_orig));
     }
-    else
+
+    if (tcbp->oub != NULL && tcbp->oublen > 2*_arkp->bsize)
     {
-      // Clear out the vbsize.  When this buffer is used
-      // for a command, the command will fail gracefully
-      tcbp->vbsize = 0;
-      tcbp->vb = NULL;
+        KV_TRC_DBG(pAT,"REDUCE OTB: tid:%d %"PRIu64" to %"PRIu64"",
+                tid, tcbp->oublen, _arkp->bsize);
+        bt_delete(tcbp->oub_orig);
+        tcbp->oub = bt_new(0, _arkp->vlimit, sizeof(uint64_t),
+                          &(tcbp->oublen), &(tcbp->oub_orig));
     }
-  }
+
+    if (tcbp->vb != NULL && tcbp->vbsize > _arkp->bsize*ARK_MIN_VB)
+    {
+        KV_TRC_DBG(pAT,"REDUCE VAB: tid:%d %"PRIu64" to %"PRIu64"",
+                tid, tcbp->vbsize, _arkp->bsize*ARK_MIN_VB);
+        am_free(tcbp->vb_orig);
+        tcbp->vbsize = _arkp->bsize*ARK_MIN_VB;
+        tcbp->vb_orig = am_malloc(tcbp->vbsize);
+        if (tcbp->vb_orig != NULL)
+        {
+            tcbp->vb = ptr_align(tcbp->vb_orig);
+        }
+        else
+        {
+            // Clear out the vbsize.  When this buffer is used
+            // for a command, the command will fail gracefully
+            tcbp->vbsize = 0;
+            tcbp->vb = NULL;
+        }
+    }
 }
 
 /**
@@ -881,76 +881,112 @@ void *pool_function(void *arg)
   iocb_t  *iocbp  = NULL;
   queue_t *rq     = scbp->rqueue;
   queue_t *tq     = scbp->tqueue;
-  queue_t *ioq    = scbp->ioqueue;
+  queue_t *sq     = scbp->scheduleQ;
+  queue_t *hq     = scbp->harvestQ;
   int32_t  i      = 0;
   int32_t  reqrc  = EAGAIN;
   int32_t  tskrc  = EAGAIN;
   int32_t  tskact = 0;
   int32_t  reqact = 0;
-  int32_t  iotask = 0;
+  int32_t  itag   = 0;
   int32_t  reqtag = -1;
   int32_t  tsktag = 0;
   uint64_t hval   = 0;
   uint64_t hlba   = 0;
+  uint64_t hsleep = 0;
+  uint32_t MAX_POLL=0;
+  uint64_t perfT  = 0;
+  uint64_t verbT  = 0;
+  int      max    = 0;
 
   KV_TRC_DBG(pAT, "start tid:%d nactive:%d", id, _arkp->nactive);
 
-  // Run until the thread state is EXIT or the global
-  // state, ark_exit, is not set showing we are shutting
-  // down the ark db.
+  /*----------------------------------------------------------------------------
+   * Run until the thread state is EXIT or the global
+   * state, ark_exit, is not set showing we are shutting
+   * down the ark db.
+   *--------------------------------------------------------------------------*/
   while ((scbp->poolstate != PT_EXIT))
   {
-      // loop through the iocbs in the ioq and process them
-      for (i=0; i<queue_count(ioq); i++)
+      /*------------------------------------------------------------------------
+       * harvest IOs
+       *----------------------------------------------------------------------*/
+      MAX_POLL = queue_count(hq);
+      if (MAX_POLL)
       {
-          queue_deq_unsafe(ioq, &iotask);
-          iotcbp = &(_arkp->tcbs[iotask]);
-          iocbp  = &(_arkp->iocbs[iotask]);
+          MAX_POLL = MAX_POLL <  10 ? 1 : MAX_POLL/10;
+      }
+      for (i=0; i<MAX_POLL; i++)
+      {
+          if (queue_deq_unsafe(hq, &itag) != 0) {continue;}
+          iotcbp = &(_arkp->tcbs[itag]);
+          iocbp  = &(_arkp->iocbs[itag]);
           iorcbp = &(_arkp->rcbs[iotcbp->rtag]);
 
-          KV_TRC_DBG(pAT, "IO:     IQ_DEQ tid:%d state:%d ttag:%d",
-                     id, iotcbp->state, iotask);
+          KV_TRC_EXT3(pAT, "HQ_DEQ  tid:%d ttag:%3d state:%d",
+                     id, itag, iotcbp->state);
 
-          // do schedule or harvest
-          if (iotcbp->state == ARK_IO_SCHEDULE)
-              {ea_async_io_schedule(_arkp, id, iotcbp, iocbp);}
-          else if (iotcbp->state == ARK_IO_HARVEST)
-              {ea_async_io_harvest(_arkp, id, iotcbp, iocbp, iorcbp);}
+          if (iotcbp->state == ARK_IO_HARVEST)
+          {
+              ea_async_io_harvest(_arkp, id, iotcbp, iocbp, iorcbp);
+              if (iocbp->hmissN) {++hsleep;}
+          }
 
           // place the iocb on a queue for the next step
-          if (iotcbp->state == ARK_IO_SCHEDULE ||
-              iotcbp->state == ARK_IO_HARVEST)
-          {
-              (void)queue_enq_unsafe(ioq, iotask);
-              KV_TRC_DBG(pAT, "IO:     IQ_ENQ tid:%d state:%d ttag:%d",
-                         id, iotcbp->state, iotask);
-          }
-          else
-          {
-              if (iotcbp->state == ARK_IO_DONE)
-                  {iotcbp->state = iocbp->io_done;}
-              (void)queue_enq_unsafe(tq, iotask);
-              KV_TRC_DBG(pAT, "IO:     TQ_ENQ tid:%d state:%d ttag:%d",
-                         id, iotcbp->state,iotask);
-          }
+          if      (iotcbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(sq, itag);}
+          else if (iotcbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(hq, itag);}
+          else                                     {queue_enq_unsafe(tq, itag);}
       }
 
-      // Now we check the request queue and try to pull off
-      // as many requests as possible and queue them up
-      // in the task queue
-      queue_lock(rq);
-      if ( (queue_empty(rq)) && (reqtag == -1) )
+      /*------------------------------------------------------------------------
+       * schedule IOs
+       *----------------------------------------------------------------------*/
+      for (i=0; i<queue_count(sq); i++)
       {
-        if ( queue_empty(ioq) && queue_empty(tq) )
-        {
-          // We have reached a point where there is absolutely
-          // no work for this worker thread to do.  So we
-          // go to sleep waiting for new requests to come in
-          KV_TRC_IO(pAT, "IO:     IDLE_THREAD: tid:%d", id);
-          queue_wait(rq);
-        }
+          if (queue_deq_unsafe(sq, &itag) != 0) {continue;}
+          iotcbp = &(_arkp->tcbs[itag]);
+          iocbp  = &(_arkp->iocbs[itag]);
+          iorcbp = &(_arkp->rcbs[iotcbp->rtag]);
+
+          KV_TRC_EXT3(pAT, "SQ_DEQ  tid:%d ttag:%3d state:%d",
+                     id, itag, iotcbp->state);
+
+          if (iotcbp->state == ARK_IO_SCHEDULE)
+              {ea_async_io_schedule(_arkp, id, iotcbp, iocbp);}
+
+          // place the iocb on a queue for the next step
+          if      (iotcbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(sq, itag);}
+          else if (iotcbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(hq, itag);}
+          else                                     {queue_enq_unsafe(tq, itag);}
       }
 
+      /*------------------------------------------------------------------------
+       * usleep if appropriate
+       *----------------------------------------------------------------------*/
+      if (hsleep>=1000 && queue_count(rq)==0 && queue_count(tq)==0)
+      {
+          hsleep=0;
+          usleep(5);
+          KV_TRC_DBG(pAT,"IO:     USLEEP");
+      }
+
+      /*------------------------------------------------------------------------
+       * check the request queue and try to pull off
+       * as many requests as possible and queue them up
+       * in the task queue
+       *----------------------------------------------------------------------*/
+      queue_lock(rq);
+      if (queue_empty(rq) && reqtag == -1)
+      {
+          if (queue_empty(sq) && queue_empty(hq) && queue_empty(tq))
+          {
+              // We have reached a point where there is absolutely
+              // no work for this worker thread to do.  So we
+              // go to sleep waiting for new requests to come in
+              KV_TRC_IO(pAT, "IO:     tid:%d IDLE_THREAD", id);
+              queue_wait(rq);
+          }
+      }
       while (((reqrc == EAGAIN) && !(queue_empty(rq))) ||
              ((reqrc == 0) && (!tag_empty(_arkp->ttags))))
       {
@@ -964,7 +1000,7 @@ void *pool_function(void *arg)
               rcbp->ttag = -1;
               rcbp->hold = -1;
             }
-            KV_TRC_DBG(pAT, "IO:     RQ_DEQ tid:%d rtag:%d", id, reqtag);
+            KV_TRC_EXT3(pAT, "RQ_DEQ  tid:%d ttag:%3d", id, reqtag);
           }
 
           if (reqrc == 0)
@@ -984,20 +1020,14 @@ void *pool_function(void *arg)
               reqrc = EAGAIN;
               reqtag = -1;
               rcbp = NULL;
-              KV_TRC_DBG(pAT,"IO:     RQ EAGAIN tid:%2d rq:%3d tq:%2d iq:%2d",
-                         id, rq->c, tq->c, ioq->c);
+              KV_TRC_DBG(pAT,"IO:     tid:%2d RQ_EAGAIN rq:%3d tq:%2d sq:%2d "
+                             "hq:%2d", id, rq->c, tq->c, sq->c, hq->c);
             }
             else
             {
               tskrc = tag_unbury(_arkp->ttags, &tsktag);
-              if (tskrc == 0)
-              {
-                tcbp = &(_arkp->tcbs[tsktag]);
-              }
-              else
-              {
-                tcbp = NULL;
-              }
+              if (tskrc == 0) {tcbp = &(_arkp->tcbs[tsktag]);}
+              else            {tcbp = NULL;}
 
               if (tcbp)
               {
@@ -1011,8 +1041,8 @@ void *pool_function(void *arg)
                 hlba = HASH_LBA(hval);
                 HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, tsktag, hlba));
                 (void)queue_enq_unsafe(tq, tsktag);
-                KV_TRC_DBG(pAT, "IO:     TQ_ENQ START tid:%d rtag:%d ttag:%d",
-                           id, reqtag, tsktag);
+                KV_TRC_DBG(pAT, "IO:     tid:%d ttag:%3d rtag:%d TQ_ENQ START ",
+                           id, tsktag, reqtag);
                 reqtag = -1;
                 reqrc = EAGAIN;
                 tskrc = EAGAIN;
@@ -1022,183 +1052,228 @@ void *pool_function(void *arg)
             }
           }
       }
-
       queue_unlock(rq);
 
-      // trace queues
-      KV_TRC_DBG(pAT,"IO:     QUEUES tid:%2d rq:%3d tq:%3d iq:%3d",
-                      id, rq->c, tq->c, ioq->c);
+      /* do calcs for avg QD */
+      _arkp->QDT += tq->c + rq->c + sq->c + hq->c;
+      _arkp->QDN += 1;
 
-      while(!queue_empty(tq))
+      /*------------------------------------------------------------------------
+       * initiate or continue tasks
+       *----------------------------------------------------------------------*/
+      max = tq->c;
+      for (i=0; i<max; i++)
       {
-        (void)queue_deq_unsafe(tq, &tskact);
-        tactp = &(_arkp->tcbs[tskact]);
-        reqact = tactp->rtag;
-        ractp = &(_arkp->rcbs[reqact]);
-        KV_TRC_DBG(pAT, "IO:     TQ_DEQ tid:%d state:%d ttag:%d",
-                   id, tactp->state, tskact);
+          int s=0;
+          if (queue_deq_unsafe(tq, &tskact) != 0) {continue;}
 
-        switch (tactp->state)
-        {
-          case ARK_SET_START :
-          {
-            scbp->poolstats.ops_cnt++;
-            ark_set_start(_arkp, id, tactp);
-            break;
-          }
-          case ARK_SET_PROCESS_INB :
-          {
-            ark_set_process_inb(_arkp, id, tactp);
-            break;
-          }
-          case ARK_SET_WRITE :
-          {
-            ark_set_write(_arkp, id, tactp);
-            break;
-          }
-          case ARK_SET_FINISH :
-          {
-            ark_set_finish(_arkp, id, tactp);
-            break;
-          }
-          case ARK_GET_START :
-          {
-            scbp->poolstats.ops_cnt++;
-            ark_get_start(_arkp, id, tactp);
-            break;
-          }
-          case ARK_GET_PROCESS :
-          {
-            ark_get_process(_arkp, id, tactp);
-            break;
-          }
-          case ARK_GET_FINISH :
-          {
-            ark_get_finish(_arkp, id, tactp);
-            break;
-          }
-          case ARK_DEL_START :
-          {
-            scbp->poolstats.ops_cnt++;
-            ark_del_start(_arkp, id, tactp);
-            break;
-          }
-          case ARK_DEL_PROCESS :
-          {
-            ark_del_process(_arkp, id, tactp);
-            break;
-          }
-          case ARK_DEL_FINISH :
-          {
-            ark_del_finish(_arkp, id, tactp);
-            break;
-          }
-          case ARK_EXIST_START :
-          {
-            scbp->poolstats.ops_cnt++;
-            ark_exist_start(_arkp, id, tactp);
-            break;
-          }
-          case ARK_EXIST_FINISH :
-          {
-            ark_exist_finish(_arkp, id, tactp);
-            break;
-          }
-          case ARK_RAND_START :
-          {
-            tactp->state = ark_rand_pool(_arkp, id, tactp);
-            break;
-          }
-          case ARK_FIRST_START :
-          {
-            tactp->state = ark_first_pool(_arkp, id, tactp);
-            break;
-          }
-          case ARK_NEXT_START :
-          {
-            tactp->state = ark_next_pool(_arkp, id, tactp);
-            break;
-          }
-          default :
-          {
-            // The only state left is ARK_CMD_DONE, so we
-            // just break out and end the task
-            break;
-          }
-        }
+          tactp  = &(_arkp->tcbs[tskact]);
+          reqact = tactp->rtag;
+          ractp  = &(_arkp->rcbs[reqact]);
+          s      = tactp->state;
 
-        if (tactp->state == ARK_CMD_DONE)
-        {
-          if (ractp->hold == -1)
+          KV_TRC_EXT3(pAT, "TQ_DEQ  tid:%d ttag:%3d state:%d ",
+                  id, tskact, s);
+
+          if      (s==ARK_SET_START)      {ark_set_start      (_arkp,id,tactp);}
+          else if (s==ARK_SET_PROCESS_INB){ark_set_process_inb(_arkp,id,tactp);}
+          else if (s==ARK_SET_WRITE)      {ark_set_write      (_arkp,id,tactp);}
+          else if (s==ARK_SET_FINISH)     {ark_set_finish     (_arkp,id,tactp);}
+          else if (s==ARK_GET_START)      {ark_get_start      (_arkp,id,tactp);}
+          else if (s==ARK_GET_PROCESS)    {ark_get_process    (_arkp,id,tactp);}
+          else if (s==ARK_GET_FINISH)     {ark_get_finish     (_arkp,id,tactp);}
+          else if (s==ARK_DEL_START)      {ark_del_start      (_arkp,id,tactp);}
+          else if (s==ARK_DEL_PROCESS)    {ark_del_process    (_arkp,id,tactp);}
+          else if (s==ARK_DEL_FINISH)     {ark_del_finish     (_arkp,id,tactp);}
+          else if (s==ARK_EXIST_START)    {ark_exist_start    (_arkp,id,tactp);}
+          else if (s==ARK_EXIST_FINISH)   {ark_exist_finish   (_arkp,id,tactp);}
+          else if (s==ARK_RAND_START)     {ark_rand_pool      (_arkp,id,tactp);}
+          else if (s==ARK_FIRST_START)    {ark_first_pool     (_arkp,id,tactp);}
+          else if (s==ARK_NEXT_START)     {ark_next_pool      (_arkp,id,tactp);}
+
+          /*--------------------------------------------------------------------
+           * schedule the first IO right way
+           *------------------------------------------------------------------*/
+          if (tactp->state == ARK_IO_SCHEDULE)
           {
-            hlba = HASH_LBA(HASH_GET(_arkp->ht, ractp->pos));
-            HASH_SET(_arkp->ht, ractp->pos, HASH_MAKE(0, 0, hlba));
-            if ( ractp->cb != NULL )
-            {
-              (ractp->cb)(ractp->rc, ractp->dt, ractp->res);
-              ractp->stat = A_NULL;
-              (void)tag_bury(_arkp->rtags, reqact);
-            }
-            else
-            {
-              pthread_mutex_lock(&(ractp->alock));
-              ractp->stat = A_COMPLETE;
-              pthread_cond_broadcast(&(ractp->acond));
-              pthread_mutex_unlock(&(ractp->alock));
-              KV_TRC_DBG(pAT, "IO:     A_COMPLETE tid:%d rtag:%d",
-                         id, ractp->rtag);
-            }
-            cleanup_task_memory(_arkp, tactp, id);
-            (void)tag_bury(_arkp->ttags, tskact);
+              iocbp = &(_arkp->iocbs[tskact]);
+              ea_async_io_schedule(_arkp, id, tactp, iocbp);
+          }
+
+          /*--------------------------------------------------------------------
+           * requeue task
+           *------------------------------------------------------------------*/
+          if (tactp->state == ARK_IO_SCHEDULE)
+          {
+              KV_TRC_EXT3(pAT, "SQ_ENQ  tid:%d ttag:%3d state:%d ",
+                          id, tskact, tactp->state);
+              queue_enq_unsafe(sq,tskact);
+          }
+          else if (tactp->state == ARK_IO_HARVEST)
+          {
+              KV_TRC_EXT3(pAT, "HQ_ENQ  tid:%d ttag:%3d state:%d ",
+                          id, tskact, tactp->state);
+              queue_enq_unsafe(hq,tskact);
           }
           else
           {
-            tactp->rtag = ractp->hold;
-            ractp->hold = -1;
-            if ( ractp->cb != NULL)
-            {
-              (ractp->cb)(ractp->rc, ractp->dt, ractp->res);
-              ractp->stat = A_NULL;
-              (void)tag_bury(_arkp->rtags, reqact);
-            }
-            else
-            {
-              pthread_mutex_lock(&(ractp->alock));
-              ractp->stat = A_COMPLETE;
-              pthread_cond_broadcast(&(ractp->acond));
-              pthread_mutex_unlock(&(ractp->alock));
-              KV_TRC_DBG(pAT, "IO:     A_COMPLETE tid:%d rtag:%d",
-                         id, ractp->rtag);
-            }
-
-            scbp->holds--;
-            ractp = &(_arkp->rcbs[tactp->rtag]);
-            ractp->ttag = tactp->ttag;
-            tactp->rtag = ractp->rtag;
-            tactp->state = init_task_state(_arkp, tactp);
-            (void)queue_enq_unsafe(tq, tskact);
-            KV_TRC_DBG(pAT, "IO:     TQ_ENQ tid:%d state:%d ttag:%d",
-                       id, tactp->state, tskact);
+              KV_TRC_EXT3(pAT, "TQ_ENQ  tid:%d ttag:%3d state:%d ",
+                          id, tskact, tactp->state);
+              (void)queue_enq_unsafe(tq, tskact);
           }
-        }
-        else if (tactp->state == ARK_IO_DONE)
-        {
-            iocbp = &(_arkp->iocbs[tskact]);
-            tactp->state = iocbp->io_done;
-            (void)queue_enq_unsafe(tq, tskact);
-            KV_TRC_DBG(pAT, "IO:     TQ_ENQ tid:%d state:%d ttag:%d",
-                       id, tactp->state, tskact);
-        }
-        else
-        {
-          (void)queue_enq_unsafe(ioq, tskact);
-          KV_TRC_DBG(pAT, "IO:     IQ_ENQ tid:%d state:%d ttag:%d",
-                     id, tactp->state, tskact);
-        }
+      }
+
+      /*------------------------------------------------------------------------
+       * complete requests
+       *----------------------------------------------------------------------*/
+      max = tq->c;
+      for (i=0; i<max; i++)
+      {
+          if (queue_deq_unsafe(tq, &tskact) != 0) {continue;}
+
+          tactp  = &(_arkp->tcbs[tskact]);
+          reqact = tactp->rtag;
+          ractp  = &(_arkp->rcbs[reqact]);
+
+          KV_TRC_EXT3(pAT, "TQ_DEQ  tid:%d ttag:%3d state:%d ",
+                      id, tskact, tactp->state);
+
+          if (tactp->state == ARK_CMD_DONE)
+          {
+              uint32_t lat = UDELTA(ractp->stime, _arkp->ns_per_tick);
+              UPDATE_LAT(_arkp, ractp, lat);
+
+              cleanup_task_memory(_arkp, tactp, id);
+
+              if (ractp->hold == -1)
+              {
+                  hlba = HASH_LBA(HASH_GET(_arkp->ht, ractp->pos));
+                  HASH_SET(_arkp->ht, ractp->pos, HASH_MAKE(0, 0, hlba));
+                  if ( ractp->cb != NULL )
+                  {
+                      KV_TRC(pAT, "CMD_CMP tid:%d ttag:%3d rtag:%3d lat:%6d",
+                              id, tskact, ractp->rtag, lat);
+                      (ractp->cb)(ractp->rc, ractp->dt, ractp->res);
+                      ractp->stat = A_NULL;
+                      (void)tag_bury(_arkp->rtags, reqact);
+                  }
+                  else
+                  {
+                      pthread_mutex_lock(&(ractp->alock));
+                      ractp->stat = A_COMPLETE;
+                      pthread_cond_broadcast(&(ractp->acond));
+                      pthread_mutex_unlock(&(ractp->alock));
+                      KV_TRC(pAT, "CMD_CMP tid:%d ttag:%3d rtag:%3d lat:%6d",
+                              id, tskact, ractp->rtag, lat);
+                  }
+                  (void)tag_bury(_arkp->ttags, tskact);
+              }
+              else
+              {
+                  tactp->rtag = ractp->hold;
+                  ractp->hold = -1;
+                  if ( ractp->cb != NULL)
+                  {
+                      KV_TRC(pAT, "CMD_CMP tid:%d ttag:%3d rtag:%3d lat:%6d",
+                                id, tskact, ractp->rtag, lat);
+                      (ractp->cb)(ractp->rc, ractp->dt, ractp->res);
+                      ractp->stat = A_NULL;
+                      (void)tag_bury(_arkp->rtags, reqact);
+                  }
+                  else
+                  {
+                      pthread_mutex_lock(&(ractp->alock));
+                      ractp->stat = A_COMPLETE;
+                      pthread_cond_broadcast(&(ractp->acond));
+                      pthread_mutex_unlock(&(ractp->alock));
+                      KV_TRC(pAT, "CMD_CMP tid:%d ttag:%3d rtag:%3d lat:%6d",
+                              id, tskact, ractp->rtag, lat);
+                  }
+
+                  scbp->holds--;
+                  ractp        = &(_arkp->rcbs[tactp->rtag]);
+                  ractp->ttag  = tactp->ttag;
+                  tactp->rtag  = ractp->rtag;
+                  tactp->state = init_task_state(_arkp, tactp);
+                  (void)queue_enq_unsafe(tq, tskact);
+                  KV_TRC_EXT3(pAT, "TQ_ENQ  tid:%d ttag:%3d state:%d",
+                              id, tskact, tactp->state);
+              }
+              continue;
+          }
+          else
+          {
+              (void)queue_enq_unsafe(tq, tskact);
+              KV_TRC_EXT3(pAT, "TQ_ENQ  tid:%d ttag:%3d state:%d ",
+                      id, tskact, tactp->state);
+          }
+      }
+
+      /*------------------------------------------------------------------------
+       * performance and dynamic tracing
+       *----------------------------------------------------------------------*/
+      if (SDELTA(perfT, _arkp->ns_per_tick) > 1)
+      {
+          uint64_t opsT = _arkp->set_opsT + _arkp->get_opsT + _arkp->exi_opsT +\
+                          _arkp->del_opsT;
+          uint64_t latT = _arkp->set_latT + _arkp->get_latT + _arkp->exi_latT +\
+                          _arkp->del_latT;
+          uint64_t lat=0,set_lat=0,get_lat=0,exi_lat=0,del_lat=0,QDA=0;
+          if (opsT)            {lat     = latT/opsT;}
+          if (_arkp->set_opsT) {set_lat = _arkp->set_latT/_arkp->set_opsT;}
+          if (_arkp->get_opsT) {get_lat = _arkp->get_latT/_arkp->get_opsT;}
+          if (_arkp->exi_opsT) {exi_lat = _arkp->exi_latT/_arkp->exi_opsT;}
+          if (_arkp->del_opsT) {del_lat = _arkp->del_latT/_arkp->del_opsT;}
+          if (_arkp->QDT)      {QDA     = _arkp->QDT/_arkp->QDN;}
+          KV_TRC_PERF1(pAT,"IO:     tid:%d PERF   opsT:%7ld lat:%7ld "
+                           "opsT(%7ld %7ld %7ld %7ld) "
+                           "lat(%7ld %6ld %6ld %6ld) QD:%4ld issT:%4d",
+                           id, opsT, lat,
+                           _arkp->set_opsT, _arkp->get_opsT, _arkp->exi_opsT,
+                           _arkp->del_opsT,
+                           set_lat, get_lat, exi_lat, del_lat,
+                           QDA, _arkp->issT);
+          KV_TRC_PERF2(pAT,"IO:     tid:%d QUEUES rq:%3d tq:%3d sq:%4d hq:%4d ",
+                           id, rq->c, tq->c, sq->c, hq->c);
+          _arkp->set_latT = 0;
+          _arkp->get_latT = 0;
+          _arkp->exi_latT = 0;
+          _arkp->del_latT = 0;
+          _arkp->set_opsT = 0;
+          _arkp->get_opsT = 0;
+          _arkp->exi_opsT = 0;
+          _arkp->del_opsT = 0;
+          _arkp->QDT      = 0;
+          _arkp->QDN      = 0;
+          perfT           = getticks();
+
+          /* check for dynamic verbosity every 5 seconds */
+          if (SDELTA(verbT, _arkp->ns_per_tick) > 5)
+          {
+              struct stat sbuf;
+              FILE  *fp        = NULL;
+              char   verbS[2]  = {0};
+              int    verbI     = 0;
+
+              verbT = getticks();
+
+              if (stat(ARK_VERB_FN,&sbuf) == 0)
+              {
+                  if ((fp=fopen(ARK_VERB_FN,"r")))
+                  {
+                      if (fgets(verbS, 2, fp))
+                      {
+                          verbI = atoi(verbS);
+                          if (verbI > 0 && verbI < 10) {pAT->verbosity=verbI;}
+                      }
+                      fclose(fp);
+                  }
+              }
+          }
       }
   }
 
-  KV_TRC(pAT, "existing tid:%d nactive:%d", id, _arkp->nactive);
+  KV_TRC(pAT, "exiting tid:%d nactive:%d", id, _arkp->nactive);
   return NULL;
 }
 

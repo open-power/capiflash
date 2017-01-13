@@ -24,19 +24,21 @@
 #
 # IBM_PROLOG_END_TAG
 ##
+use strict;
+use warnings;
 use Fcntl;
+use Fcntl ':seek';
 use Getopt::Long;
 
-# -------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 # Variables
-# -------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 my $a;                   # Flash Address
 my $ra;                  # Flash Read Address
 my $dat;                 # Data
 my $d;                   # Packed data
 my $edat;                # Expected Data
 my $fdat;                # Flash Data
-my $cfgadr;              # Configuration Register Address
 my $rc;                  # Return Code from PSL when performing an operation
 my $bc;                  # Block Counter
 my $dif;                 # Return code from file read
@@ -45,7 +47,6 @@ my $st;                  # Start Time
 my $lt;                  # Last Poll Time
 my $ct;                  # Current Time
 
-my $dif;                 # Data in file flag (End of File)
 my $i;                   # Loop Counter
 
 my $et;                  # Total Elasped Time
@@ -53,591 +54,790 @@ my $et;                  # Total Elasped Time
 my $eet;                 # Total/End Erase Time
 my $set;                 # Start Erase Time
 
-my $ept;                 # Total Program Time
 my $spt;                 # Start Program Time
 my $ept;                 # End Program Time
 
-my $evt;                 # Total Verify Time
 my $svt;                 # Start Verify Time
 my $evt;                 # End Verify Time
 
 my $fsize;               # File size
 my $n;                   # Number of Blocks to Program
-my $numdev;              # Number of CORSA Devices in the lspci output
+my $fwords;              # Number of words to Program
 my $devstr;              # Device String from lspci output
 my @dsev;                # Device String split apart to find device location
-
-# -- My Change -
-
-my $hdr = 0;             # Set if PAPR header is present in image
+my $vsec;
+my $tmp;
+my $factory_addr=0;
+my $header_addr=0x840000;
+my $user_addr=0x850000;
+my $vpd_addr=0x1FF0000;
+my $wr_user;
+my $cardN;
+my $offset=0;            # Set if PAPR header is present in image
 my $hdat = 0;            # Vendoer Dev id from header if present
-my $devId = 0x101404cf;           # 0x101404cf default for capi
-my $size = 0;         # verify size at offset 24 , 8 bytes for actual image
+my $cfg_devid="";        # devid read from config space
+my $ma;
+my $_VM=0;
+my $imgdir="/opt/ibm/capikv/afu/images";
 
-# -------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 # Defaults:
-# -------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 my $prthelp = 0;                         # Print Help Flag
-my $partition0 = 0;                      # Partition 0 Flag
-my $partition1 = 1;                      # Partition 1 Flag
-my $partition = "User Partition";        # Programming Partition Name
+my $partition0 = "";                     # Programming Partition0
+my $partition1 = "";                     # Programming Partition1
 my $list = "0";
 my $optOK = 0;                           # Options are OK
 my $filename = "";                       # RBF File Name
+my $userselect_hdr="1410000614100006.userselect.hdr";
+my $factoryselect_hdr="1410000614100006.factoryselect.hdr";
 my $target  = "";                        # pcie target
 my $cfgfile = "";                        # RBF File Name
-
-my $ec = 0;                	         # Error Code
+my $vpd = "";
+my $parm_verbose=1;
+my $verbose;
 
 my $ADDR_REG = 0x920;                    # Flash Address Configuration Register
 my $SIZE_REG = 0x924;                    # Flash Size Configuration Register
-my $CNTL_REG = 0x928;                    # Flash Control / Status Configuration Register
-my $DATA_REG = 0x92C;                    # Flash Data Configuration Register
+my $CNTL_REG = 0x928;                    # Flash Control / Status Config Reg
+my $DATA_REG = 0x92C;                    # Flash Data Configuration Registermy 
+my $VSEC_REG = 0x904;                    # Flash VSEC Register
 
-# -------------------------------------------------------------------------------
-# Parse Options
-# -------------------------------------------------------------------------------
-$optOK = GetOptions ( "f|rbf=s"   => \$filename,
-                      "p0"        ,  \$partition0,
-                      "p1"        ,  \$partition1,
-                      "v"         ,  \$vpd,
-                      "l"        ,  \$list,
-                      "d=o"  => \$devId,
-                      "t|target=s" => \$target,
-                      "h|help!"   ,  \$prthelp
-                    );
-
-if ($ARGV[0]) {
-  print "\nUnknown Command Line Options:\n";
-  foreach(@ARGV) {
-    print "   $_\n";
-  }
+#-------------------------------------------------------------------------------
+# sub
+#   Print usage
+#-------------------------------------------------------------------------------
+sub usage
+{
   print "\n";
-  $prthelp = 1;
-}
-
-if (!($optOK) | $prthelp) {
-  print "\n";
-  print "Usage: capi_flash_pgm [-h | --help] [-p0 | -p1 | -v] [-f | --rbf] <RawBinaryBitstream.rbf> \n";
-  print "    -p0            : Program Partition 0 - Factory Image          \n";
-  print "    -p1            : Program Partition 1 - User Image {Default}   \n";
-  print "    -v             : Program VPD Information                      \n";
-  print "    -f or --rbf    : Raw Binary File Containing the Bitstream     \n";
+  print "Usage: capi_flash.pl [-f fw_file] [-l] [-t <target>] [-v]\n";
   print "    -l             : List pci location of capi devices            \n";
-  print "    -d             : Dev and Ven ID in header of fw image         \n";
+  print "    -f             : Firmware image                               \n";
   print "    -t or --target : Target pcie device to flash                  \n";
+  print "    -v             : verbose, Print debug messages                \n";
   print "    -h or --help   : Help - Print this message                    \n";
-  die "\n";
-}
-
-if ( !(($partition == 0) | ($partition == 1)) ) {
-  print "\nPartition can only be 0 or 1\n";
-  die;
-}
-
-
-#added to support programming VPD - Charlie Johns
-if ( $vpd == 1 ) {
-  #note we override the "address" set by the user above, so we cannot program VP
-  #simultaneously with another flash region (factory or user).
-  $a = 0x1FF0000
-} elsif ($partition0) {
-  #if we are not programming VPD, see if we should program the "partition 0" image
-  $a = 0x10000;
-  $partition = "Factory Image"
-} else {
-  #default to programming partition 1 otherwise.
-  $a = 0x850000;
-}
-
-
-
-
-# -------------------------------------------------------------------------------
-# Open Bitstream File
-# -------------------------------------------------------------------------------
-if (-e $filename) {
-  open(IN, "< $filename");
-  binmode(IN);
-} elsif (!$list){
-  die "Raw Binary Bitstream File $filename does not exist.\n";
-}
-
-
-# -------------------------------------------------------------------------------
-# Make stdout autoflush
-# -------------------------------------------------------------------------------
-select(STDOUT); # default
-$| = 1;
-
-if ($list) {
-
-    my @files = </sys/bus/pci/devices/*>;
-    my ($vendor, $device);
-
-    $numdev = 0;
-    for my $file ( @files ) {
-      open(F, $file . "/vendor") or die "Can't open $filename: $!";
-      read(F, $vendor, 6);
-      close (F);
-      open(F, $file . "/device") or die "Can't open $filename: $!";
-      read(F, $device, 6);
-      close (F);
-
-      if (($vendor eq "0x1014") && (($device eq "0x0477") || ($device eq "0x04cf"))) {
-        $cfgfile = $file;
-        print "Found CAPI Adapter : $cfgfile\n";
-        $numdev++;
-      }
-    }
-exit;
-}
-# -------------------------------------------------------------------------------
-# Find the CAPI Device
-# -------------------------------------------------------------------------------
-my @files = </sys/bus/pci/devices/*>;
-my ($vendor, $device);
-
-if ($target){
-   print "Target specified: $target\n";
-  $cfgfile = $target;
-}
-else{
-$numdev = 0;
-for my $file ( @files ) {
-  open(F, $file . "/vendor") or die "Can't open $filename: $!";
-  read(F, $vendor, 6);
-  close (F);
-  open(F, $file . "/device") or die "Can't open $filename: $!";
-  read(F, $device, 6);
-  close (F);
-
-  if (($vendor eq "0x1014") && (($device eq "0x0477") || ($device eq "0x04cf"))) {
-    $cfgfile = $file;
-    $numdev++;
+  if ($_VM)
+  {
+    print "\n  ex: capi_flash.pl -f 1410f0041410f004.00000001160413D1 -t afu0.0\n\n";
   }
- }
-}
-      
-if ($numdev == 0 and $cfgfile eq "") {
-  die "CAPI Device (ID = 0x0477) does not exist.\n";
-}
-
-if ($numdev > 1) {
-   die "\n $numdev capi devices detected";
+  else
+  {
+    print "\n  ex: capi_flash.pl -f 1410f0041410f004.00000001160413D1 -t 0000:01:00.0\n\n";
+  }
+  exit 0;
 }
 
-print "\nCAPI Adapter is : $cfgfile\n";
+#-------------------------------------------------------------------------------
+# sub
+#   wait for a byte pattern in the flash CNTL_REG
+#-------------------------------------------------------------------------------
+sub wait_for_flash
+{
+  my $mask = shift;
+  my $cmp  = shift;
 
-# -------------------------------------------------------------------------------
-# Open the CAPI Device's Configuration Space
-# -------------------------------------------------------------------------------
-sysopen(CFG, $cfgfile . "/config", O_RDWR) or die $!;
-
-# -------------------------------------------------------------------------------
-# Read the Device/Vendor ID from the Configuration Space
-# -------------------------------------------------------------------------------
-sysseek(CFG, 0, SEEK_SET);
-sysread(CFG,$dat,4);
-$d = unpack("V",$dat);
-  
-printf("  Device/Vendor ID: 0x%08x\n\n", $d);
-
-# -------------------------------------------------------------------------------
-#  Check the image file has header 
-# -------------------------------------------------------------------------------
-sysseek(IN, 0, SEEK_SET);
-sysread(IN,$dat,2); # read first 16 bits of word hdr
-$d = unpack("n",$dat);
-if ($d == 0x0001) {
-    printf(" The AFU image has PAPR header\n");
-    sysseek(IN, 8, SEEK_SET);
-    sysread(IN,$dat,4);
-    $hdat = unpack("N",$dat);
-
-    if ($hdat == $devId) {
-        printf(" Image has header for DevVenId : 0x%08x\n\n", $hdat);
-        $hdr = 1;
-        sysseek(IN, 0, SEEK_SET);
-        sysseek(IN, 28, SEEK_SET);
-        sysread(IN,$hdat,8);
-        $size = unpack ("N",$hdat);
-        printf(" Image size in header :0x%08x\n\n", $size);
-    } else {
-        printf(" Header doesn't match with DevVenId : 0x%08x\n\n",$devId); 
-        printf(" Image has header for DevVenId : 0x%08x\n\n", $hdat);
-        die " Use correct image for the card \n"; 
-    }
-} else {
-    printf(" Image has no header\n\n");
-
-}
- 
-sysseek(IN, 0, SEEK_SET);
-
-# -------------------------------------------------------------------------------
-# Read the VSEC Length / VSEC ID from the Configuration Space
-# -------------------------------------------------------------------------------
-sysseek(CFG, 0x904, SEEK_SET);
-sysread(CFG,$dat,4);
-$d = unpack("V",$dat);
-  
-printf("  VSEC Length/VSEC Rev/VSEC ID: 0x%08x\n", $d);
-if ( ($d & 0x08000000) == 0x08000000 ) {
-  printf("    Version 0.12\n\n");
-  $ADDR_REG = 0x950;                    # Flash Address Configuration Register
-  $SIZE_REG = 0x954;                    # Flash Size Configuration Register
-  $CNTL_REG = 0x958;                    # Flash Control / Status Configuration Register
-  $DATA_REG = 0x95C;                    # Flash Data Configuration Register
-} else {
-  printf("    Version 0.10\n\n");
-}
-
-# -------------------------------------------------------------------------------
-# Reset Any Previously Aborted Sequences
-# -------------------------------------------------------------------------------
-$cfgadr = $CNTL_REG;
-$dat = 0;
-$d = pack("V",$dat);
-sysseek CFG, $cfgadr, seek_set;
-syswrite(CFG,$d,4);
-
-# -------------------------------------------------------------------------------
-# Wait for Flash to be Ready
-# -------------------------------------------------------------------------------
-sysseek CFG, $cfgadr, seek_set;
-sysread(CFG,$d,4);
-$dat = unpack("V",$d);
-
-$st = $lt = time();
-$cp = 1;
-
-$cfgadr = $CNTL_REG;
-while ($cp == 1) {
-  sysseek(CFG, $cfgadr, SEEK_SET);
+  sysseek CFG, $CNTL_REG, SEEK_SET;
   sysread(CFG,$d,4);
-  $rc = unpack("V",$d);
-  if ( ($rc & 0x80000000) == 0x80000000 ) {
-    $cp = 0;
-  }
-  $ct = time();
-  if (($ct - $lt) > 5) {
-    print ".";
-    $lt = $ct;
-  }
-  if (($ct - $st) > 120) {
-    print "\nFAILURE --> Flash not ready after 2 min\n";
-    $cp = 0;
-    $ec = 1;
-  }
-}
+  $dat = unpack("V",$d);
 
-# -------------------------------------------------------------------------------
-# Calculate the number of blocks to write
-# -------------------------------------------------------------------------------
-$fsize = -s $filename;
-if ($hdr == 1) {
-    $fsize -= 0x80; # Linux image don't need header for Linux image
-    if ($fsize == $size) {
-        printf(" FW image size matched with size in header  = 0x%x\n", $size);
-        printf(" Header will be stripped from image\n");
-    } else {
-  	die "Image size didn't match with size in header.\n";
-    }
-
-    sysseek(IN,0x80, SEEK_SET);
-}
-$n = $fsize / (64 * 1024 * 4);
-$n = (($n == int($n)) ? $n : int($n + 1));
-
-printf("Programming %s with %s\n",$partition, $filename);
-printf("  Program -> Address: 0x%x for Size: %d in blocks (32K Words or 128K Bytes)\n\n",$a,$n);
-
-$n -= 1;
-
-$set = time();
-
-if ($ec == 0) {
-# -------------------------------------------------------------------------------
-# Setup for Program From Flash
-# -------------------------------------------------------------------------------
-  $cfgadr = $ADDR_REG;
-  $d = pack("V",$a);
-  sysseek CFG, $cfgadr, SEEK_SET;
-  syswrite(CFG,$d,4);
-  
-  $cfgadr = $SIZE_REG;
-  $d = pack("V",$n);
-  sysseek CFG, $cfgadr, SEEK_SET;
-  syswrite(CFG,$d,4);
-
-  $cfgadr = $CNTL_REG;
-  $dat = 0x04000000;
-  $d = pack("V",$dat);
-  sysseek CFG, $cfgadr, SEEK_SET;
-  syswrite(CFG,$d,4);
-
-  print "Erasing Flash\n";
-
-# -------------------------------------------------------------------------------
-# Wait for Flash Erase to complete.
-# -------------------------------------------------------------------------------
   $st = $lt = time();
   $cp = 1;
 
-  $cfgadr = $CNTL_REG;
-  while ($cp == 1) {
-    sysseek(CFG, $cfgadr, SEEK_SET);
+  while ($cp == 1)
+  {
+    sysseek(CFG, $CNTL_REG, SEEK_SET);
     sysread(CFG,$d,4);
     $rc = unpack("V",$d);
-    if ( (($rc & 0x00008000) == 0x00000000) &&
-         (($rc & 0x00004000) == 0x00004000) ) {
+    if (($rc & $mask) == $cmp)
+    {
       $cp = 0;
     }
     $ct = time();
-    if (($ct - $lt) > 5) {
+    if (($ct - $lt) > 5)
+    {
       print ".";
       $lt = $ct;
     }
-    if (($ct - $st) > 240) {
-      print "\nFAILURE --> Erase did not complete in 4 min\n";
-      $cp = 0;
-      $ec += 2;
+    if (($ct - $st) > 120)
+    {
+      sysseek CFG, $CNTL_REG, SEEK_SET;
+      syswrite(CFG,0,4);
+      die "\nFAILURE --> Flash not ready after 2 min\n";
     }
   }
 }
 
-$eet = $spt = time();
+#-------------------------------------------------------------------------------
+# sub
+#   clear and wait for the flash to be ready for the next operation
+#-------------------------------------------------------------------------------
+sub reset_sequence_wait4rdy
+{
+  $dat = 0;
+  $d = pack("V",$dat);
+  sysseek CFG, $CNTL_REG, SEEK_SET;
+  syswrite(CFG,$d,4);
+  wait_for_flash(0x80000000, 0x80000000);
+}
 
-# -------------------------------------------------------------------------------
-# Program Flash                        
-# -------------------------------------------------------------------------------
-if ($ec == 0) {
-  print "\n\nProgramming Flash\n";
+#-------------------------------------------------------------------------------
+# sub
+#   ensure the filename has a valid checksum
+#-------------------------------------------------------------------------------
+sub validate_checksum
+{
+  my $fn = shift;
+
+  #-----------------------------------------------------------------------------
+  # verify checksum
+  #-----------------------------------------------------------------------------
+  my $filekey=( split '/', $fn )[-1];
+  my $found=`grep $filekey $imgdir/afu_fw.md5sum`;
+  if (! $found) {die "       ERROR: unsupported firmware level: $fn\n";}
+  my $out=`cd $imgdir; /usr/bin/md5sum -c $imgdir/afu_fw.md5sum 2>&1 | grep $filekey|grep -v md5sum`;
+  if ($out =~ /FAILED/) {die "       ERROR: bad checksum: $fn\n";}
+}
+
+#-------------------------------------------------------------------------------
+# sub
+#   write a file to a Flash addr
+#      _verbose == 0, print nothing (hdrs)
+#      _verbose == 1, print selectivly
+#      _verbose == 2, print everything
+#-------------------------------------------------------------------------------
+sub write_file_to_flash
+{
+  my $fn       = shift;
+  my $addr     = shift;
+  my $_verbose = shift;
+  my $fsize;
+  my $st;
+  my $lt;
+  my $n;
+  my $fwords;
+  my $bc;
+  my $dat;
+  my $i;
+  my $cp;
+  my $d;
+  my $hdr;
+
+  #-----------------------------------------------------------------------------
+  # open file
+  #-----------------------------------------------------------------------------
+  if (! -e $fn)
+  {
+    if (! ($fn =~ /images/))
+    {
+      if (-e "$imgdir/$fn")
+      {
+        $fn = "$imgdir/$fn";
+      }
+    }
+  }
+  if (-e $fn)
+  {
+    open(IN, "< $fn");
+    binmode(IN);
+  }
+  else
+  {
+    die "       ERROR: File $fn cannot be opened\n";
+  }
+  $fsize = -s $fn;
+
+  ($_verbose==2) && print "\n    Writing filename: $fn\n";
+
+  #-----------------------------------------------------------------------------
+  #  Check if the image has a header 
+  #-----------------------------------------------------------------------------
+  sysseek(IN, 0, SEEK_SET);
+  #read first 16 bits of word hdr
+  (sysread(IN,$dat,2) == 2) or die "       ERROR: Image file has an invalid header\n";
+  $d = unpack("n",$dat);
+  if ($d == 0x0001)
+  {
+    ($_verbose==2) && print "    Image has PAPR header\n";
+    sysseek(IN, 8, SEEK_SET);
+    sysread(IN,$dat,4);
+    my $hdat      = unpack("N",$dat);
+    my $img_devid = sprintf("%x", $hdat);
+
+    if ($img_devid eq $cfg_devid)
+    {
+        ($_verbose==2) && printf("    Image has header for 0x%08x\n", $hdat);
+        sysseek(IN, 0, SEEK_SET);
+        sysseek(IN, 28, SEEK_SET);
+        sysread(IN,$hdat,8);
+        my $hsize = unpack ("N",$hdat);
+        ($_verbose==2) && printf("    Image size in header: %d\n\n", $hsize);
+        $fsize -= 0x80;
+        if ($fsize != $hsize)
+        {
+          die "       ERROR: Image size didn't match with size in header.\n";
+        }
+        $hdr=1;
+    }
+    else
+    {
+        print "       Header $img_devid doesn't match $cfg_devid\n";
+        die   "       ERROR: Use correct image for the card \n"; 
+    }
+  }
+
+  #calculate how much to write
+  $n = $fsize / (64 * 1024 * 4);
+  $n = (($n == int($n)) ? $n : int($n + 1));
+  $fwords = 64*1024*$n;
+
+  reset_sequence_wait4rdy;
+
+  #-----------------------------------------------------------------------------
+  # Erase Flash at $addr for the size of $fn
+  #-----------------------------------------------------------------------------
+  ($_verbose>0) && printf "    Erase Flash      -> Address: 0x%x, blocks %d ",
+                          $addr, $n;
+  $st = $lt = time();
+
+  $d = pack("V",$addr);
+  sysseek CFG, $ADDR_REG, SEEK_SET;
+  syswrite(CFG,$d,4);
+
+  $d = pack("V",$n-1);
+  sysseek CFG, $SIZE_REG, SEEK_SET;
+  syswrite(CFG,$d,4);
+
+  $dat = 0x04000000;
+  $d = pack("V",$dat);
+  sysseek CFG, $CNTL_REG, SEEK_SET;
+  syswrite(CFG,$d,4);
+
+  # Wait for Flash Erase to complete.
+  $st = $lt = time();
+  $cp = 1;
+  while ($cp == 1)
+  {
+    sysseek(CFG, $CNTL_REG, SEEK_SET);
+    sysread(CFG,$d,4);
+    $rc = unpack("V",$d);
+    if ( (($rc & 0x00008000) == 0x00000000) &&
+         (($rc & 0x00004000) == 0x00004000) )
+    {
+      $cp = 0;
+    }
+    $ct = time();
+    if (($ct - $lt) > 5)
+    {
+      ($_verbose>0) && print ".";
+      $lt = $ct;
+    }
+    if (($ct - $st) > 240)
+    {
+      sysseek CFG, $CNTL_REG, SEEK_SET;
+      syswrite(CFG,0,4);
+      die "\nFAILURE --> Erase did not complete in 4 min\n";
+    }
+  }
+  printf "\n";
+
+  #-----------------------------------------------------------------------------
+  # write the file to the Flash addr
+  #-----------------------------------------------------------------------------
+  ($_verbose>0) && printf("    Program Flash    -> Address: 0x%x, blocks %d bytes %d\n",
+                          $addr, $n, $fwords*4);
+
+  if ($hdr) {seek IN, 0x80, SEEK_SET;} # skip the header
+  else      {seek IN, 0,    SEEK_SET;} # Reset to beginning of file
 
   $bc = 0;
-  print "Writing Block: $bc        \r";
-  $cfgadr = $DATA_REG;
-  for($i=0; $i<(64*1024*($n+1)); $i++) {
+  for ($i=0; $i<$fwords; $i++)
+  {
+    #read the next bytes of data to be written
     $dif = read(IN,$d,4);
     $dat = unpack("V",$d);
-    if (!($dif)) {
-      $dat = 0xFFFFFFFF;
-    }
-    $d = pack("V",$dat);
-    sysseek CFG, $cfgadr, SEEK_SET;
-    syswrite(CFG,$d,4);
+    if (!($dif)) {$dat = 0xFFFFFFFF;}
 
-    if ((($i+1) % (512)) == 0) {
-      print "Writing Buffer: $bc        \r";
+    #prepare the data to be written
+    $d = pack("V",$dat);
+
+    if (($i % (64*1024)) == 0)
+    {
+      ($_verbose>0) && print "      Write Block: $bc of $n       \r";
       $bc++;
     }
+
+    wait_for_flash(0x00001000, 0x00000000);
+
+    #do the write
+    sysseek CFG, $DATA_REG, SEEK_SET;
+    syswrite(CFG,$d,4);
   }
-}
 
-print "\n\n";
+  #wait for programming to complete
+  wait_for_flash(0x40000000, 0x40000000);
 
-# -------------------------------------------------------------------------------
-# Wait for Flash Program to complete.
-# -------------------------------------------------------------------------------
-$st = $lt = time();
-$cp = 1;
+  #reset before doing verify
+  reset_sequence_wait4rdy;
 
-$cfgadr = $CNTL_REG;
-while ($cp == 1) {
-  sysseek(CFG, $cfgadr, SEEK_SET);
-  sysread(CFG,$d,4);
-  $rc = unpack("V",$d);
-  if ( ($rc & 0x40000000) == 0x40000000 ) {
-    $cp = 0;
-  }
-  $ct = time();
-  if (($ct - $lt) > 5) {
-    print ".";
-    $lt = $ct;
-  }
-  if (($ct - $st) > 120) {
-    print "\nFAILURE --> Programming did not complete after 2 min\n";
-    $cp = 0;
-    $ec += 4;
-  }
-}
-
-$ept = time();
-
-# -------------------------------------------------------------------------------
-# Reset Program Sequence
-# -------------------------------------------------------------------------------
-$cfgadr = $CNTL_REG;
-$dat = 0;
-$d = pack("V",$dat);
-sysseek CFG, $cfgadr, seek_set;
-syswrite(CFG,$d,4);
-
-# -------------------------------------------------------------------------------
-# Wait for Flash to be Ready
-# -------------------------------------------------------------------------------
-sysseek CFG, $cfgadr, seek_set;
-sysread(CFG,$d,4);
-$dat = unpack("V",$d);
-
-$st = $lt = time();
-$cp = 1;
-
-$cfgadr = $CNTL_REG;
-while ($cp == 1) {
-  sysseek(CFG, $cfgadr, SEEK_SET);
-  sysread(CFG,$d,4);
-  $rc = unpack("V",$d);
-  if ( ($rc & 0x80000000) == 0x80000000 ) {
-    $cp = 0;
-  }
-  $ct = time();
-  if (($ct - $lt) > 5) {
-    print ".";
-    $lt = $ct;
-  }
-  if (($ct - $st) > 120) {
-    print "\nFAILURE --> Flash not ready after 2 min\n";
-    $cp = 0;
-    $ec += 8;
-  }
-}
-
-$svt = time();
-
-# -------------------------------------------------------------------------------
-# Verify Flash Programmming
-# -------------------------------------------------------------------------------
-if ($ec == 0) {
-  print "Verifying Flash\n";
-
-  if ($hdr == 1 ) {
-     seek IN, 0x80, SEEK_SET; # skip the header for Linux
-  } else {
-     seek IN, 0, SEEK_SET;   # Reset to beginning of file
-  }
-  #close(IN);
-  #open(IN, "< $filename");
-  #binmode(IN);
-
+  #-----------------------------------------------------------------------------
+  # pre-verify
+  #-----------------------------------------------------------------------------
+  ($_verbose==2) && printf "    Pre-Verify Flash -> Address: 0x%x, blocks %d\n",
+                           $addr, 1;
   $bc = 0;
-  $ra = $a;
-  print "Reading Block: $bc        \r";
-  for($i=0; $i<(64*1024*($n+1)); $i++) {
+  $ra = $addr;
+  for($i=0; $i<512; $i++)
+  {
+    if (($i % 512) == 0)
+    {
+      reset_sequence_wait4rdy;
 
-    $dif = read(IN,$d,4);
-    $edat = unpack("V",$d);
-    if (!($dif)) {
-      $edat = 0xFFFFFFFF;
-    }
-
-    if (($i % 512) == 0) {
-      $cfgadr = $CNTL_REG;
-      $dat = 0;
-      $d = pack("V",$dat);
-      sysseek CFG, $cfgadr, seek_set;
-      syswrite(CFG,$d,4);
-
-      # -------------------------------------------------------------------------------
-      # Wait for Flash to be Ready
-      # -------------------------------------------------------------------------------
-      $st = $lt = time();
-      $cp = 1;
-    
-      $cfgadr = $CNTL_REG;
-      while ($cp == 1) {
-        sysseek(CFG, $cfgadr, SEEK_SET);
-        sysread(CFG,$d,4);
-        $rc = unpack("V",$d);
-        if ( ($rc & 0x80000000) == 0x80000000 ) {
-          $cp = 0;
-        }
-        $ct = time();
-        if (($ct - $lt) > 5) {
-          print ".";
-          $lt = $ct;
-        }
-        if (($ct - $st) > 120) {
-          print "\nFAILURE --> Flash not ready after 2 min\n";
-          $cp = 0;
-          $ec += 16;
-          last;
-        }
-      }
-
-      # -------------------------------------------------------------------------------
       # Setup for Reading From Flash
-      # -------------------------------------------------------------------------------
-      $cfgadr = $ADDR_REG;
       $d = pack("V",$ra);
-      sysseek CFG, $cfgadr, SEEK_SET;
+      sysseek CFG, $ADDR_REG, SEEK_SET;
       syswrite(CFG,$d,4);
       $ra += 0x200;
-    
-      $cfgadr = $SIZE_REG;
       $d = pack("V",0x1FF);
-      sysseek CFG, $cfgadr, SEEK_SET;
+      sysseek CFG, $SIZE_REG, SEEK_SET;
       syswrite(CFG,$d,4);
-    
-      $cfgadr = $CNTL_REG;
       $dat = 0x08000000;
       $d = pack("V",$dat);
-      sysseek CFG, $cfgadr, SEEK_SET;
+      sysseek CFG, $CNTL_REG, SEEK_SET;
       syswrite(CFG,$d,4);
     }
 
-    $cfgadr = $DATA_REG;
-    sysseek CFG, $cfgadr, SEEK_SET;
+    sysseek CFG, $DATA_REG, SEEK_SET;
+    sysread(CFG,$d,4);
+  }
+
+  #-----------------------------------------------------------------------------
+  # Verify
+  #-----------------------------------------------------------------------------
+  ($_verbose>0) && printf "    Verify Flash     -> Address: 0x%x, blocks %d\n",
+                          $addr, $n;
+
+  if ($hdr) {seek IN, 0x80, SEEK_SET;} # skip the header
+  else      {seek IN, 0,    SEEK_SET;} # Reset to beginning of file
+
+  $bc = 0;
+  $ra = $addr;
+  for($i=0; $i<$fwords; $i++)
+  {
+    $dif  = read(IN,$d,4);
+    $edat = unpack("V",$d);
+    if (!($dif))
+    {
+      $edat = 0xFFFFFFFF;
+    }
+    if (($i % 512) == 0)
+    {
+      reset_sequence_wait4rdy;
+
+      # Setup for Reading From Flash
+      $d = pack("V",$ra);
+      sysseek CFG, $ADDR_REG, SEEK_SET;
+      syswrite(CFG,$d,4);
+      $ra += 0x200;
+      $d = pack("V",0x1FF);
+      sysseek CFG, $SIZE_REG, SEEK_SET;
+      syswrite(CFG,$d,4);
+      $dat = 0x08000000;
+      $d = pack("V",$dat);
+      sysseek CFG, $CNTL_REG, SEEK_SET;
+      syswrite(CFG,$d,4);
+    }
+
+    if (($i % (64*1024)) == 0)
+    {
+      ($_verbose>0) && print "      Read Block: $bc        \r";
+      $bc++;
+    }
+
+    sysseek CFG, $DATA_REG, SEEK_SET;
     sysread(CFG,$d,4);
     $fdat = unpack("V",$d);
 
-    if ($edat != $fdat) {
+    if ($edat != $fdat)
+    {
       $ma = $ra + ($i % 512) - 0x200;
-      printf("Data Miscompare @: %08x --> %08x expected %08x\r",$ma, $fdat, $edat);
-      $rc = <STDIN>;
+      sysseek CFG, $CNTL_REG, SEEK_SET;
+      syswrite(CFG,0,4);
+      my $pmsg = sprintf "\n    Miscompare: %08x --> %08x expected %08x\n",
+                         $ma, $fdat, $edat;
+      die $pmsg;
     }
+  }
 
-    if ((($i+1) % (64*1024)) == 0) {
-      print "Reading Block: $bc        \r";
-      $bc++;
+  reset_sequence_wait4rdy;
+
+  ($_verbose>0) && printf "                                     ";
+  close(IN);
+}
+
+#-------------------------------------------------------------------------------
+# sub
+#   ignore Ctrl-C during a download
+#-------------------------------------------------------------------------------
+sub sigint_handler
+{
+   print "?\n";
+}
+
+#-------------------------------------------------------------------------------
+# sub
+#   Get vendor/devid for vm
+#-------------------------------------------------------------------------------
+sub set_vm_cfgid
+{
+  $cardN=shift;
+
+  my $vendor=`cat /sys/devices/platform/*ibm,coherent*/cxl/card$cardN/afu$cardN.0/cr*/vendor`;
+  my $devid=`cat /sys/devices/platform/*ibm,coherent*/cxl/card$cardN/afu$cardN.0/cr*/device`;
+  chomp $vendor;
+  $vendor=substr($vendor,2,4);
+  $devid=substr($devid,2,4);
+  if ($devid eq "04f0") {$devid="04cf";}
+  $cfg_devid="$vendor$devid";
+}
+
+
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#                                  M A I N
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+
+#check if VM
+`grep pSeries /proc/cpuinfo 2>/dev/null`;
+if ($? == 0) {$_VM=1;}
+if ($verbose && $_VM) {print "Running on a VM system.\n";}
+
+#-------------------------------------------------------------------------------
+# Parse Options
+#-------------------------------------------------------------------------------
+if ($#ARGV<0) {usage();}
+
+if (! GetOptions ("f=s"        => \$filename,
+                  "p0"         => \$partition0,
+                  "p1"         => \$partition1,
+                  "vpd"        => \$vpd,
+                  "l"          => \$list,
+                  "t|target=s" => \$target,
+                  "h|help!"    => \$prthelp,
+                  "v"          => \$verbose
+                  ))
+{
+  usage();
+}
+if ($ARGV[0])
+{
+  print "\nUnknown Command Line Options:\n";
+  foreach(@ARGV)
+  {
+    print "   $_\n";
+  }
+  print "\n";
+  usage();
+}
+if ($prthelp) {usage();}
+
+#check sudo permissions
+(`id -u` == 0) || die "Run with sudo permissions\n";
+
+#-------------------------------------------------------------------------------
+# Make stdout autoflush
+#-------------------------------------------------------------------------------
+select(STDOUT);
+$| = 1;
+
+#-------------------------------------------------------------------------------
+# VM - list CAPI Devices
+#-------------------------------------------------------------------------------
+if ($_VM)
+{
+  my @cards = `ls -d /sys/class/cxl/card* 2>/dev/null|awk -F/ '{print \$5}'`;
+  for my $card ( @cards )
+  {
+    chomp $card;
+    $cardN=substr $card,-1;
+    set_vm_cfgid $cardN;
+    my @afuD;
+    @afuD=`/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null`;
+    my $afuver="";
+    for my $ver ( @afuD )
+    {
+      if ($ver eq "") {last;}
+      if ($ver =~ /Version/) {$afuver=( split ' ', $ver )[ -1 ]; last;}
+    }
+    $list && print "Found CAPI device afu$cardN.0 $cfg_devid =>$afuver\n";
+  }
+}
+#-------------------------------------------------------------------------------
+# BMC -list CAPI Devices
+#-------------------------------------------------------------------------------
+else
+{
+  my @files = </sys/bus/pci/devices/*>;
+  my ($vendor, $device);
+
+  for my $file ( @files )
+  {
+    open(F, $file . "/vendor") or die "        ERROR: Can't open $file: $!\n";
+    read(F, $vendor, 6);
+    close (F);
+    open(F, $file . "/device") or die "       ERROR: Can't open $file: $!\n";
+    read(F, $device, 6);
+    close (F);
+
+    if (($vendor eq "0x1014") && (($device eq "0x0477") ||
+                                  ($device eq "0x04cf") ||
+                                  ($device eq "0x0601")))
+    {
+      $cfg_devid = substr($vendor,2,4) . substr($device,2,4);
+      my @dds = split /\//, $file;
+      my $adap = pop @dds;
+      my $serial=`lspci -s $adap -vv|grep "Serial number:"|awk '{print \$4}'`;
+      chomp $serial;
+      $serial = sprintf("%-14s", $serial);
+      my $cardstr=`ls -d /sys/devices/*/*/$adap/cxl/card* 2>/dev/null`;
+      chomp $cardstr;
+      my $cardN=substr $cardstr,-1;
+      my @afuD=`/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null`;
+      my $afuver="";
+      for my $ver ( @afuD )
+      {
+        if ($ver eq "") {last;}
+        if ($ver =~ /AFU Version/) {$afuver=( split ' ', $ver )[ -1 ]; last;}
+      }
+      my $devspec=`cat /sys/bus/pci/devices/$adap/devspec`;
+      my $loccode=`cat /proc/device-tree$devspec/ibm,loc-code 2>/dev/null`;
+      chomp $loccode;
+      $loccode=substr($loccode,0,23);
+      $list && print "Found CAPI device $cfg_devid afu$cardN $adap $loccode $serial =>$afuver\n";
     }
   }
 }
 
-$evt = time();
+#-------------------------------------------------------------------------------
+# exit if (-l) list option specified
+#-------------------------------------------------------------------------------
+$list && exit;
 
-print "\n\n";
-
-# -------------------------------------------------------------------------------
-# Check for Errors during Programming
-# -------------------------------------------------------------------------------
-if ($ec != 0) {
-  print "\nErrors Occured : Error Code => $ec\n";
+#-------------------------------------------------------------------------------
+# VM - validate target
+#-------------------------------------------------------------------------------
+if ($_VM)
+{
+  if (! $target =~ /afu/) {die "       ERROR: bad target format: ($target)\n";}
+  if (! -e "/sys/class/cxl/$target")
+  {
+    die "       ERROR: bad target: /sys/class/cxl/$target\n";
+  }
+  $cardN=substr $target,3,1;
+  set_vm_cfgid $cardN;
+  $verbose && print "Target specified:  $cfg_devid $target\n\n";
+}
+#-------------------------------------------------------------------------------
+# BMC - validate target - Open the target CAPI Device's Configuration Space
+#-------------------------------------------------------------------------------
+else
+{
+  if (! ($target =~ /bus/))
+  {
+    $target = "/sys/bus/pci/devices/$target";
+  }
+  if (! -e $target)
+  {
+    die "       ERROR: bad target: $target\n";
+  }
+  sysopen(CFG, $target . "/config", O_RDWR) or die "       ERROR: $!\n";
+  $verbose && print "Target specified:  $target\n\n";
 }
 
-# -------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+# BMC - Read the Device/Vendor ID from the Configuration Space
+#-------------------------------------------------------------------------------
+if (!$_VM)
+{
+  sysseek(CFG, 0, SEEK_SET);
+  sysread(CFG,$dat,4);
+  $d = unpack("V",$dat);
+  $tmp = sprintf "%08x", $d;
+  $cfg_devid = substr($tmp,4,4) . substr($tmp,0,4);
+  $verbose && print " Config Space: Device/Vendor ID: $cfg_devid\n";
+}
+
+#ensure cxlflash is not loaded before continuing
+`lsmod|grep cxlflash`;
+if ($? == 0) {print "rmmod cxlflash before doing the download\n"; exit 0;}
+
+#-------------------------------------------------------------------------------
+# VM - Finish - call binary to do the AFU FW Download
+#-------------------------------------------------------------------------------
+if ($_VM)
+{
+  my $addhdr="";
+  if ($filename =~ /.bin/ || $filename =~ /.rbf/) {$addhdr=" -a ";}
+  my $cmd="/opt/ibm/capikv/afu/cxl_flash_vm -c $cardN -f $filename $addhdr";
+  $verbose && printf(" Running: $cmd\n");
+  system($cmd);
+  exit $?;
+}
+
+#-------------------------------------------------------------------------------
+# Read the VSEC Length / VSEC ID from the Configuration Space
+#-------------------------------------------------------------------------------
+if ($cfg_devid eq "10140601")
+{
+  $VSEC_REG = 0x404;
+}
+my $vsec_msg="";
+sysseek(CFG, $VSEC_REG, SEEK_SET);
+sysread(CFG,$dat,4);
+$vsec = unpack("V",$dat);
+$verbose && printf("  VSEC Addr:0x%04x Len/Rev: 0x%08x\n", $VSEC_REG, $vsec);
+
+if ($cfg_devid eq "101404cf")
+{
+  if ( ($vsec & 0x08000000) == 0x08000000 )
+  {
+    $vsec_msg="    Corsa 04cf: Altera flash 0.12";
+    $ADDR_REG = 0x950;                   # Flash Address Configuration Register
+    $SIZE_REG = 0x954;                   # Flash Size Configuration Register
+    $CNTL_REG = 0x958;                   # Flash Control / Status Config Reg
+    $DATA_REG = 0x95C;                   # Flash Data Configuration Register
+  }
+  else
+  {
+    $vsec_msg="    Corsa 04cf: Altera flash 0.10";
+    $ADDR_REG = 0x920;                   # Flash Address Configuration Register
+    $SIZE_REG = 0x924;                   # Flash Size Configuration Register
+    $CNTL_REG = 0x928;                   # Flash Control / Status Config Reg
+    $DATA_REG = 0x92C;                   # Flash Data Configuration Register
+  }
+  $factory_addr = 0x10000;
+}
+elsif ($cfg_devid eq "10140601")
+{
+  $header_addr=0x0800000;
+  $user_addr=0x0810000;
+
+  if ( ($vsec & 0x08000000) == 0x08000000 )
+  {
+    $vsec_msg="    FlashGT 0601: Xilinx flash";
+    $ADDR_REG = 0x450;                   # Flash Address Configuration Register
+    $SIZE_REG = 0x454;                   # Flash Size Configuration Register
+    $CNTL_REG = 0x458;                   # Flash Control / Status Config Reg
+    $DATA_REG = 0x45C;                   # Flash Data Configuration Register
+  }
+  else
+  {
+    $vsec_msg="    FlashGT 0601: Altera flash";
+    $ADDR_REG = 0x920;                   # Flash Address Configuration Register
+    $SIZE_REG = 0x924;                   # Flash Size Configuration Register
+    $CNTL_REG = 0x928;                   # Flash Control / Status Config Reg
+    $DATA_REG = 0x92C;                   # Flash Data Configuration Register
+  }
+}
+elsif ($cfg_devid eq "10140477")
+{
+  if ( ($vsec & 0x00000000) == 0x0000F000 )
+  {
+    $vsec_msg="    Corsa 0477: Xilinx flash";
+    $ADDR_REG = 0x450;                   # Flash Address Configuration Register
+    $SIZE_REG = 0x454;                   # Flash Size Configuration Register
+    $CNTL_REG = 0x458;                   # Flash Control / Status Config Reg
+    $DATA_REG = 0x45C;                   # Flash Data Configuration Register
+  }
+  else
+  {
+    $factory_addr = 0x10000;
+    $vsec_msg="    Corsa 0477: Altera flash";
+    $ADDR_REG = 0x950;                   # Flash Address Configuration Register
+    $SIZE_REG = 0x954;                   # Flash Size Configuration Register
+    $CNTL_REG = 0x958;                   # Flash Control / Status Config Reg
+    $DATA_REG = 0x95C;                   # Flash Data Configuration Register
+  }
+}
+else
+{
+  die "       ERROR: unknown device: $cfg_devid\n";
+}
+$verbose && print "$vsec_msg\n\n";
+
+#-------------------------------------------------------------------------------
+# determine the config space addr to program
+#-------------------------------------------------------------------------------
+if ($vpd)
+{
+  #note we override the "address" set by the user above, so we cannot program
+  #VPD simultaneously with another flash region (factory or user).
+  $a = $vpd_addr;
+  printf " VPD selected, addr: 0x%x\n", $a;
+}
+elsif ($partition0)
+{
+  $a = $factory_addr;
+  printf " Factory Image selected, addr: 0x%x\n", $a;
+}
+else
+{
+  #default to programming partition 1 otherwise.
+  $wr_user=1;
+  $a = $user_addr;
+  $verbose && printf " User Image selected, addr: 0x%x\n", $a;
+}
+
+# start the elapse timer
+$set = time();
+
+#-------------------------------------------------------------------------------
+# validate the checksum on the download files before starting the download
+#-------------------------------------------------------------------------------
+validate_checksum $filename;
+if ($cfg_devid eq "10140601" && $wr_user)
+{
+  validate_checksum $factoryselect_hdr;
+  validate_checksum $userselect_hdr;
+}
+
+# install the SIGINT handler
+$SIG{INT} = \&sigint_handler;
+
+#-------------------------------------------------------------------------------
+# if GT and we are writing the user image, then program factoryselect header
+#-------------------------------------------------------------------------------
+if ($cfg_devid eq "10140601" && $wr_user)
+{
+  if ($verbose) {$parm_verbose=2;}
+  else          {$parm_verbose=0;}
+  write_file_to_flash($factoryselect_hdr, $header_addr, $parm_verbose);
+}
+
+#-------------------------------------------------------------------------------
+# Program the flash
+#-------------------------------------------------------------------------------
+if ($verbose) {$parm_verbose=2;}
+else          {$parm_verbose=1;}
+write_file_to_flash($filename, $a, $parm_verbose);
+
+#-------------------------------------------------------------------------------
+# if GT and we are writing the user image, then program userselect header
+#-------------------------------------------------------------------------------
+if ($cfg_devid eq "10140601" && $wr_user)
+{
+  if ($verbose) {$parm_verbose=2;}
+  else          {$parm_verbose=0;}
+  write_file_to_flash($userselect_hdr, $header_addr, $parm_verbose);
+}
+
+#-------------------------------------------------------------------------------
 # Calculate and Print Elapsed Times
-# -------------------------------------------------------------------------------
-$et = $evt - $set;
-$eet = $eet - $set;
-$ept = $ept - $spt;
-$evt = $evt - $svt;
+#-------------------------------------------------------------------------------
+$et  = time() - $set;
+print "\n  Total Time:   $et seconds\n\n";
 
-print "Erase Time:   $eet seconds\n";
-print "Program Time: $ept seconds\n";
-print "Verify Time:  $evt seconds\n";
-print "Total Time:   $et seconds\n\n";
-
-# -------------------------------------------------------------------------------
-# Reset Read Sequence
-# -------------------------------------------------------------------------------
-$cfgadr = $CNTL_REG;
-$dat = 0;
-$d = pack("V",$dat);
-sysseek CFG, $cfgadr, seek_set;
-syswrite(CFG,$d,4);
-
-close(IN);
 close(CFG);
 exit;

@@ -293,7 +293,7 @@ void bl_check_take(BL *bl, int64_t n)
         return;
     }
 
-    avail = bl->n - bl->top;
+    avail = bl->n - bl->top -1;
 
     // if we need blocks and we have uninitialized blocks, init them
     if (n > bl->count && avail)
@@ -570,7 +570,7 @@ ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len)
     {
       while (0 < b) {
         bl_array[i].blkno = b;
-        bl_array[i].a_tag = -1;
+        bl_array[i].a_tag.tag = -1;
         if ((b=iv_get(bl->list, b)) < 0)
         {
             KV_TRC_FFDC(pAT, "invalid chain index:%ld", b);
@@ -612,7 +612,7 @@ ark_io_list_t *bl_chain_blocks(BL *bl, int64_t start, int64_t len)
       for (i = 0; i < len; i++)
       {
         bl_array[i].blkno = start + i;
-        bl_array[i].a_tag = -1;
+        bl_array[i].a_tag.tag = -1;
       }
     }
   }
@@ -638,7 +638,7 @@ ark_io_list_t *bl_chain_no_bl(int64_t start, int64_t len)
     for (i = 0; i < len; i++)
     {
       bl_array[i].blkno = start + i;
-      bl_array[i].a_tag = -1;
+      bl_array[i].a_tag.tag = -1;
     }
   }
 

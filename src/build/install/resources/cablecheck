@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 #  IBM_PROLOG_BEGIN_TAG
 #  This is an automatically generated prolog.
 #
@@ -25,7 +25,7 @@
 # IBM_PROLOG_END_TAG
 
 CAPIKV=/opt/ibm/capikv
-source $CAPIKV/bin/capikvutils.sh
+source $CAPIKV/bin/cflashutils.sh
 
 KERNELMOD=cxlflash
 
@@ -50,7 +50,7 @@ disablemodule()
         then
             die "ERROR: Linux multipathing is enabled, and must be disabled prior to running this tool as it typically prevents the unloading of the $KERNELMOD driver. Please temporarily flush the multipath tables by running \"multipath -F\" and try again." 4
         else
-            die "Unable to remove the $KERNELMOD driver. Please ensure that all applications that exploit $KERNELMOD or ibmcapikv are terminated."
+            die "Unable to remove the $KERNELMOD driver. Please ensure that all applications that exploit $KERNELMOD or cflash are terminated."
         fi;
     fi;
     echo "INFO: $KERNELMOD unloaded."

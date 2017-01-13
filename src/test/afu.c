@@ -161,7 +161,7 @@ struct afu *afu_map ()
 		perror ("malloc");
 		return NULL;
 	}
-	debug ("Allocated memory at 0x%016lx for AFU\n", (__u64) afu);
+	debug ("Allocated memory at 0x%p for AFU\n", afu);
 
 	memset(afu, 0, sizeof(*afu));
 	afu->work.num_interrupts = 4;
@@ -212,7 +212,7 @@ void afu_unmap (struct afu *afu)
 void afu_start (struct afu *afu)
 {
 	/* Set WED in PSL and send start command to AFU */
-	debug ("Sending WED address 0x%016lx to PSL...\n", (__u64) afu->work.work_element_descriptor);
+	debug ("Sending WED address 0x%016llx to PSL...\n", (__u64) afu->work.work_element_descriptor);
 
 	if (ioctl (afu->fd, CXL_IOCTL_START_WORK, &afu->work) == 0) {
 	  debug ("Start command succeeded on AFU\n");
@@ -262,7 +262,7 @@ void afu_mmio_read_dw (struct afu *afu, unsigned offset, __u64 *value)
 {
 	__u64 addr = 4 * (__u64) (offset & ~0x1);	// Force 8byte align
 	*value = in_be64 (afu->ps_addr + addr);
-	debug ("Read 0x%016lx from AFU register offset %x\n", *value, offset);
+	debug ("Read 0x%016llx from AFU register offset %x\n", *value, offset);
 }
 
 // Wait for AFU to complete job

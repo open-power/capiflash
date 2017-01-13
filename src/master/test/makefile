@@ -66,7 +66,7 @@ CFLAGS += \
 	-g \
    -D__FVT__\
    -I$(ROOTPATH)/src/master \
-   -I$(ROOTPATH)/src/test/framework/googletest/googletest/include
+   -I$(ROOTPATH)/${GTESTINC}
 CXXFLAGS+=$(CFLAGS)
 
 #VPATH += ${ROOTPATH}/src/master

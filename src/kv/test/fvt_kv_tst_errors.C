@@ -42,7 +42,6 @@ extern "C"
 #include <bl.h>
 #include <errno.h>
 
-ARK     *async_ark = NULL;
 uint32_t async_io  = 0;
 int32_t  async_err = 0;
 
@@ -53,7 +52,7 @@ int32_t  async_err = 0;
 void kv_tst_io_errors_cb(int errcode, uint64_t dt, int64_t res)
 {
     --async_io;
-    if (async_err != errcode) printf("tag=%"PRIx64"\n", dt);
+    if (async_err != errcode) printf("tag=%lx\n", dt);
     ASSERT_EQ(async_err, errcode);
 }
 
@@ -305,6 +304,7 @@ TEST(FVT_KV_ERROR_PATH, BAD_PARMS_ark_fork)
  ******************************************************************************/
 TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
 {
+    ARK     *ark  = NULL;
     char     s[]  = {"12345678"};
     uint32_t klen = 8;
     int64_t  res  = 0;
@@ -313,58 +313,58 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
 
     errno=0; KV_INJECT_ALLOC_ERROR;
     ASSERT_EQ(ENOMEM, ark_create(getenv("FVT_DEV"), 
-                                 &async_ark, ARK_KV_VIRTUAL_LUN));
+                                 &ark, ARK_KV_VIRTUAL_LUN));
 
     errno=0;
-    ASSERT_EQ(0, ark_create(getenv("FVT_DEV"), &async_ark, ARK_KV_VIRTUAL_LUN));
-    EXPECT_TRUE(async_ark != NULL);
+    ASSERT_EQ(0, ark_create(getenv("FVT_DEV"), &ark, ARK_KV_VIRTUAL_LUN));
+    EXPECT_TRUE(ark != NULL);
 
     /* sync */
     errno=0; KV_INJECT_ALLOC_ERROR;
-    EXPECT_EQ(ENOMEM, ark_set(async_ark, klen, s, klen, s, &res));
-    EXPECT_EQ(ENOENT, ark_get(async_ark, klen, s, klen, s, 0, &res));
+    EXPECT_EQ(ENOMEM, ark_set(ark, klen, s, klen, s, &res));
+    EXPECT_EQ(ENOENT, ark_get(ark, klen, s, klen, s, 0, &res));
 
-    EXPECT_EQ(0, ark_set(async_ark, klen, s, klen, s, &res));
-    EXPECT_EQ(0, ark_get(async_ark, klen, s, klen, s, 0, &res));
+    EXPECT_EQ(0, ark_set(ark, klen, s, klen, s, &res));
+    EXPECT_EQ(0, ark_get(ark, klen, s, klen, s, 0, &res));
 
     errno=0; KV_INJECT_ALLOC_ERROR;
-    EXPECT_EQ(ENOMEM, ark_del(async_ark, klen, s, &res));
-    EXPECT_EQ(0,      ark_del(async_ark, klen, s, &res));
+    EXPECT_EQ(ENOMEM, ark_del(ark, klen, s, &res));
+    EXPECT_EQ(0,      ark_del(ark, klen, s, &res));
 
     errno=0; ++async_io; async_err = ENOMEM;
     KV_INJECT_ALLOC_ERROR;
-    EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
+    EXPECT_EQ(0, ark_set_async_cb(ark, klen, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee1));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = ENOENT;
-    EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
+    EXPECT_EQ(0, ark_get_async_cb(ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee2));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = 0;
-    EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
+    EXPECT_EQ(0, ark_set_async_cb(ark, klen, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee3));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = 0;
-    EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
+    EXPECT_EQ(0, ark_get_async_cb(ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee4));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = ENOMEM;
     KV_INJECT_ALLOC_ERROR;
-    EXPECT_EQ(0, ark_del_async_cb(async_ark, klen, s,
+    EXPECT_EQ(0, ark_del_async_cb(ark, klen, s,
                                   kv_tst_io_errors_cb, 0xfee5));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = 0;
-    EXPECT_EQ(0, ark_del_async_cb(async_ark, klen, s,
+    EXPECT_EQ(0, ark_del_async_cb(ark, klen, s,
                                   kv_tst_io_errors_cb, 0xfee6));
     while (async_io) usleep(50000);
 
     errno=0; KV_SET_INJECT_INACTIVE;
-    ASSERT_EQ(0, ark_delete(async_ark));
+    ASSERT_EQ(0, ark_delete(ark));
 }
 
 /**
@@ -373,20 +373,21 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
  ******************************************************************************/
 TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
 {
-    char           s[]      = {"12345678"};
-    uint32_t       klen     = 8;
-    int64_t        res      = 0;
-    char          *path     = getenv("FVT_DEV");
+    ARK           *ark       = NULL;
+    char           s[]       = {"12345678"};
+    uint32_t       klen      = 8;
+    int64_t        res       = 0;
+    char          *path      = getenv("FVT_DEV");
+    ark_io_list_t *bl_array  = NULL;
+    _ARK          *arkp      = NULL;
     char           data[KV_4K];
-    ark_io_list_t *bl_array = NULL;
-    _ARK          *arkp     = NULL;
 
     KV_SET_INJECT_ACTIVE;
 
-    ASSERT_EQ(0, ark_create(path, &async_ark, ARK_KV_VIRTUAL_LUN));
-    EXPECT_TRUE(async_ark != NULL);
+    ASSERT_EQ(0, ark_create(path, &ark, ARK_KV_VIRTUAL_LUN));
+    EXPECT_TRUE(ark != NULL);
 
-    arkp = (_ARK*)async_ark;
+    arkp = (_ARK*)ark;
 
     bl_array = bl_chain_blocks(arkp->bl, 0, 1);
     ASSERT_TRUE(NULL != bl_array);
@@ -408,98 +409,98 @@ TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
     /* sync */
 
     errno=0; KV_INJECT_SCHD_WRITE_ERROR;
-    EXPECT_EQ(EIO,    ark_set(async_ark, klen, s, klen, s, &res));
+    EXPECT_EQ(EIO,    ark_set(ark, klen, s, klen, s, &res));
     errno=0; KV_INJECT_HARV_WRITE_ERROR;
-    EXPECT_EQ(EIO,    ark_set(async_ark, klen, s, klen, s, &res));
-    EXPECT_EQ(ENOENT, ark_get(async_ark, klen, s, klen, s, 0, &res));
+    EXPECT_EQ(EIO,    ark_set(ark, klen, s, klen, s, &res));
+    EXPECT_EQ(ENOENT, ark_get(ark, klen, s, klen, s, 0, &res));
 
-    EXPECT_EQ(0, ark_set(async_ark, klen, s, klen, s, &res));
-
-    errno=0; KV_INJECT_SCHD_READ_ERROR;
-    EXPECT_EQ(EIO, ark_get(async_ark, klen, s, klen, s, 0, &res));
+    EXPECT_EQ(0, ark_set(ark, klen, s, klen, s, &res));
 
     errno=0; KV_INJECT_SCHD_READ_ERROR;
-    EXPECT_EQ(EIO, ark_exists(async_ark, klen, s, &res));
+    EXPECT_EQ(EIO, ark_get(ark, klen, s, klen, s, 0, &res));
+
+    errno=0; KV_INJECT_SCHD_READ_ERROR;
+    EXPECT_EQ(EIO, ark_exists(ark, klen, s, &res));
 
     errno=0; KV_INJECT_HARV_READ_ERROR;
-    EXPECT_EQ(EIO, ark_get(async_ark, klen, s, klen, s, 0, &res));
+    EXPECT_EQ(EIO, ark_get(ark, klen, s, klen, s, 0, &res));
 
     errno=0; KV_INJECT_HARV_READ_ERROR;
-    EXPECT_EQ(EIO, ark_exists(async_ark, klen, s, &res));
+    EXPECT_EQ(EIO, ark_exists(ark, klen, s, &res));
 #if 0
     errno=0; KV_INJECT_WRITE_ERROR;
-    EXPECT_EQ(EIO, ark_del(async_ark, klen, s, &res));
+    EXPECT_EQ(EIO, ark_del(ark, klen, s, &res));
 #endif
 
-    EXPECT_EQ(0, ark_del(async_ark, klen, s, &res));
+    EXPECT_EQ(0, ark_del(ark, klen, s, &res));
 
     /* async */
 
     errno=0; ++async_io; async_err = EIO;
     KV_INJECT_SCHD_WRITE_ERROR;
-    EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
+    EXPECT_EQ(0, ark_set_async_cb(ark, klen, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee1));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = EIO;
     KV_INJECT_HARV_WRITE_ERROR;
-    EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
+    EXPECT_EQ(0, ark_set_async_cb(ark, klen, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee1));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = ENOENT;
-    EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
+    EXPECT_EQ(0, ark_get_async_cb(ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee2));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = 0;
-    EXPECT_EQ(0, ark_set_async_cb(async_ark, klen, s, klen, s,
+    EXPECT_EQ(0, ark_set_async_cb(ark, klen, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee3));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = 0;
-    EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
+    EXPECT_EQ(0, ark_get_async_cb(ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee4));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = EIO;
     KV_INJECT_SCHD_READ_ERROR;
-    EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
+    EXPECT_EQ(0, ark_get_async_cb(ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee5));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = EIO;
     KV_INJECT_SCHD_READ_ERROR;
-    EXPECT_EQ(0, ark_exists_async_cb(async_ark, klen, s,
+    EXPECT_EQ(0, ark_exists_async_cb(ark, klen, s,
                                      kv_tst_io_errors_cb, 0xfee6));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = EIO;
     KV_INJECT_HARV_READ_ERROR;
-    EXPECT_EQ(0, ark_get_async_cb(async_ark, klen, s, klen, s, 0,
+    EXPECT_EQ(0, ark_get_async_cb(ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee5));
     while (async_io) usleep(50000);
 
     errno=0; ++async_io; async_err = EIO;
     KV_INJECT_HARV_READ_ERROR;
-    EXPECT_EQ(0, ark_exists_async_cb(async_ark, klen, s,
+    EXPECT_EQ(0, ark_exists_async_cb(ark, klen, s,
                                      kv_tst_io_errors_cb, 0xfee6));
     while (async_io) usleep(50000);
 #if 0
     errno=0; ++async_io; async_err = EIO;
     KV_INJECT_WRITE_ERROR;
-    EXPECT_EQ(0, ark_del_async_cb(async_ark, klen, s,
+    EXPECT_EQ(0, ark_del_async_cb(ark, klen, s,
                                   kv_tst_io_errors_cb, 0xfee7));
     while (async_io) usleep(50000);
 #endif
 
     errno=0; ++async_io; async_err = 0;
-    EXPECT_EQ(0, ark_del_async_cb(async_ark, klen, s,
+    EXPECT_EQ(0, ark_del_async_cb(ark, klen, s,
                                   kv_tst_io_errors_cb, 0xfee8));
     while (async_io) usleep(50000);
 
     errno=0; KV_SET_INJECT_INACTIVE;
-    ASSERT_EQ(0, ark_delete(async_ark));
+    ASSERT_EQ(0, ark_delete(ark));
 }
 
 /**

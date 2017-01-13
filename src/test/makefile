@@ -28,14 +28,8 @@ UNAME=$(shell uname)
 # Where to find user code.(Relative path(from the makefile) preferred for portability)
 ROOTPATH = ../..
 USER_DIR = .
-SUBDIRS  = ffdc.d
+SUBDIRS  = usfs.d
 TESTDIR  = ${ROOTPATH}/obj/tests
-
-OBJS = afu.o capi_dev_nodes.o
-
-OBJS64 = afu.64o capi_dev_nodes.64o
-
-MODULE = afu
 EXPFLAGS = -bexpall
 
 #test code != production code, so allow warnings here.
@@ -43,10 +37,20 @@ ALLOW_WARNINGS = yes
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
 LIBPATHS = -L${ROOTPATH}/img
-LINKLIBS = -lcflshcom -lcflsh_block -lafu -larkdb -larkalloc
+LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 
 
-BTESTS   =transport_test blk_test pvtestauto xlate pblkread asyncstress asyncstress2
+BTESTS   = asyncstress asyncstress2
+
+ifneq ($(TARGET_PLATFORM),x86_64)
+SUBDIRS   = ffdc.d vpd.d
+BTESTS   += transport_test blk_test pvtestauto xlate pblkread
+OBJS      = afu.o capi_dev_nodes.o
+OBJS64    = afu.64o capi_dev_nodes.64o
+MODULE    = afu
+LINKLIBS += -lafu
+endif
+
 BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
 
 GTESTS = run_fvt
@@ -59,10 +63,11 @@ BTESTS64     = $(addsuffix 64, ${BTESTS})
 BIN_TESTS64  = $(addprefix ${TESTDIR}/, ${BTESTS64})
 GTESTS64     = $(addsuffix 64, ${GTESTS})
 GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
-BITS             = 64
+BITS         = 64
 
 else #Linux only
 LINKLIBS+=-lpthread -ludev
+BTESTS  +=flashgt_temp
 endif
 
 run_fvt_OFILES = \
@@ -72,18 +77,13 @@ run_fvt_OFILES = \
  fvt_kv_tst_simple.o fvt_kv_tst_scenario.o fvt_kv_tst_sync_pth.o \
  fvt_kv_tst_async_cb.o fvt_kv_tst_errors.o fvt_kv_tst_sync_async.o
 
-
-MODULE = afu
-OBJS   = afu.o capi_dev_nodes.o
-OBJS64 = afu.64o capi_dev_nodes.64o
-
 CFLAGS += \
-   -D__FVT__\
+   -D__FVT__ -Wno-unused-result\
    -I$(ROOTPATH)/src/kv \
    -I$(ROOTPATH)/src/kv/test \
    -I$(ROOTPATH)/src/block \
    -I$(ROOTPATH)/src/common \
-   -I$(ROOTPATH)/src/test/framework/googletest/googletest/include
+   -I$(ROOTPATH)/${GTESTINC} 
 CXXFLAGS+=$(CFLAGS)
 
 VPATH += \

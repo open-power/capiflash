@@ -119,15 +119,15 @@ run_sync_async_OFILES = fvt_kv_tst_sync_async.o kv_utils_db.o \
 run_err_OFILES = fvt_kv_tst_errors.o fvt_kv_utils.o kv_utils_db.o \
   fvt_kv_utils_async_cb.o fvt_kv_utils_ark_io.o fvt_trace.o
 
+include ${ROOTPATH}/config.mk
+
 CFLAGS += \
    -D__FVT__ -D__STDC_FORMAT_MACROS\
    -I$(ROOTPATH)/src/kv \
-   -I$(ROOTPATH)/src/test/framework/googletest/googletest/include \
+   -I$(ROOTPATH)/${GTESTINC} \
    $(KV_CFLAGS)
 
 CXXFLAGS+=$(CFLAGS)
-
-include ${ROOTPATH}/config.mk
 
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 ifeq ($(UNAME),AIX)

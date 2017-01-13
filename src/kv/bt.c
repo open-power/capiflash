@@ -36,11 +36,13 @@
 
 #include <arkdb_trace.h>
 
-BT *bt_new(uint64_t dlen, uint64_t vmx,  uint64_t vdf, uint64_t *btsize, BT **bt_orig) {
+BT *bt_new(uint64_t dlen, uint64_t vmx,  uint64_t vdf, uint64_t *btsize, BT **bt_orig)
+{
   BT *bt = NULL;
 
   *bt_orig = am_malloc(sizeof(BT) + dlen);
-  if (*bt_orig == NULL) {
+  if (*bt_orig == NULL)
+  {
     errno = ENOMEM;
     KV_TRC_FFDC(pAT, "Out of memory dlen %ld vmx %ld vdf %ld, errno = %d",
             dlen, vmx, vdf, errno);
@@ -62,23 +64,25 @@ BT *bt_new(uint64_t dlen, uint64_t vmx,  uint64_t vdf, uint64_t *btsize, BT **bt
       *btsize = sizeof(BT) + dlen;
     }
   }
-  KV_TRC(pAT, "bt %p dlen %ld vmx %ld vdf %ld",
-          bt, dlen, vmx, vdf);
+  KV_TRC(pAT, "bt:%p dlen %ld vmx %ld vdf %ld bt_orig:%p",
+          bt, dlen, vmx, vdf, *bt_orig);
   return bt;
 }
 
-int bt_growif(BT **bt, BT **bt_orig, uint64_t *lim, uint64_t size) {
+int bt_growif(BT **bt, BT **bt_orig, uint64_t *lim, uint64_t size)
+{
   BT *btret = NULL;
   int rc = 0;
 
   // We need to include the size of the BT header struct
   // This is a bit of a hack, but we know that a
   // struct BT will fit within a block size of 4K
-  uint64_t newsize = (size + 4096);
+  uint64_t newsize = (size + sizeof(BT));
 
   // If the sie of bt is already sufficient, do nothing
   // and just return success.
-  if (newsize > *lim) {
+  if (newsize > *lim)
+  {
     btret = am_realloc(*bt_orig, newsize);
     if (btret == NULL)
     {
@@ -94,6 +98,9 @@ int bt_growif(BT **bt, BT **bt_orig, uint64_t *lim, uint64_t size) {
       // space
       *bt_orig = btret;
       *bt = (BT *)ptr_align(btret);
+      KV_TRC(pAT, "BT_REALLOC new:%p p_orig:%p bt_orig:%p lim:%ld size:%ld "
+                  "newsize:%ld",
+                  *bt, btret, *bt_orig, *lim, size, newsize);
       (*bt)->dlen = newsize - sizeof(BT);
       *lim = newsize;
     }
@@ -103,6 +110,7 @@ int bt_growif(BT **bt, BT **bt_orig, uint64_t *lim, uint64_t size) {
 }
 
 int bt_init(BT *bt) {
+
   if (bt) {
     bt->len = sizeof(BT);
     bt->cnt = 0;
@@ -117,8 +125,12 @@ int bt_init(BT *bt) {
 
 void bt_delete(BT *bt)
 {
-  if (bt) {am_free(bt); KV_TRC_DBG(pAT, "bt %p", bt);}
-  else    {KV_TRC_FFDC(pAT, "bt NULL");}
+  if (bt)
+  {
+      KV_TRC_DBG(pAT, "free bt:%p", bt);
+      am_free(bt);
+  }
+  else {KV_TRC_FFDC(pAT, "bt NULL");}
 }
 
 int64_t bt_exists(BT *bt, uint64_t kl, uint8_t *k) {
@@ -141,10 +153,12 @@ int64_t bt_exists(BT *bt, uint64_t kl, uint8_t *k) {
   return BT_FAIL;
 }
 
-int bt_set(BT *bto,BT *bti, uint64_t kl, uint8_t *k, uint64_t vl, uint8_t *v, uint64_t *ovlen) {
+int bt_set(BT *bto,BT *bti, uint64_t kl, uint8_t *k, uint64_t vl, uint8_t *v, uint64_t *ovlen)
+{
   uint8_t *src = bti->data;
   uint8_t *dst = bto->data;
   uint64_t bytes = 0;
+
   dst += vi_enc64(kl, dst);
   dst += vi_enc64(vl, dst);
   memcpy(dst, k, kl);
@@ -181,6 +195,7 @@ int bt_set(BT *bto,BT *bti, uint64_t kl, uint8_t *k, uint64_t vl, uint8_t *v, ui
   bto->cnt = bti->cnt + add;
   bto->def = bti->def;
   bto->max = bti->max;
+
   return add;
 }
 
@@ -228,6 +243,7 @@ int64_t bt_del(BT *bto, BT *bti, uint64_t kl, uint8_t *k) {
   }
   return ret;
 }
+
 // same as bt_del except returns the val if vlen > vlimit as this ref may be used to 
 // to delete other things ref will be filled with def bytes
 // this could replace bt_del at the cost of the extra parameter

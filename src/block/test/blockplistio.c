@@ -57,12 +57,6 @@
 #define TIME_INTERVAL 1024
 #define SET_NBLKS     260*1024
 
-#ifdef _AIX
-#define USLEEP 100
-#else
-#define USLEEP 50
-#endif
-
 typedef struct
 {
     cblk_io_t **ioI;
@@ -156,7 +150,6 @@ int main(int argc, char **argv)
     uint32_t        TI         = TIME_INTERVAL;
     uint32_t        N          = 0;
     uint32_t        TIME       = 1;
-    uint32_t        miss       = 0;
     uint32_t        tmiss      = 0;
     uint32_t        lba        = 0;
     uint32_t        p_i        = 0;
@@ -325,7 +318,7 @@ int main(int argc, char **argv)
             if (lio[tag].ioP[i]->stat.status == -1)
                 {io_error(id, "status==-1", -1);}
             else if (lio[tag].ioP[i]->stat.status ==CBLK_ARW_STATUS_SUCCESS)
-                {++cnt; ++lio[tag].ncmp; miss=0;}
+                {++cnt; ++lio[tag].ncmp;}
             else if (lio[tag].ioP[i]->stat.status == CBLK_ARW_STATUS_FAIL)
                 {io_error(id, "CMD FAIL",lio[tag].ioP[i]->stat.fail_errno);}
             else if (lio[tag].ioP[i]->stat.status ==CBLK_ARW_STATUS_PENDING)
@@ -348,7 +341,7 @@ int main(int argc, char **argv)
             if (lio[tag].ioI[i]->stat.status == -1)
                 {io_error(id, "status==-1", -1);}
             else if (lio[tag].ioI[i]->stat.status ==CBLK_ARW_STATUS_SUCCESS)
-                {++cnt; ++lio[tag].ncmp; miss=0;}
+                {++cnt; ++lio[tag].ncmp;}
             else if (lio[tag].ioI[i]->stat.status == CBLK_ARW_STATUS_FAIL)
                 {io_error(id, "CMD FAIL",lio[tag].ioI[i]->stat.fail_errno);}
             else if (lio[tag].ioI[i]->stat.status ==CBLK_ARW_STATUS_PENDING)
@@ -358,10 +351,8 @@ int main(int argc, char **argv)
         }
         lio[tag].nP = p_i;
 
-        if      (lio[tag].ncmp == 0)  {++miss; ++tmiss;}
-        else if (lio[tag].ncmp == LD) {miss=0;}
-
-        if (NL==1 && LD==1 && !lio[tag].ncmp && miss==1) {usleep(80);}
+        if (lio[tag].ncmp == 0)           {++tmiss;}
+        if (NL==1 && lio[tag].ncmp == 0)  {usleep(20);}
 
         N -= lio[tag].ncmp;
         if (++tag >= NL) tag = 0;
@@ -386,8 +377,8 @@ int main(int argc, char **argv)
     gettimeofday(&delta, NULL);
     esecs = ((float)((delta.tv_sec*mil + delta.tv_usec) -
                      (start.tv_sec*mil + start.tv_usec))) / (float)mil;
-    printf("d:%s l:%d c:%d p:%d s:%d i:%d tmiss:%d mbps:%d iops:%d\n",
-            dev, NL, LD, plun, nsecs, intrp_thds, tmiss,
+    printf("d:%s l:%d c:%d p:%d s:%d i:%d miss:%d/%d mbps:%d iops:%d\n",
+            dev, NL, LD, plun, nsecs, intrp_thds, tmiss/cnt, tmiss,
             (uint32_t)((float)(cnt*4)/1024/esecs),
             (uint32_t)((float)cnt/esecs));
 

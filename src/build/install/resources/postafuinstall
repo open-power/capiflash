@@ -28,6 +28,3 @@ USERNAME=cxl
 GROUPNAME=$USERNAME
 FLASH_ROOT=/opt/ibm/capikv/afu
 DATA_DIR=$CAPIKV_ROOT/data
-INIFILE=$DATA_DIR/capikv.ini
-
-echo "INFO: Please remove the \"cxlflash\" module and run \"$FLASH_ROOT/flash_all_adapters\" to perform the CAPI accelerator microcode update."

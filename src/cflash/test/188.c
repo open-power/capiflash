@@ -70,8 +70,20 @@ int do_microcode_update( )
 int do_perst()
 {
     int rc;
+    int iTer   =0;
+    FILE *fileP = NULL;
+
+    char tmpBuff[MAXBUFF];
+    char blockCheckP[MAXBUFF];
 
     sleep(5);
+    /* 
+         PERST test case is under maunal Cflash FVT test case.  
+         Test case will by default PERST all the adapter present in the system 
+         Incase user wants to perst in selective devices; then target device entry should in 
+         /tmp/perstinfo_file - like 000N:01:00.0; so that cflash_perst.pl PESRT tool can use it further 
+         usage ex: cflash_perst.pl -t 000N:01:00.0
+     */
 
     rc=system("echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes");
     CHECK_RC(rc, "Failed to make max_freezes");
@@ -83,9 +95,43 @@ int do_perst()
 
     // reload_all_adapters will perform the PESRT
 
-    rc=system("/opt/ibm/capikv/afu/reload_all_adapters");
-    CHECK_RC(rc, "Failed to reload updated afu image");
-
+    fileP = fopen("/tmp/perstinfo_file", "r");
+    if (NULL == fileP)
+    {
+        /* if perstinfo_file does not present;
+           User will do PERST in all adapter
+        */
+        rc=system("/opt/ibm/capikv/afu/reload_all_adapters");
+        CHECK_RC(rc, "Failed to reload updated afu image");
+        
+    }
+    else
+    {
+      
+      while (fgets(tmpBuff,MAXBUFF, fileP) != NULL)
+      {
+         iTer = 0;
+        
+        while (iTer < MAXBUFF)
+        {
+            if (tmpBuff[iTer] =='\n')
+            {
+                tmpBuff[iTer]='\0';
+                break;
+            }
+            iTer++;
+        }
+        
+          sprintf(blockCheckP," /opt/ibm/capikv/afu/cflash_perst.pl -t %s ", tmpBuff );
+          printf("......... command : %s \n",blockCheckP);
+          rc = system(blockCheckP);
+          if ( rc )
+          {
+                   printf(".................... do_perst() - PERST-ing failed for %s ........ \n", tmpBuff );
+                   return rc;
+          }
+       }  // End of While (fgets())
+    }   // End of else 
     rc=system("modprobe -v cxlflash");
     CHECK_RC(rc, "Failed to load cxlflash driver");
 
@@ -116,6 +162,13 @@ int ioctl_7_1_188( int flag )
 
     // just for sake of cleanup !
     set_spio_mode();
+
+#ifndef _AIX
+    char WWID[MAXBUFF];
+
+    rc = diskToWWID ( WWID );
+    CHECK_RC(rc, "diskToWWID failed");
+#endif
 
     //ctx_init with default flash disk & devno
     rc = ctx_init(p_ctx);
@@ -193,6 +246,10 @@ int ioctl_7_1_188( int flag )
             rc = do_microcode_update();
             CHECK_RC(rc, "do_microcode_update failed");
 
+#ifndef _AIX
+            rc = WWIDtoDisk ( WWID);
+            CHECK_RC(rc, "WWIDToDisk failed");
+#endif
             //ctx_init with default flash disk & devno
             rc = ctx_init(p_ctx);
             CHECK_RC(rc, "Context init failed");

@@ -60,9 +60,9 @@
 #include <inttypes.h>
 #include <errno.h>
 
-uint32_t KV_ASYNC_CONTEXTS =    4;
+uint32_t KV_ASYNC_CONTEXTS =    2;
 uint32_t KV_ASYNC_COMP_PTH =    2;
-#define  KV_ASYNC_JOBS_PER_CTXT 100
+#define  KV_ASYNC_JOBS_PER_CTXT 40
 #define  KV_ASYNC_MIN_SECS      15
 #define  KV_ASYNC_KLEN          16
 #define  KV_ASYNC_VLEN          64*1024
@@ -164,19 +164,6 @@ void kv_async_completion_pth(pth_t *p);
 /**
 ********************************************************************************
 ** \brief
-** hw specific sync macros
-*******************************************************************************/
-#ifdef _AIX
-#define SYNC()        asm volatile ("lwsync")
-#elif  _MACOSX
-#define SYNC()        asm volatile ("mfence")
-#else
-#define SYNC()        __asm__ __volatile__ ("sync")
-#endif
-
-/**
-********************************************************************************
-** \brief
 ** setup unique values to help in debug
 *******************************************************************************/
 #define SET_ITAG(ctxt_i, cb_i)  (UINT64_C(0xBEEF000000000000) | \
@@ -253,9 +240,7 @@ void kv_async_cb(int errcode, uint64_t dt, int64_t res)
 
     pCB->errcode = errcode;
     pCB->res     = res;
-
-    SYNC();
-    pCB->cb_rdy = TRUE;
+    pCB->cb_rdy  = TRUE;
 }
 
 /**
@@ -398,7 +383,7 @@ void kv_async_SET_KEY(async_CB_t *pCB)
                                           KV_ASYNC_VLEN,
                                           pCB->db[pCB->len_i].value,
                                           kv_async_cb,
-                                          pCB->tag))) usleep(10000);
+                                          pCB->tag))) usleep(10);
     if (rc) KV_ERR_STOP(pCB,"SET_KEY",rc);
 }
 
@@ -421,7 +406,7 @@ void kv_async_GET_KEY(async_CB_t *pCB)
                                           pCB->gvalue,
                                           0,
                                           kv_async_cb,
-                                          pCB->tag))) usleep(10000);
+                                          pCB->tag))) usleep(10);
     if (rc) KV_ERR_STOP(pCB,"GET_KEY",rc);
 }
 
@@ -441,7 +426,7 @@ void kv_async_EXISTS_KEY(async_CB_t *pCB)
                                              KV_ASYNC_KLEN,
                                              pCB->db[pCB->len_i].key,
                                              kv_async_cb,
-                                             pCB->tag))) usleep(10000);
+                                             pCB->tag))) usleep(10);
     if (rc) KV_ERR_STOP(pCB,"EXIST_KEY",rc);
 }
 
@@ -461,7 +446,7 @@ void kv_async_DEL_KEY(async_CB_t *pCB)
                                           KV_ASYNC_KLEN,
                                           pCB->db[pCB->len_i].key,
                                           kv_async_cb,
-                                          pCB->tag))) usleep(10000);
+                                          pCB->tag))) usleep(10);
     if (rc) KV_ERR_STOP(pCB,"DEL_KEY",rc);
 }
 

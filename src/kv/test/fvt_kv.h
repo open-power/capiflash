@@ -76,13 +76,39 @@
 #define TESTCASE_SKIP(_reason) \
     printf("[  SKIPPED ] %s\n", _reason);
 
-#define TESTCASE_SKIP_IF_FILE                           \
-    char *dev = getenv("FVT_DEV");                      \
-    if (dev != NULL && strncmp("/dev/", dev, 5) != 0)   \
-    {                                                   \
-        TESTCASE_SKIP("FVT_DEV looks like a file");     \
-        return;                                         \
-    }
+#define TESTCASE_SKIP_IF_FILE                            \
+do                                                       \
+{                                                        \
+    char *dev = getenv("FVT_DEV");                       \
+    if (dev != NULL && (!(strncmp("/dev/", dev, 5)==0 || \
+                          strncmp("RAID",  dev, 4)==0))) \
+    {                                                    \
+        TESTCASE_SKIP("FVT_DEV looks like a file");      \
+        return;                                          \
+    }                                                    \
+} while (0);
+
+#define TESTCASE_SKIP_IF_MEM                             \
+do                                                       \
+{                                                        \
+    char *dev = getenv("FVT_DEV");                       \
+    if (dev == NULL)                                     \
+    {                                                    \
+        TESTCASE_SKIP("FVT_DEV looks like MEM");         \
+        return;                                          \
+    }                                                    \
+} while (0);
+
+#define TESTCASE_SKIP_IF_RAID0                           \
+do                                                       \
+{                                                        \
+    char *dev = getenv("FVT_DEV");                       \
+    if (dev != NULL && (strncmp("RAID",  dev, 4)==0))    \
+    {                                                    \
+        TESTCASE_SKIP("FVT_DEV is RAID0");               \
+        return;                                          \
+    }                                                    \
+} while (0);
 
 #define KV_4K   4   *1024
 #define KV_8K   8   *1024

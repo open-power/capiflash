@@ -26,21 +26,30 @@
 #select a default target architecture
 #if no target arch is set, select PPC64BE for convenience.
 ifndef TARGET_PLATFORM
-    TARGET_PLATFORM=PPC64BE
+  UNAME=$(shell uname -m)
+  ifeq ($(UNAME),x86_64)
+    TARGET_PLATFORM=x86_64
+  else
+    ifeq ($(UNAME),ppc64le)
+      TARGET_PLATFORM=PPC64EL
+    else
+      TARGET_PLATFORM=PPC64BE
+    endif
+  endif
 endif
+
 #If the target architecture is set, pass an architecture
 #down as a #define to the underlying code
-ARCHFLAGS += -DTARGET_ARCH_${TARGET_PLATFORM}
+export ARCHFLAGS += -DTARGET_ARCH_${TARGET_PLATFORM}
 
 #Determine if this a linux or AIX system
-
 UNAME=$(shell uname)
 ifeq ($(UNAME),AIX)
-include ${ROOTPATH}/config.aix.mk
+  include ${ROOTPATH}/config.aix.mk
 else
-ifeq ($(UNAME),Darwin)
-include ${ROOTPATH}/config.mac.mk
-else
-include ${ROOTPATH}/config.linux.mk
-endif
+  ifeq ($(UNAME),Darwin)
+    include ${ROOTPATH}/config.mac.mk
+  else
+    include ${ROOTPATH}/config.linux.mk
+  endif
 endif

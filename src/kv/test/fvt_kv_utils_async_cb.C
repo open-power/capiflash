@@ -138,12 +138,12 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
     }
     if (pCB->b_mark != B_MARK)
     {
-        KV_TRC_FFDC(pFT, "FFDC: B_MARK FAILURE %p: %"PRIx64"", pCB, pCB->b_mark);
+        KV_TRC_FFDC(pFT, "FFDC: B_MARK FAILURE %p: %lx", pCB, pCB->b_mark);
         return;
     }
     if (pCB->e_mark != E_MARK)
     {
-        KV_TRC_FFDC(pFT, "FFDC: E_MARK FAILURE %p: %"PRIx64"", pCB, pCB->e_mark);
+        KV_TRC_FFDC(pFT, "FFDC: E_MARK FAILURE %p: %lx", pCB, pCB->e_mark);
         return;
     }
     if (EBUSY == errcode) {kv_async_q_retry(pCB); goto done;}
@@ -312,7 +312,7 @@ static void kv_async_SET_KEY(async_CB_t *pCB)
     uint64_t tag = (uint64_t)pCB;
     int32_t  rc  = 0;
 
-    KV_TRC_IO(pFT, "SET_KEY: %p, %p %"PRIx64" %d", pCB, pCB->db, tag, pCB->len_i);
+    KV_TRC_IO(pFT, "SET_KEY: %p, %p %lx %d", pCB, pCB->db, tag, pCB->len_i);
 
     pCB->tag = tag;
 
@@ -517,6 +517,38 @@ void kv_async_init_ctxt(uint32_t ctxt, uint32_t secs)
  *******************************************************************************
  * \brief
  ******************************************************************************/
+void kv_async_init_ctxt_starve(uint32_t ctxt,
+                               uint32_t nasync,
+                               uint32_t basync,
+                               uint32_t secs)
+{
+    char            *env_FVT = getenv("FVT_DEV");
+    async_context_t *pCT     = pCTs+ctxt;
+
+    ASSERT_TRUE(ctxt >= 0 && ctxt <= KV_ASYNC_MAX_CONTEXTS);
+    memset(pCT,       0, sizeof(async_context_t));
+    memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
+
+    ASSERT_EQ(0, ark_create_verbose(env_FVT, &pCT->ark,
+                                    1048576,
+                                    4096,
+                                    1048576,
+                                    1,
+                                    nasync,
+                                    basync,
+                                    ARK_KV_VIRTUAL_LUN));
+    ASSERT_TRUE(NULL != pCT->ark);
+
+    pCT->flags |= KV_ASYNC_CT_RUNNING;
+    pCT->secs   = secs;
+    KV_TRC(pFT, "init_ctxt_starve ctxt:%d ark:%p secs:%d",
+           ctxt, pCT->ark, pCT->secs);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 void kv_async_set_job(uint32_t  flags,
                       uint32_t  ctxt,
                       uint32_t  job,
@@ -611,7 +643,7 @@ void kv_async_job_perf(uint32_t jobs, uint32_t klen, uint32_t vlen,uint32_t len)
 
     /* do writes */
     (void)ark_stats(kv_async_get_ark(ASYNC_SINGLE_CONTEXT), &ops, &ios);
-    KV_TRC(pFT, "PERF wr: ops:%"PRIu64" ios:%"PRIu64"", ops, ios);
+    KV_TRC(pFT, "PERF wr: ops:%ld ios:%ld", ops, ios);
     gettimeofday(&start, NULL);
     kv_async_run_jobs();        /* run write jobs */
     KV_TRC(pFT, "writes done");
@@ -619,7 +651,7 @@ void kv_async_job_perf(uint32_t jobs, uint32_t klen, uint32_t vlen,uint32_t len)
     wr_us += (stop.tv_sec*mil  + stop.tv_usec) -
              (start.tv_sec*mil + start.tv_usec);
     (void)ark_stats(kv_async_get_ark(ASYNC_SINGLE_CONTEXT),&post_ops,&post_ios);
-    KV_TRC(pFT, "PERF wr: ops:%"PRIu64" ios:%"PRIu64"", post_ops, post_ios);
+    KV_TRC(pFT, "PERF wr: ops:%ld ios:%ld", post_ops, post_ios);
     wr_ops += post_ops - ops;
     wr_ios += post_ios - ios;
 
@@ -643,7 +675,7 @@ void kv_async_job_perf(uint32_t jobs, uint32_t klen, uint32_t vlen,uint32_t len)
     pCTs->flags |= KV_ASYNC_CT_RUNNING;
 
     (void)ark_stats(kv_async_get_ark(0), &ops, &ios);
-    KV_TRC(pFT, "PERF rd: ops:%"PRIu64" ios:%"PRIu64"", ops, ios);
+    KV_TRC(pFT, "PERF rd: ops:%ld ios:%ld", ops, ios);
     gettimeofday(&start, NULL);
     kv_async_run_jobs();        /* run read jobs */
     gettimeofday(&stop, NULL);
@@ -651,7 +683,7 @@ void kv_async_job_perf(uint32_t jobs, uint32_t klen, uint32_t vlen,uint32_t len)
     rd_us += (stop.tv_sec*mil  + stop.tv_usec) -
              (start.tv_sec*mil + start.tv_usec);
     (void)ark_stats(kv_async_get_ark(0), &post_ops, &post_ios);
-    KV_TRC(pFT, "PERF rd: ops:%"PRIu64" ios:%"PRIu64"", post_ops, post_ios);
+    KV_TRC(pFT, "PERF rd: ops:%ld ios:%ld", post_ops, post_ios);
     rd_ops += post_ops - ops;
     rd_ios += post_ios - ios;
 
@@ -1167,7 +1199,8 @@ void kv_async_run_jobs(void)
         (void)ark_stats(pCTs[i].ark, &ops, &ios);
         tops += (uint32_t)ops;
         tios += (uint32_t)ios;
-        KV_TRC(pFT, "PERF ark%p ops:%"PRIu64" ios:%"PRIu64"", pCTs[i].ark, ops, ios);
+        KV_TRC(pFT, "PERF ark%p ops:%ld ios:%ld",
+               pCTs[i].ark, ops, ios);
 
         EXPECT_EQ(0, ark_delete(pCTs[i].ark));
     }

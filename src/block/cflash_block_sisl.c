@@ -128,9 +128,30 @@ static inline void CBLK_OUT_MMIO_REG(volatile __u64 *addr, __u64 val)
 
 int  cblk_get_sisl_num_interrupts(cflsh_chunk_t *chunk, int path_index)
 {
+#ifndef _AIX
 
+    if (cflsh_blk.host_type == CFLASH_HOST_PHYP) {
+
+	/*
+	 * For linux pHyp the number of interrupts specified
+	 * by user space should not include the page fault 
+	 * (PSL) handler interrupt). Thus we must substract 1.
+	 * For AIX or BML, the define CFLSH_BLK_SISL_NUM_INTERRUPTS
+	 * is the correct number of interrupts to use.
+	 */
+
+	CBLK_TRACE_LOG_FILE(9,"This is a pHyp system, num interrupts = 0x%x",
+			    (CFLSH_BLK_SISL_NUM_INTERRUPTS-1));
+
+	return (CFLSH_BLK_SISL_NUM_INTERRUPTS-1);
+
+	 
+    }
+
+#endif /* !_AIX */
 
     return CFLSH_BLK_SISL_NUM_INTERRUPTS;
+
 }
 
 
@@ -162,6 +183,11 @@ uint64_t  cblk_get_sisl_cmd_room(cflsh_chunk_t *chunk, int path_index)
     cmd_room = chunk->path[path_index]->afu->cmd_room;
 #else
 
+    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
+
+	CBLK_TRACE_LOG_FILE(1,"Attempt to read command room, but this AFU is using SQ");
+	return 0;
+    }
 
     if (chunk->path[path_index]->afu->cmd_room) {
 
@@ -174,7 +200,8 @@ uint64_t  cblk_get_sisl_cmd_room(cflsh_chunk_t *chunk, int path_index)
 
 	chunk->path[path_index]->afu->cmd_room = CBLK_IN_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_CMD_ROOM_OFFSET,FALSE);
 
-	CBLK_TRACE_LOG_FILE(9,"command room mmio is 0x%llx",chunk->path[path_index]->afu->cmd_room);
+	CBLK_TRACE_LOG_FILE(9,"command room mmio is 0x%llx for path_index %d",
+			    chunk->path[path_index]->afu->cmd_room,path_index);
 
 	cmd_room = chunk->path[path_index]->afu->cmd_room;
 
@@ -309,6 +336,89 @@ void  cblk_inc_sisl_rrq(cflsh_chunk_t *chunk, int path_index)
 }
 
 /*
+ * NAME: cblk_inc_sisl_sq
+ *
+ * FUNCTION: This routine is called whenever an SQ entry has been issued
+ *  
+ *
+ * NOTE;    This routine assumes the caller is holding chunk->lock.
+ *
+ * RETURNS: None
+ *     
+ *    
+ */
+
+void  cblk_inc_sisl_sq(cflsh_chunk_t *chunk, int path_index)
+{
+
+
+    chunk->path[path_index]->afu->p_sq_curr++;
+
+
+
+    if (chunk->path[path_index]->afu->p_sq_curr > chunk->path[path_index]->afu->p_sq_end)
+    {
+
+	chunk->path[path_index]->afu->p_sq_curr = chunk->path[path_index]->afu->p_sq_start;
+
+
+    }
+    
+
+    
+    return;
+}
+
+
+/*
+ * NAME: cblk_sisl_adap_sq_setup
+ *
+ * FUNCTION: This routine is called to set up the adapter to
+ *           recognize an SQ
+ *  
+ *
+ * NOTE;    This routine assumes the caller is holding chunk->lock.
+ *
+ * RETURNS: 0 - success, otherwise failure
+ *          
+ *     
+ *    
+ */
+
+int  cblk_sisl_adap_sq_setup(cflsh_chunk_t *chunk, int path_index)
+{
+    int rc = 0;
+
+
+    if (chunk->path[path_index]->afu->mmio == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"mmio is not valid for chunk index = %d, and path_index = %d",
+			    chunk->index,path_index);
+
+	return -1;
+    }
+
+    if (!(chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ)) {
+
+	CBLK_TRACE_LOG_FILE(1,"this AFU does not have SQ enabled afu->flags 0x%x, chunk index = %d, and path_index = %d",
+			    chunk->path[path_index]->afu->flags,chunk->index,path_index);
+
+	return -1;
+
+    }
+
+    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_SQ_START_EA_OFFSET, 
+		      (uint64_t)chunk->path[path_index]->afu->p_sq_start);
+    
+    
+    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_SQ_END_EA_OFFSET, 
+		      (uint64_t)chunk->path[path_index]->afu->p_sq_end);
+
+    return rc;
+}
+
+
+/*
  * NAME: cblk_sisl_adap_setup
  *
  * FUNCTION: This routine is called to set up the adapter to
@@ -317,8 +427,8 @@ void  cblk_inc_sisl_rrq(cflsh_chunk_t *chunk, int path_index)
  *
  * NOTE;    This routine assumes the caller is holding chunk->lock.
  *
- * RETURNS: The number of commands that can currently be issued to the AFU
- *          for this context.
+ * RETURNS: 0 - success, otherwise failure
+ *          
  *     
  *    
  */
@@ -369,10 +479,21 @@ int  cblk_sisl_adap_setup(cflsh_chunk_t *chunk, int path_index)
 
 
 
-    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_RRQ0_START_EA_OFFSET, (uint64_t)chunk->path[path_index]->afu->p_hrrq_start);
+    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_RRQ0_START_EA_OFFSET, 
+		      (uint64_t)chunk->path[path_index]->afu->p_hrrq_start);
     
     
-    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_RRQ0_END_EA_OFFSET, (uint64_t)chunk->path[path_index]->afu->p_hrrq_end);
+    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_RRQ0_END_EA_OFFSET, 
+		      (uint64_t)chunk->path[path_index]->afu->p_hrrq_end);
+
+
+    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
+
+
+
+	rc = cblk_sisl_adap_sq_setup(chunk,path_index);
+
+    }
 
 
     /*
@@ -458,14 +579,59 @@ scsi_cdb_t * cblk_get_sisl_cmd_cdb(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd)
  */
 cflsh_cmd_mgm_t *cblk_get_sisl_cmd_rsp(cflsh_chunk_t *chunk,int path_index)
 {
+    uint64_t value;
 #ifdef _AIX
     uint32_t  tmp_val;
 #endif /* AIX */
    cflsh_cmd_mgm_t *cmd = NULL; 
    
+
+    value = CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr);
+
+
+    if (value == 0xffffffffffffffffLL) {
+
+        CBLK_TRACE_LOG_FILE(1,"Potential UE encountered for RRQ\n");
+        
+
+        cblk_check_os_adap_err(chunk,path_index);
+
+        /*
+         * Tell caller there is no valid command
+         */
+
+        return NULL;
+    }
+
+    if (chunk->path[path_index]->afu->hrrq_to_ioarcb_off) {
+
+	/*
+	 * If the afu's hrrq_to_ioarcb_off field is set
+	 * then it indicates the value returned in the RRQ
+	 * is not the IOARCB (and thus not the command, since
+	 * the IOARCB is at the beginning of the command). Thus
+	 * this hrrq_to_ioarcb_off field must be subtracted from
+	 * the value returned to get that offset.
+	 *
+	 * NOTE: This code assumes hrrq_to_ioarcb_off has the low order
+	 *       bit (corresponding to the toggle bit) off.
+	 */
+
+	if (value <= chunk->path[path_index]->afu->hrrq_to_ioarcb_off) {
+        
+	    CBLK_TRACE_LOG_FILE(1,"hrrq_to_ioarcb_off 0x%llx is larger than rrq value 0x%llx\n",
+				chunk->path[path_index]->afu->hrrq_to_ioarcb_off, value);
+	    return NULL;
+	}
+
+	value -= chunk->path[path_index]->afu->hrrq_to_ioarcb_off;
+    }
+
+
+
 #if !defined(__64BIT__) && defined(_AIX)
    
-   if ((*(chunk->path[path_index]->afu->p_hrrq_curr)) & 0xffffffff00000000LL) {
+   if ((value) & 0xffffffff00000000LL) {
 
        /*
 	* This is not valid for 32-bit application.
@@ -473,7 +639,7 @@ cflsh_cmd_mgm_t *cblk_get_sisl_cmd_rsp(cflsh_chunk_t *chunk,int path_index)
 
        CBLK_TRACE_LOG_FILE(1,"Invalid cmd pointer received by AFU = 0x%llx p_hrrq_curr = 0x%llx, chunk->index = %d",
 				    (uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
-       cblk_notify_mc_err(chunk,path_index,0x604,(*(chunk->path[path_index]->afu->p_hrrq_curr)),
+       cblk_notify_mc_err(chunk,path_index,0x604,value,
 			  CFLSH_BLK_NOTIFY_AFU_ERROR,NULL);
 
        CBLK_LIVE_DUMP_THRESHOLD(1,"0x604");
@@ -482,15 +648,17 @@ cflsh_cmd_mgm_t *cblk_get_sisl_cmd_rsp(cflsh_chunk_t *chunk,int path_index)
 	* clear upper word only.
 	*/
 
+       //?? What about UE check on store??
+
        *(chunk->path[path_index]->afu->p_hrrq_curr) &= *(chunk->path[path_index]->afu->p_hrrq_curr) & 0x00000000ffffffffLL;
 
 
    }
 
-   tmp_val = ((uint32_t)(*(chunk->path[path_index]->afu->p_hrrq_curr)) & 0xffffffff)  & (~SISL_RESP_HANDLE_T_BIT);
+   tmp_val = ((uint32_t)(value) & 0xffffffff)  & (~SISL_RESP_HANDLE_T_BIT);
    cmd = (cflsh_cmd_mgm_t *)tmp_val;
 #else
-   cmd = (cflsh_cmd_mgm_t *)((*(chunk->path[path_index]->afu->p_hrrq_curr)) & (~SISL_RESP_HANDLE_T_BIT));
+   cmd = (cflsh_cmd_mgm_t *)((value) & (~SISL_RESP_HANDLE_T_BIT));
 #endif 
    
 
@@ -621,6 +789,17 @@ int cblk_build_sisl_cmd(cflsh_chunk_t *chunk,int path_index,
     ioarcb->data_ea = (ulong)buf;
 
     ioarcb->data_len = buf_len;
+
+    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
+
+	/*
+	 * If we are using a submission queue (SQ), then
+	 * we must fill in the address of the IOASA for
+	 * this IOARCB.
+	 */
+
+	ioarcb->sq_ioasa_ea = (uint64_t)&(cmd->sisl_cmd.sa);
+    }
     
     return rc;
 }
@@ -723,53 +902,45 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
     afu_mmio_write_dw(p_afu, 8, (uint64_t)ioarcb);
 #else
 
-    while ((CBLK_GET_CMD_ROOM(chunk,path_index) == 0)  && 
-	   (wait_room_retry < CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES)) {
+    if (!(chunk->path[chunk->cur_path]->afu->flags & CFLSH_AFU_SQ)) {
 
 	/*
-	 * Wait a limited amount of time for the room on
-	 * the AFU. Since we are waiting for the AFU
-	 * to fetch some more commands, it is thought
-	 * we can wait a little while here. It should also
-	 * be noted we are not unlocking anything in this wait.
-	 * Since the AFU is not waiting for us to process a command, 
-	 * this (not unlocking) may be alright. However it does mean
-	 * other threads are being held off. If they are also trying
-	 * to issue requests, then they would see this same issue. If
-	 * these other threads are trying to process completions, then
-	 * those will be delayed (perhaps unnecessarily).
+	 * If we are not using a Submission Queue (SQ), then
+	 * we need to check command room before attempting
+	 * to issue IOARCBs.
 	 */
 
-	CBLK_TRACE_LOG_FILE(5,"waiting for command room");
-	usleep(CFLASH_BLOCK_DELAY_ROOM);
+	while ((CBLK_GET_CMD_ROOM(chunk,path_index) == 0)  && 
+	       (wait_room_retry < CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES)) {
 
-	if (chunk->flags & CFLSH_CHUNK_FAIL_IO) {
+	    /*
+	     * Wait a limited amount of time for the room on
+	     * the AFU. Since we are waiting for the AFU
+	     * to fetch some more commands, it is thought
+	     * we can wait a little while here. It should also
+	     * be noted we are not unlocking anything in this wait.
+	     * Since the AFU is not waiting for us to process a command, 
+	     * this (not unlocking) may be alright. However it does mean
+	     * other threads are being held off. If they are also trying
+	     * to issue requests, then they would see this same issue. If
+	     * these other threads are trying to process completions, then
+	     * those will be delayed (perhaps unnecessarily).
+	     */
 
-	    errno = EIO;
+	    CBLK_TRACE_LOG_FILE(5,"waiting for command room path_index = %d", 
+				path_index);
+	    usleep(CFLASH_BLOCK_DELAY_ROOM);
 
-	    return -1;
+	    if (chunk->flags & CFLSH_CHUNK_FAIL_IO) {
+
+		errno = EIO;
+
+		return -1;
+	    }
+
+	    wait_room_retry++;
 	}
 
-	wait_room_retry++;
-    }
-
-
-    if (wait_room_retry >= CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES) {
-
-
-
-	/*
-	 * We do not have any room to send this
-	 * command. Fail this operation now.
-	 */
-
-#ifdef _FOR_DEBUG
-	CBLK_CLEANUP_BAD_MMIO_SIGNAL(chunk,path_index);
-#endif /* _FOR_DEBUG */
-	errno = EBUSY;
-
-	cblk_notify_mc_err(chunk,path_index,0x607,wait_room_retry,CFLSH_BLK_NOTIFY_ADAP_ERR,NULL);
-	return -1;
     }
 
     CFLASH_BLOCK_AFU_SHARE_LOCK(chunk->path[path_index]->afu);
@@ -852,6 +1023,37 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	
     }
 
+    if (!(chunk->path[chunk->cur_path]->afu->flags & CFLSH_AFU_SQ)) {
+
+	/*
+	 * If we are not using a Submission Queue (SQ), then
+	 * we need to check command room retries.
+	 */
+    
+	if (wait_room_retry >= CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES) {
+
+
+
+	    /*
+	     * We do not have any room to send this
+	     * command. Since it is possible that AFU
+	     * may have been halted and we just woke up,
+	     * check command room one more time, before failing
+	     * this request.
+	     */
+
+	    if (CBLK_GET_CMD_ROOM(chunk,path_index) == 0) {
+#ifdef _FOR_DEBUG
+		CBLK_CLEANUP_BAD_MMIO_SIGNAL(chunk,path_index);
+#endif /* _FOR_DEBUG */
+		errno = EBUSY;
+
+		cblk_notify_mc_err(chunk,path_index,0x607,wait_room_retry,CFLSH_BLK_NOTIFY_ADAP_ERR,NULL);
+		return -1;
+	    }
+	}
+    }
+
     while ((chunk->path[path_index]->afu->num_issued_cmds >= chunk->path[path_index]->afu->num_rrqs) &&
            (wait_rrq_retry < CFLASH_BLOCK_MAX_WAIT_RRQ_RETRIES)) {
 
@@ -917,8 +1119,34 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
     chunk->path[path_index]->afu->num_issued_cmds++;
 
 
-    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET, (uint64_t)ioarcb);
+    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
+	
+	/*
+	 * Copy IOARCB to SQ and write.
+	 * ?? TODO: Look at avoiding copy here and building 
+	 *    directly in IOARCB.
+	 */
 
+	bcopy(ioarcb,(void *)chunk->path[path_index]->afu->p_sq_curr,
+	      sizeof(*ioarcb));
+
+	CBLK_INC_SQ(chunk,path_index);
+
+	CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_SQ_TAIL_EA_OFFSET, 
+			  (uint64_t)chunk->path[path_index]->afu->p_sq_curr);
+
+	CBLK_TRACE_LOG_FILE(9,"SQ mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, afu = %p", 
+			    (uint64_t)chunk->path[path_index]->afu->mmio_mmap,path_index,
+			    ioarcb,chunk->path[path_index]->afu);
+
+    } else {
+	CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET, (uint64_t)ioarcb);
+
+	CBLK_TRACE_LOG_FILE(9,"mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, afu = %p", 
+			    (uint64_t)chunk->path[path_index]->afu->mmio_mmap,path_index,
+			    ioarcb,chunk->path[path_index]->afu);
+
+    }
 #endif /* !_USE_LIB_AFU */
 
 
@@ -1139,6 +1367,7 @@ int cblk_complete_status_sisl_cmd(cflsh_chunk_t *chunk,cflsh_cmd_mgm_t *cmd)
 int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_mgm_t **cmd,int *cmd_complete,size_t *transfer_size)
 {
     int rc = 0;
+    int cmd_rc = 0;
     cflsh_cmd_mgm_t *p_cmd = NULL;
 
 
@@ -1185,11 +1414,11 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 
 
 
-    CBLK_TRACE_LOG_FILE(7,"*(chunk->path[path_index]->afu->p_hrrq_curr) = 0x%llx, chunk->path[path_index]->afu->toggle =  0x%llx, p_hrrq_curr = 0x%llx, chunk->index = %d",
-			*(chunk->path[path_index]->afu->p_hrrq_curr),(uint64_t)chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
+    CBLK_TRACE_LOG_FILE(7,"*(chunk->path[%d]->afu->p_hrrq_curr) = 0x%llx, chunk->path[path_index]->afu->toggle =  0x%llx, p_hrrq_curr = 0x%llx, chunk->index = %d",path_index,
+			CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr),(uint64_t)chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
 
 
-    while (((*(chunk->path[path_index]->afu->p_hrrq_curr)) & (SISL_RESP_HANDLE_T_BIT)) == chunk->path[path_index]->afu->toggle) {
+    while (((CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr)) & (SISL_RESP_HANDLE_T_BIT)) == chunk->path[path_index]->afu->toggle) {
 
 	/*
 	 * Process all RRQs that have been posted via this interrupt
@@ -1197,8 +1426,9 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 
 	p_cmd = CBLK_GET_CMD_RSP(chunk,path_index);
 
-	CBLK_TRACE_LOG_FILE(8,"*(chunk->path[path_index].p_hrrq_curr) = 0x%llx, chunk->path[path_index].toggle =  0x%llx, p_hrrq_curr = 0x%llx, chunk->index = %d",
-			    *(chunk->path[path_index]->afu->p_hrrq_curr),(uint64_t)chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
+	CBLK_TRACE_LOG_FILE(8,"*(chunk->path[%d].p_hrrq_curr) = 0x%llx, chunk->path[path_index].toggle =  0x%llx, p_hrrq_curr = 0x%llx, chunk->index = %d",
+			    path_index,
+			    CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr),(uint64_t)chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
 
 
 		
@@ -1254,7 +1484,7 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 
 
 		CBLK_TRACE_LOG_FILE(7,"*(chunk->path[path_index].p_hrrq_curr) = 0x%llx, chunk->path[path_index].toggle = %d,  p_hrrq_curr = 0x%llx, chunk->index = %d",
-				    *(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
+				    CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
 
 		continue;
 	    } 
@@ -1270,7 +1500,7 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 		p_cmd->cmdi->state = CFLSH_MGM_CMP;
 
 
-		rc = cblk_process_cmd(chunk,path_index,p_cmd);
+		cmd_rc = cblk_process_cmd(chunk,path_index,p_cmd);
 
 		if ((*cmd == NULL) &&
 		    (!(*cmd_complete))) {
@@ -1296,7 +1526,7 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 
 
 		CBLK_TRACE_LOG_FILE(9,"command for other chunk *(chunk->path[path_index].p_hrrq_curr) = 0x%llx, chunk->path[path_index].toggle =  %d, p_hrrq_curr = 0x%llx, chunk->path[path_index].index = %d",
-			    *(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
+			    CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,(uint64_t)chunk->path[path_index]->afu->p_hrrq_curr,chunk->index);
 
 
 		if ((chunk->path[path_index] == NULL) || 
@@ -1328,29 +1558,38 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 	     */
 		    
 
-	    if ((*cmd) &&
-		(rc != CFLASH_CMD_RETRY_ERR) &&
-		(rc != CFLASH_CMD_DLY_RETRY_ERR)) {
+	    if (*cmd) {
 
-		/*
-		 * Since we found our command completed and
-		 * we are not retrying it, lets
-		 * set the flag so we can avoid polling for any
-		 * more interrupts. However we need to process
-		 * all responses posted to the RRQ for this
-		 * interrupt before exiting.
-		 */
+		if ((cmd_rc != CFLASH_CMD_RETRY_ERR) &&
+		    (cmd_rc != CFLASH_CMD_DLY_RETRY_ERR)) {
+		    
+		    /*
+		     * Since we found our command completed and
+		     * we are not retrying it, lets
+		     * set the flag so we can avoid polling for any
+		     * more interrupts. However we need to process
+		     * all responses posted to the RRQ for this
+		     * interrupt before exiting.
+		     */
 #ifndef _COMMON_INTRPT_THREAD
-
-		CBLK_COMPLETE_CMD(chunk,*cmd,transfer_size);
-#else
-
-		if (chunk->flags & CFLSH_CHNK_NO_BG_TD) {
+		    
 		    CBLK_COMPLETE_CMD(chunk,*cmd,transfer_size);
-		}
-
+#else
+		    
+		    if (chunk->flags & CFLSH_CHNK_NO_BG_TD) {
+			CBLK_COMPLETE_CMD(chunk,*cmd,transfer_size);
+		    }
+		    
 #endif
-		*cmd_complete = TRUE;
+		    *cmd_complete = TRUE;
+
+		    if (cmd_rc == CFLASH_CMD_FATAL_ERR) {
+
+			rc = -1;
+		    }
+		} 
+
+
 
 	    }
 
@@ -1373,7 +1612,7 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 	}
 
 	CBLK_TRACE_LOG_FILE(7,"*(chunk->path[path_index].p_hrrq_curr) = 0x%llx, chunk->path[path_index].toggle = 0x%llx, chunk->index = %d",
-			    *(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,chunk->index);	
+			    CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,chunk->index);	
     } /* Inner while loop on RRQ */
 
 
@@ -1828,6 +2067,7 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
 	CBLK_TRACE_LOG_FILE(6,"mmap_size = 0x%llx",(uint64_t)chunk->path[path_index]->afu->mmap_size);
 	CBLK_TRACE_LOG_FILE(6,"hrrq_start = 0x%llx",(uint64_t)chunk->path[path_index]->afu->p_hrrq_start);
 	CBLK_TRACE_LOG_FILE(6,"hrrq_end = 0x%llx",(uint64_t)chunk->path[path_index]->afu->p_hrrq_end);
+	CBLK_TRACE_LOG_FILE(6,"chunk->flags = 0x%x, afu_flags = 0x%x",chunk->flags,chunk->path[path_index]->afu->flags);
 	CBLK_TRACE_LOG_FILE(6,"cmd_start = 0x%llx",(uint64_t)chunk->cmd_start);
 	CBLK_TRACE_LOG_FILE(6,"cmd_end = 0x%llx",(uint64_t)chunk->cmd_end);
 
@@ -1951,9 +2191,6 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
  *              The AFU is not reset and new requests can be issued.
  *              This routine assumes the caller has the afu->lock.
  *
- * NOTE:        AFU does not properly support this yet. So it is not currently
- *              used.
- *
  * INPUTS:
  *              chunk    - Chunk associated with this error
  *
@@ -1966,6 +2203,25 @@ int cblk_reset_context_sisl(cflsh_chunk_t *chunk, int path_index)
 {
     int rc = 0;
     int wait_reset_context_retry = 0;
+    volatile __u64 *reg_offset = 0;
+
+
+    
+    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
+
+	/*
+	 * This AFU is using SQ, so it does context reset
+	 * via the SQ context reset register.
+	 */
+
+	reg_offset = chunk->path[path_index]->afu->mmio + CAPI_SQ_CTXTRST_EA_OFFSET;
+    } else {
+	/*
+	 * This AFU is not using SQ, so it does context reset
+	 * via the IOARRIN register.
+	 */
+	reg_offset = chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET;
+    }
 
 #ifdef _FOR_DEBUG
     if (CBLK_SETUP_BAD_MMIO_SIGNAL(chunk,path_index,CAPI_IOARRIN_OFFSET+0x20)) {
@@ -1981,23 +2237,39 @@ int cblk_reset_context_sisl(cflsh_chunk_t *chunk, int path_index)
 #endif /* _FOR_DEBUG */
 
     /*
-     * Writing 1 to the IOARRIN, will cause all active commands
+     * Writing 1 to the IOARRIN/SQ_CONTEXT_RESET, will cause all active commands
      * to ultimately be dropped by the AFU. Then the AFU can 
      * be issued commands again.
      */
 
-    CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET, (uint64_t)1);
+    
+    CBLK_OUT_MMIO_REG(reg_offset, (uint64_t)1);
 
-    while ((CBLK_IN_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET,FALSE)) &&
+    while ((CBLK_IN_MMIO_REG(reg_offset,FALSE)) &&
 	    (wait_reset_context_retry < CFLASH_BLOCK_MAX_WAIT_RST_CTX_RETRIES)) {
 
 	/*
 	 * Wait a limited amount of time for the reset
 	 * context to complete. We are notified of this when
 	 * a read of IOARRIN returns 0.
+	 *
+	 * We also need to detect possible EEH here.
+	 *
 	 */
 
 	CBLK_TRACE_LOG_FILE(5,"waiting for context reset to complete");
+
+	if ((CBLK_IN_MMIO_REG(reg_offset,FALSE)) == 0xffffffffffffffffLL) {
+
+	    CBLK_TRACE_LOG_FILE(5,"POssible UE detected");
+
+	    /*
+	     * Treat this a good completion of context reset, since the
+	     * adapter is about to be reset.
+	     */
+
+	    return -1;
+	}
 	usleep(CFLASH_BLOCK_DELAY_RST_CTX);
 	wait_reset_context_retry++;
 
@@ -2034,7 +2306,7 @@ int cblk_reset_context_sisl(cflsh_chunk_t *chunk, int path_index)
      * caller of this routine doing the retries.
      */
 
-    while (((*(chunk->path[path_index]->afu->p_hrrq_curr)) & (SISL_RESP_HANDLE_T_BIT)) == chunk->path[path_index]->afu->toggle) {
+    while (((CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr)) & (SISL_RESP_HANDLE_T_BIT)) == chunk->path[path_index]->afu->toggle) {
 
 		
 	/*
@@ -2083,8 +2355,10 @@ int cblk_init_sisl_fcn_ptrs(cflsh_path_t *path)
     path->fcn_ptrs.get_num_interrupts = cblk_get_sisl_num_interrupts;
     path->fcn_ptrs.get_cmd_room = cblk_get_sisl_cmd_room;
     path->fcn_ptrs.adap_setup = cblk_sisl_adap_setup;
+    path->fcn_ptrs.adap_sq_setup = cblk_sisl_adap_sq_setup;
     path->fcn_ptrs.get_intrpt_status = cblk_get_sisl_intrpt_status;
     path->fcn_ptrs.inc_rrq = cblk_inc_sisl_rrq;
+    path->fcn_ptrs.inc_sq = cblk_inc_sisl_sq;
     path->fcn_ptrs.get_cmd_data_length = cblk_get_sisl_cmd_data_length;
     path->fcn_ptrs.get_cmd_cdb = cblk_get_sisl_cmd_cdb;
     path->fcn_ptrs.get_cmd_rsp = cblk_get_sisl_cmd_rsp;

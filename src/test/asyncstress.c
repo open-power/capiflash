@@ -38,7 +38,7 @@
 #include <pthread.h>
 #include <cflash_tools_user.h>
 #include <sys/time.h>
-#include <ut.h>
+#include <ticks.h>
 
 //#define PRI(wh, args...) fprintf(wh, ##args)
 #define PRI(wh, args...) 
@@ -49,7 +49,7 @@ char 	  *dev_name = "/dev/cxl/afu0.0s"; /* name of device including dev */
 int       num_ops = 1024;         /* no of operations per thread */
 int       num_asyncs = 128;         /* no of outstanding any given at time */
 int	  num_threads = 1;	     /* no of threads */
-int       num_blocks = 1000000;        /* 0..num_blocks-1 lbas to be reads */
+int       num_blocks = (260*1024);        /* 0..num_blocks-1 lbas to be reads */
 int       virt_blks = 1;
 int       history = 0;
 int       read_block  = 100;
@@ -152,10 +152,12 @@ int main(int argc, char **argv) {
   printf("lsize = %ld, rc, = %d\n", lsize, rc);
   if (rc) {fprintf(stderr, "cblk_get_lun_size failed, rc=%d\n", errno); exit(errno);}
 
-  rc = cblk_set_size(id, num_blocks, 0);
-  printf("bsize = %d, rc, = %d\n", num_blocks, rc);
-  if (rc) {fprintf(stderr, "cblk_set_size failed, rc=%d\n", errno); exit(errno);}
-
+  if (virt_blks)
+  {
+    rc = cblk_set_size(id, num_blocks, 0);
+    printf("bsize = %d, rc, = %d\n", num_blocks, rc);
+    if (rc) {fprintf(stderr, "cblk_set_size failed, rc=%d\n", errno); exit(errno);}
+  }
   int *wait_order = malloc(num_asyncs * sizeof(int));
   int wait_pos = 0;
   int wait_next = 0;

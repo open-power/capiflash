@@ -67,6 +67,9 @@ GENDIR  = ${ROOTPATH}/obj/genfiles
 IMGDIR  = ${ROOTPATH}/img
 PKGDIR  = ${ROOTPATH}/pkg
 
+GTESTDIR = src/test/framework/googletest/googletest
+GTESTINC = ${GTESTDIR}/include
+
 ifdef MODULE
 OBJDIR  = ${ROOTPATH}/obj/modules/${MODULE}
 BEAMDIR = ${ROOTPATH}/obj/beam/${MODULE}
@@ -89,7 +92,8 @@ LIBS64 += $(addsuffix .64so, $(addprefix lib, ${MODULE}))
 AR_LIBS += $(addsuffix .a, $(addprefix lib, ${MODULE}))
 EXTRAINCDIR += ${GENDIR} ${CURDIR}
 #EXPFLAGS = -bE:exportfile
-LDFLAGS = -bnoentry -bM:SRE $(EXPFLAGS) ${LIBPATHS} -lc
+LDFLAGS = -bnoentry -bM:SRE $(EXPFLAGS) ${LIBPATHS}
+POSTLDFLAGS = -lc
 #LDFLAGS = -bnoentry -bM:SRE -bexpall ${LIBPATHS} -lc
 LDFLAGS64 = -b64 ${LDFLAGS}
 LIBRARIES = $(addprefix ${OBJDIR}/, ${MEMBER})
@@ -190,7 +194,7 @@ else
     TESTGEN = ${ROOTPATH}/src/usr/cxxtest/cxxtestgen.pl
 endif
 
-INCDIR = /usr/include /usr/include/sys ${ROOTPATH}/src/include/
+INCDIR = ${ROOTPATH}/src/include /usr/include /usr/include/sys
 _INCDIRS = ${INCDIR} ${EXTRAINCDIR}
 INCFLAGS = $(addprefix -I, ${_INCDIRS} )
 ASMINCFLAGS = $(addprefix $(lastword -Wa,-I), ${_INCDIRS})
@@ -231,12 +235,12 @@ ${OBJDIR}/%.o : %.S
 ifdef MODULE
 ${OBJDIR}/${MEMBER} : ${OBJECTS}
 	@mkdir -p ${IMGDIR}
-	${LD} ${LDFLAGS} ${MODLIBS} -o $@ $(OBJECTS)
+	${LD} ${LDFLAGS} -o $@ $(OBJECTS) ${POSTLDFLAGS} ${MODLIBS} 
 
 
 ${OBJDIR}/${MEMBER64} : ${OBJECTS64}
 	@mkdir -p ${IMGDIR}
-	${LD} ${LDFLAGS64} ${MODLIBS} -o $@ $(OBJECTS64)
+	${LD} ${LDFLAGS64}  -o $@ $(OBJECTS64) ${POSTLDFLAGS} ${MODLIBS}
 endif
 
 ${IMGDIR}/%.a : ${LIBRARIES} ${LIBRARIES64}

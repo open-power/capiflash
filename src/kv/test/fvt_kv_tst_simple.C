@@ -38,6 +38,7 @@ extern "C"
 #include <errno.h>
 #include <iv.h>
 #include <bl.h>
+#include <ark.h>
 }
 
 /**
@@ -864,25 +865,31 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_smallkv)
 {
     ARK     *ark  = NULL;
     kv_t    *db   = NULL;
-    int32_t  LEN  = 2000;
+    int32_t  LEN  = 4000;
+    int      vlen = 32;
     char    *dev  = getenv("FVT_DEV");
 
     ASSERT_EQ(0, ark_create_verbose(dev, &ark,
-                                        10000*KV_4K,
-                                        KV_4K,
+                                        ARK_VERBOSE_SIZE_DEF,
+                                        ARK_VERBOSE_BSIZE_DEF,
                                         14,
-                                        1,
-                                        128,
-                                        1024,
+                                        ARK_VERBOSE_NTHRDS_DEF,
+                                        ARK_MAX_NASYNCS,
+                                        ARK_EA_BLK_ASYNC_CMDS,
                                         ARK_KV_VIRTUAL_LUN));
 
-    db = (kv_t*)kv_db_create_fixed(LEN, 16, 256);
+    db = (kv_t*)kv_db_create_fixed(LEN, 16, vlen);
     ASSERT_TRUE(db != NULL);
 
     fvt_kv_utils_load (ark, db, LEN);
-    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+    fvt_kv_utils_query(ark, db, vlen, LEN);
+    fvt_kv_utils_del  (ark, db, LEN);
 
-    fvt_kv_utils_del(ark, db, LEN);
+    fvt_kv_utils_load (ark, db, LEN);
+    fvt_kv_utils_query(ark, db, vlen, LEN);
+    fvt_kv_utils_query(ark, db, vlen, LEN);
+    fvt_kv_utils_del  (ark, db, LEN);
+
     kv_db_destroy(db, LEN);
     ARK_DELETE;
 }
@@ -895,25 +902,26 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list)
 {
     ARK     *ark  = NULL;
     kv_t    *db   = NULL;
-    int32_t  LEN  = 1000;
+    int32_t  LEN  = 500;
+    int      vlen = 5000;
     char    *dev  = getenv("FVT_DEV");
 
     ASSERT_EQ(0, ark_create_verbose(dev, &ark,
-                                        10000*KV_4K,
-                                        KV_4K,
-                                        10,
-                                        1,
-                                        128,
-                                        1024,
+                                        ARK_VERBOSE_SIZE_DEF,
+                                        ARK_VERBOSE_BSIZE_DEF,
+                                        4,
+                                        ARK_VERBOSE_NTHRDS_DEF,
+                                        ARK_MAX_NASYNCS,
+                                        ARK_EA_BLK_ASYNC_CMDS,
                                         ARK_KV_VIRTUAL_LUN));
 
-    db = (kv_t*)kv_db_create_fixed(LEN, 4096, 4096);
+    db = (kv_t*)kv_db_create_fixed(LEN, 4096, 5000);
     ASSERT_TRUE(db != NULL);
 
     fvt_kv_utils_load (ark, db, LEN);
-    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+    fvt_kv_utils_query(ark, db, vlen, LEN);
+    fvt_kv_utils_del  (ark, db, LEN);
 
-    fvt_kv_utils_del(ark, db, LEN);
     kv_db_destroy(db, LEN);
     ARK_DELETE;
 }

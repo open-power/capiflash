@@ -40,7 +40,7 @@ typedef uint32_t eye_catch4b_t;
 
 #define __EYEC2(__a,__b) (((__a)<< 8) | (__b))
 #define __EYEC4(__a,__b,__c,__d) ((__EYEC2(__a,__b) << 16) | __EYEC2(__c,__d))
-
+#define __EYEC8(__a,__b,__c,__d,__e,__f,__g,__h) (((unsigned long long)__EYEC4(__a,__b,__c,__d) << 32) | __EYEC4(__e,__f,__g,__h))
 
 
 #endif /* _H_CFLASH_ERAS_H */

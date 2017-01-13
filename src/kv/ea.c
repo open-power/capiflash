@@ -57,7 +57,6 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
     uint8_t        *store = NULL;
     EA             *ea    = NULL;
     chunk_id_t      chkid = NULL_CHUNK_ID;
-    chunk_ext_arg_t ext   = 0;
 
     if (!(fetch_and_or(&cflsh_blk_lib_init,1)))
     {
@@ -111,7 +110,7 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         // Using a file.  We don't care if it's an actual
         // file or a CAPI device, we let block layer
         // decide and we just use the chunk ID that is
-        // passed back from the cblk_open call.
+        // passed back from the cblk_cg_open call.
         ea->st_type = EA_STORE_TYPE_FILE;
 
         // Check to see if we need to create the store on a
@@ -121,26 +120,25 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         // can specify with a flag.
         if ( vlun == 0 )
         {
-            KV_TRC(pAT, "cblk_open PHYSICAL LUN: %s", path);
-            chkid = cblk_open(path, basyncs, O_RDWR, ext,
-                              CBLK_OPN_NO_INTRP_THREADS);
+            KV_TRC(pAT, "cblk_cg_open PHYSICAL LUN: %s", path);
+            chkid = cblk_cg_open(path, basyncs, O_RDWR, 1, 0,
+                                 CBLK_GROUP_RAID0|CBLK_OPN_NO_INTRP_THREADS);
 
             if (NULL_CHUNK_ID == chkid)
             {
-                printf("cblk_open physical lun failed\n");
-                KV_TRC_FFDC(pAT, "cblk_open phys lun failed path:%s bsize:%ld "
+                KV_TRC_FFDC(pAT, "cblk_cg_open phys lun failed path:%s bsize:%ld "
                                  "size:%ld bcount:%ld, errno:%d",
                                  path, bsize, *size, *bcount, errno);
                 goto error_exit;
             }
 
-            rc = cblk_get_size(chkid, (size_t *)bcount, 0);
+            rc = cblk_cg_get_size(chkid, (size_t *)bcount, CBLK_GROUP_RAID0);
             if ( (rc != 0) || (*bcount == 0) )
             {
                 // An error was encountered, close the chunk
-                cblk_close(chkid, 0);
+                cblk_cg_close(chkid, CBLK_GROUP_RAID0);
                 chkid = NULL_CHUNK_ID;
-                KV_TRC_FFDC(pAT, "cblk_get_size failed path %s bsize %"PRIu64" "
+                KV_TRC_FFDC(pAT, "cblk_cg_get_size failed path %s bsize %"PRIu64" "
                                  "size %"PRIu64" bcount %"PRIu64", errno = %d",
                                  path, bsize, *size, *bcount, errno);
                 goto error_exit;
@@ -151,14 +149,13 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         }
         else
         {
-            KV_TRC(pAT, "cblk_open VIRTUAL LUN: %s", path);
-            chkid = cblk_open(path, basyncs, O_RDWR, ext,
-                              CBLK_OPN_VIRT_LUN|CBLK_OPN_NO_INTRP_THREADS);
+            KV_TRC(pAT, "cblk_cg_open VIRTUAL LUN: %s", path);
+            chkid = cblk_cg_open(path, basyncs, O_RDWR, 1, 0,
+                  CBLK_GROUP_RAID0|CBLK_OPN_VIRT_LUN|CBLK_OPN_NO_INTRP_THREADS);
 
             if (NULL_CHUNK_ID == chkid)
             {
-                printf("cblk_open virtual lun failed\n");
-                KV_TRC_FFDC(pAT, "cblk_open virt lun failed path:%s bsize:%ld "
+                KV_TRC_FFDC(pAT, "cblk_cg_open virt lun failed path:%s bsize:%ld "
                                  "size:%ld bcount:%ld, errno:%d",
                                  path, bsize, *size, *bcount, errno);
                 goto error_exit;
@@ -167,14 +164,13 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
             // A specific size was passed in so we try to set the
             // size of the chunk.
             *bcount = *size / bsize;
-            rc = cblk_set_size(chkid, (size_t)*bcount, 0);
+            rc = cblk_cg_set_size(chkid, (size_t)*bcount, CBLK_GROUP_RAID0);
             if ( rc != 0 )
             {
-                printf("cblk_set_size failed for %ld\n", *bcount);
                 // An error was encountered, close the chunk
-                cblk_close(chkid, 0);
+                cblk_cg_close(chkid, CBLK_GROUP_RAID0);
                 chkid = NULL_CHUNK_ID;
-                KV_TRC_FFDC(pAT, "cblk_set_size failed path %s bsize %"PRIu64" "
+                KV_TRC_FFDC(pAT, "cblk_cg_set_size failed path %s bsize %"PRIu64" "
                                  "size %"PRIu64" bcount %"PRIu64", errno = %d",
                                  path, bsize, *size, *bcount, errno);
                 goto error_exit;
@@ -187,7 +183,7 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         ea->st_device = (char *)am_malloc(plen);
         if (!ea->st_device)
         {
-            cblk_close(chkid, 0);
+            cblk_cg_close(chkid, CBLK_GROUP_RAID0);
             KV_TRC_FFDC(pAT, "MALLOC st_device failed (%s) plen=%ld errno:%d",
                         path, plen, errno);
             goto error_exit;
@@ -244,7 +240,7 @@ int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
   {
     // Call down to the block layer to set the
     // new size on the store.
-    rc = cblk_set_size(ea->st_flash, bcount, 0);
+    rc = cblk_cg_set_size(ea->st_flash, bcount, CBLK_GROUP_RAID0);
     if (rc == 0)
     {
       ea->bcount = bcount;
@@ -253,7 +249,7 @@ int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
     else
     {
         errno = ENOSPC;
-        KV_TRC_FFDC(pAT, "cblk_set_size failed ea %p bsize %lu bcount %lu, "
+        KV_TRC_FFDC(pAT, "cblk_cg_set_size failed ea %p bsize %lu bcount %lu, "
                          "errno = %d",
                          ea, bsize, bcount, errno);
     }
@@ -277,7 +273,7 @@ int ea_read(EA *ea, uint64_t lba, void *dst) {
   else
   {
     // Call out to the block layer and retrive a block
-    rc = cblk_read(ea->st_flash, dst, lba, 1, 0);
+    rc = cblk_cg_read(ea->st_flash, dst, lba, 1, CBLK_GROUP_RAID0);
   }
 
   return rc;
@@ -296,7 +292,7 @@ int ea_write(EA *ea, uint64_t lba, void *src) {
   else
   {
     // Send the value down to the block layer, 1 block
-    rc = cblk_write(ea->st_flash, src, lba, 1, 0);
+    rc = cblk_cg_write(ea->st_flash, src, lba, 1, CBLK_GROUP_RAID0);
   }
 
   return rc;
@@ -371,13 +367,13 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
         // of blocks read), or IO has been scheduled (rc == 0).
         if (op == ARK_EA_READ)
         {
-            rc = cblk_aread(ea->st_flash, p_addr, blist[i].blkno, 1,
-                    &(blist[i].a_tag), NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+            rc = cblk_cg_aread(ea->st_flash, p_addr, blist[i].blkno, 1,
+             &(blist[i].a_tag), NULL, CBLK_GROUP_RAID0|CBLK_ARW_WAIT_CMD_FLAGS);
         }
         else
         {
-            rc = cblk_awrite(ea->st_flash, p_addr, blist[i].blkno, 1,
-                    &(blist[i].a_tag), NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+            rc = cblk_cg_awrite(ea->st_flash, p_addr, blist[i].blkno, 1,
+              &(blist[i].a_tag), NULL,CBLK_GROUP_RAID0|CBLK_ARW_WAIT_CMD_FLAGS);
         }
 
         if (check_sched_error_injects(op)) {rc=-1;}
@@ -389,9 +385,9 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
         {
           // Error was encountered.  Don't issue any more IO
           rc = errno;
-          KV_TRC_FFDC(pAT, "IO_ERR: cblk_aread/awrite failed, "
+          KV_TRC_FFDC(pAT, "IO_ERR: cblk_cg_aread/awrite failed, "
                            "blkno:%"PRIi64" tag:%d, errno = %d",
-                           blist[i].blkno, blist[i].a_tag, errno);
+                           blist[i].blkno, blist[i].a_tag.tag, errno);
           break;
         }
 
@@ -399,7 +395,7 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
         // wait for the response below
         if ( rc > 0 )
         {
-          blist[i].a_tag = -1;
+          blist[i].a_tag.tag = -1;
           rc = 0;
         }
         //_arkp->stats.io_cnt++;
@@ -412,15 +408,15 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
       {
 
         // Data has already been read
-        if (blist[j].a_tag == -1)
+        if (blist[j].a_tag.tag == -1)
         {
           continue;
         }
 
         do
         {
-          a_rc = cblk_aresult(ea->st_flash, &(blist[j].a_tag), 
-                            &status, CBLK_ARESULT_BLOCKING);
+          a_rc = cblk_cg_aresult(ea->st_flash, &(blist[j].a_tag),
+                               &status, CBLK_GROUP_RAID0|CBLK_ARESULT_BLOCKING);
 
           if (check_harv_error_injects(op))  {a_rc=-1;}
 
@@ -477,7 +473,7 @@ int ea_delete(EA *ea)
     {
         // Call to close out the chunk and free the space
         // for the device name
-        rc = cblk_close(ea->st_flash, 0);
+        rc = cblk_cg_close(ea->st_flash, CBLK_GROUP_RAID0);
         am_free(ea->st_device);
     }
 

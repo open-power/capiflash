@@ -54,6 +54,8 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   int32_t           rc          = 0;
   uint8_t           *new_vb     = NULL;
 
+  scbp->poolstats.ops_cnt+=1;
+
    // Let's check to see if the value is larger than
   // what can fit inline in the bucket.
   if ( vlen > _arkp->vlimit )
@@ -73,7 +75,8 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       // the size in a new variable and wait to make sure
       // the realloc succeeds before updating vbsize
       new_vbsize = tcbp->vblkcnt * _arkp->bsize;
-      KV_TRC_DBG(pAT, "REALLOC ttag:%d VB:%"PRIu64"", tcbp->ttag, new_vbsize);
+      KV_TRC_DBG(pAT, "VB_REALLOC tid:%d ttag:%3d vlen:%5ld new_vbsize:%ld",
+                 tid, tcbp->ttag, vlen, new_vbsize);
       new_vb = am_realloc(tcbp->vb_orig, new_vbsize);
       if ( NULL == new_vb )
       {
@@ -83,7 +86,7 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
         KV_TRC_FFDC(pAT, "realloc failed, ttag = %d rc = %d", tcbp->ttag, rc);
         goto ark_set_start_err;
       }
-      tcbp->vbsize = new_vbsize;
+      tcbp->vbsize  = new_vbsize;
       tcbp->vb_orig = new_vb;
       tcbp->vb = ptr_align(tcbp->vb_orig);
     }
@@ -108,7 +111,7 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   }
   else
   {
-    KV_TRC_IO(pAT, "INLINE ttag:%d VLEN:%"PRIu64"", tcbp->ttag, vlen);
+    KV_TRC(pAT, "INLINE  tid:%d ttag:%3d vlen:%5ld", tid, tcbp->ttag, vlen);
     tcbp->vval = (uint8_t *)rcbp->val;
   }
 
@@ -116,13 +119,13 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   if ( 0 == tcbp->hblk )
   {
-    KV_TRC_IO(pAT, "FIRST_KEY ttag:%d", tcbp->ttag);
+    KV_TRC(pAT, "1ST_KEY tid:%d ttag:%3d", tid, tcbp->ttag);
     // This is going to be the first key in this bucket.
     // Initialize the bucket data/header
     rc = bt_init(tcbp->inb);
     if (rc)
     {
-        KV_TRC_FFDC(pAT, "bt_init failed ttag:%d", tcbp->ttag);
+        KV_TRC_FFDC(pAT, "bt_init failed ttag:%3d", tcbp->ttag);
         rcbp->res = -1;
         rcbp->rc  = rc;
         tcbp->state = ARK_CMD_DONE;
@@ -150,7 +153,7 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       rcbp->res = -1;
       rcbp->rc = rc;
       tcbp->state = ARK_CMD_DONE;
-      KV_TRC_FFDC(pAT, "bt_growif failed, ttag:%d rc:%d errno:%d",
+      KV_TRC_FFDC(pAT, "bt_growif failed, ttag:%3d rc:%d errno:%d",
               tcbp->ttag, rc, errno);
       goto ark_set_start_err;
     }
@@ -167,17 +170,20 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       KV_TRC_FFDC(pAT, "bl_chain failed, ttag = %d rc = %d", tcbp->ttag, rc);
       goto ark_set_start_err;
     }
+    scbp->poolstats.io_cnt += tcbp->blen;
 
-    KV_TRC_IO(pAT, "read hash entry, ttag:%d", tcbp->ttag);
+    KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d", tid, tcbp->ttag);
     ea_async_io_init(_arkp, ARK_EA_READ,
                      (void *)tcbp->inb, bl_array, tcbp->blen,
                      0, tcbp->ttag, ARK_SET_PROCESS_INB);
-    if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
-        ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
+
+    if (_arkp->ea->st_type == EA_STORE_TYPE_MEMORY)
     {
-        ark_set_process_inb(_arkp, tid, tcbp);
+        ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
+        ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
+        ark_set_process_inb (_arkp, tid, tcbp);
     }
-  }
+}
 
 ark_set_start_err:
 
@@ -208,12 +214,11 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   // Let's see if we need to grow the out buffer
   tcbp->old_btsize = tcbp->inb->len;
   rc = bt_growif(&(tcbp->oub), &(tcbp->oub_orig), &(tcbp->oublen),
-                       divceil((tcbp->blen * _arkp->bsize) + 
-                           (rcbp->klen + _arkp->vlimit + 16),
-                           _arkp->bsize) * _arkp->bsize);
+                 (tcbp->blen * _arkp->bsize) +
+                 (rcbp->klen + _arkp->vlimit));
   if (rc != 0)
   {
-    KV_TRC_FFDC(pAT, "bt_growif rc != 0, ttag:%d", tcbp->ttag);
+    KV_TRC_FFDC(pAT, "bt_growif rc != 0, ttag:%3d", tcbp->ttag);
     rcbp->res = -1;
     rcbp->rc = rc;
     tcbp->state = ARK_CMD_DONE;
@@ -221,17 +226,24 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   }
 
   // modify bucket
-  tcbp->new_key = bt_set(tcbp->oub, tcbp->inb, rcbp->klen, rcbp->key, 
+  if (tcbp->inb->cnt)
+  {
+      KV_TRC(pAT, "MOD_BT  tid:%d ttag:%3d klen:%5ld vlen:%5ld",
+             tid, tcbp->ttag, rcbp->klen, rcbp->vlen);
+  }
+  tcbp->new_key = bt_set(tcbp->oub, tcbp->inb, rcbp->klen, rcbp->key,
                          rcbp->vlen, tcbp->vval, &oldvlen);
 
   // write the value to the value allocated blocks
-  if (rcbp->vlen > _arkp->vlimit) {
-    KV_TRC_IO(pAT, "write value, ttag:%d", tcbp->ttag);
+  if (rcbp->vlen > _arkp->vlimit)
+  {
+    KV_TRC(pAT, "WR_VAL  tid:%d ttag:%3d vlen:%5ld",
+           tid, tcbp->ttag, rcbp->vlen);
 
     bl_array = bl_chain(_arkp->bl, tcbp->vblk, tcbp->vblkcnt);
     if (bl_array == NULL)
     {
-      KV_TRC_FFDC(pAT, "bl_chain failed ttag:%d", tcbp->ttag);
+      KV_TRC_FFDC(pAT, "bl_chain failed ttag:%3d", tcbp->ttag);
       rcbp->rc = ENOMEM;
       rcbp->res = -1;
       tcbp->state = ARK_CMD_DONE;
@@ -240,14 +252,16 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
 
     scbp->poolstats.byte_cnt -= oldvlen;
     scbp->poolstats.byte_cnt += rcbp->vlen;
-    scbp->poolstats.io_cnt += tcbp->vblkcnt;
+    scbp->poolstats.io_cnt   += tcbp->vblkcnt;
 
-    ea_async_io_init(_arkp, ARK_EA_WRITE, (void *)tcbp->vb,
+    ea_async_io_init(_arkp, ARK_EA_WRITE, (void*)tcbp->vb,
                      bl_array, tcbp->vblkcnt, 0, tcbp->ttag, ARK_SET_WRITE);
-    if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
-        ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
+
+    if (_arkp->ea->st_type == EA_STORE_TYPE_MEMORY)
     {
-        ark_set_write(_arkp, tid, tcbp);
+        ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
+        ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
+        if (iotcbp->state == ARK_SET_WRITE) {ark_set_write(_arkp, tid, tcbp);}
     }
   }
   else
@@ -269,14 +283,14 @@ void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
   ark_io_list_t    *bl_array  = NULL;
   uint64_t          blkcnt    = 0;
 
-  KV_TRC_IO(pAT, "WRITE_KEY, ttag:%d on %d", tcbp->ttag, tid);
+  KV_TRC(pAT, "WR_KEY  tid:%d ttag:%3d klen:%5ld", tid, tcbp->ttag, rcbp->klen);
 
   // write obuf to new blocks
   blkcnt = divceil(tcbp->oub->len, _arkp->bsize);
   tcbp->nblk = ark_take_pool(_arkp, &(scbp->poolstats), blkcnt);
   if (tcbp->nblk == -1)
   {
-    KV_TRC_FFDC(pAT, "ark_take_pool %ld failed ttag:%d",
+    KV_TRC_FFDC(pAT, "ark_take_pool %ld failed ttag:%3d",
                 blkcnt, tcbp->ttag);
     rcbp->rc = ENOSPC;
     rcbp->res = -1;
@@ -287,7 +301,7 @@ void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
   bl_array = bl_chain(_arkp->bl, tcbp->nblk, blkcnt);
   if (bl_array == NULL)
   {
-    KV_TRC_FFDC(pAT, "bl_chain failed ttag:%d", tcbp->ttag);
+    KV_TRC_FFDC(pAT, "bl_chain failed ttag:%3d", tcbp->ttag);
     rcbp->rc = ENOMEM;
     rcbp->res = -1;
     tcbp->state = ARK_CMD_DONE;
@@ -296,14 +310,16 @@ void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   scbp->poolstats.byte_cnt -= tcbp->old_btsize;
   scbp->poolstats.byte_cnt += tcbp->oub->len;
-  scbp->poolstats.io_cnt += blkcnt;
+  scbp->poolstats.io_cnt   += blkcnt;
 
   ea_async_io_init(_arkp, ARK_EA_WRITE, (void *)tcbp->oub,
                    bl_array, blkcnt, 0, tcbp->ttag, ARK_SET_FINISH);
-  if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
-      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
+
+  if (_arkp->ea->st_type == EA_STORE_TYPE_MEMORY)
   {
-      ark_set_finish(_arkp, tid, tcbp);
+      ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
+      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
+      if (iotcbp->state == ARK_SET_FINISH) {ark_set_finish(_arkp, tid, tcbp);}
   }
 
 ark_set_write_err:
@@ -315,6 +331,8 @@ void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t     *scbp     = &(_arkp->poolthreads[tid]);
   rcb_t     *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
+
+  KV_TRC(pAT, "HASHSET tid:%d ttag:%3d nblk:%5ld", tid, tcbp->ttag, tcbp->nblk);
 
   HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, tcbp->ttag, tcbp->nblk));
 

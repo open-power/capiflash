@@ -23,20 +23,22 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-set -e #halt on error
+
+
 USERNAME=cxl
 GROUPNAME=$USERNAME
 CAPIKV_ROOT=/opt/ibm/capikv
+BIN_DIR=$CAPIKV_ROOT/bin
 ETC_DIR=$CAPIKV_ROOT/etc
 SIO_FILE=$ETC_DIR/sioluntable.ini
+
 #Creating empty SIO lun table and etc dir
 echo "INFO: Ensuring SIO LUN Table exists..."
 echo "INFO: Creating system cxl user / group..."
-adduser --system --group $USERNAME
-if ! egrep -i "^$GROUPNAME" /etc/group >/dev/null; then
-    echo "INFO: Creating cxl group..."
-    groupadd -r $GROUPNAME
-fi
+useradd --system --user-group $USERNAME 2>/dev/null
+
+set -e #halt on error
+
 echo "INFO: setting permissions on cxl and cxlflash device nodes."
 udevadm trigger -s cxl
 udevadm trigger -s cxlflash
@@ -46,6 +48,8 @@ chmod 770 $ETC_DIR
 touch $SIO_FILE
 chown $USERNAME:$GROUPNAME $SIO_FILE
 chmod 660 $SIO_FILE
+
+if [[ -e $BIN_DIR/cflash_logs_cron ]]; then cp $BIN_DIR/cflash_logs_cron /etc/cron.hourly; fi
 
 echo "INFO: enabling cxlfd service for LUN Management"
 systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."

@@ -1,0 +1,151 @@
+'/*
+* %Z%%M%       %I%  %W% %G% %U%
+*/
+/* IBM_PROLOG_BEGIN_TAG                                                   */
+/* This is an automatically generated prolog.                             */
+/*                                                                        */
+/* $Source: src/block/libcflash_exportmap $                               */
+/*                                                                        */
+/* IBM Data Engine for NoSQL - Power Systems Edition User Library Project */
+/*                                                                        */
+/* Contributors Listed Below - COPYRIGHT 2014,2015                        */
+/* [+] International Business Machines Corp.                              */
+/*                                                                        */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
+/*                                                                        */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/*                                                                        */
+/* IBM_PROLOG_END_TAG                                                     */
+
+
+/*
+* shared library export symbols
+* data
+* text
+*/
+{
+global: cusfs_init; cusfs_term;
+	cusfs_create_fs;
+	cusfs_query_fs;
+	cusfs_statfs;
+	cusfs_statfs64;
+	cusfs_remove_fs;
+	cusfs_mkdir;
+	cusfs_rmdir;
+	cusfs_opendir;
+	cusfs_closedir;
+	cusfs_readdir_r;
+	cusfs_readdir;
+	cusfs_telldir;
+	cusfs_seekdir;
+	cusfs_create_file;
+	cusfs_create_link;
+	cusfs_remove_file;
+	cusfs_list_files;
+	cusfs_rename;
+	cusfs_open;
+	cusfs_creat;
+	cusfs_close;
+	cusfs_read;
+	cusfs_write;
+	cusfs_fsync;
+	cusfs_lseek;
+	cusfs_llseek;
+	cusfs_lseek64;
+	cusfs_lstat;
+	cusfs_lstat64;
+	cusfs_fstat;
+	cusfs_fstat64;
+	cusfs_stat;
+	cusfs_stat64;
+	cusfs_readlink;
+	cusfs_access;
+	cusfs_fchown;
+	cusfs_fchmod;
+	cusfs_ftruncate;
+	cusfs_ftruncate64;
+	cusfs_utime;
+	cusfs_link;
+	cusfs_unlink;
+	cusfs_fsck;
+	cusfs_aio_read;
+	cusfs_aio_read64;
+	cusfs_aio_write;
+	cusfs_aio_write64;
+	cusfs_aio_error;
+	cusfs_aio_error64;
+	cusfs_aio_return;
+	cusfs_aio_return64;
+	cusfs_aio_fsync;
+	cusfs_aio_fsync64;
+	cusfs_aio_cancel;
+	cusfs_aio_cancel64;
+	cusfs_aio_suspend;
+	cusfs_aio_suspend64;
+	statfs;
+	statfs64;
+	fcntl;
+	dup;
+	dup2;
+	posix_fallocate;
+	posix_fallocate64;
+	posix_fadvise;
+	posix_fadvise64;
+	mkdir;
+	rmdir;
+	opendir;
+	closedir;
+	readdir_r;
+	readdir;
+	rename;
+	creat;
+	open;
+	open64;
+	close;
+	read;
+	write;
+	lseek;
+	lseek64;
+	__xstat;
+	__xstat64;
+	__lxstat;
+	__lxstat64;
+	__fxstat;
+	__fxstat64;
+	fstat;
+	stat;
+	lstat;
+	readlink;
+	access;
+	fchmod;
+	fchown;
+	ftruncate;
+	ftruncate64;
+	link;
+	unlink;
+	utime;
+	aio_read;	
+	aio_read64;
+	aio_write;
+	aio_write64;
+	aio_error;
+	aio_error64;
+	aio_return;
+	aio_return64;
+	aio_fsync;
+	aio_fsync64;
+	aio_cancel;
+	aio_cancel64;
+	aio_suspend;
+	aio_suspend64;
+local: *;
+};

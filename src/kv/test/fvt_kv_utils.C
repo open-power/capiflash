@@ -43,6 +43,7 @@ extern "C"
  ******************************************************************************/
 void fvt_kv_utils_load(ARK *ark, kv_t *db, uint32_t LEN)
 {
+    int      rc  = 0;
     uint32_t i   = 0;
     int64_t  res = 0;
 
@@ -51,12 +52,13 @@ void fvt_kv_utils_load(ARK *ark, kv_t *db, uint32_t LEN)
 
     for (i=0; i<LEN; i++)
     {
-        EXPECT_EQ(0, ark_set(ark,
-                             db[i].klen,
-                             db[i].key,
-                             db[i].vlen,
-                             db[i].value,
-                             &res));
+        while (EAGAIN == (rc=ark_set(ark,
+                                     db[i].klen,
+                                     db[i].key,
+                                     db[i].vlen,
+                                     db[i].value,
+                                     &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
         EXPECT_EQ(db[i].vlen, res);
     }
 }
@@ -65,6 +67,7 @@ void fvt_kv_utils_load(ARK *ark, kv_t *db, uint32_t LEN)
  ******************************************************************************/
 void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
 {
+    int      rc     = 0;
     uint32_t i      = 0;
     int64_t  res    = 0;
     uint8_t *gvalue = NULL;
@@ -79,16 +82,21 @@ void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
     for (i=0; i<LEN; i++)
     {
         EXPECT_TRUE(db[i].vlen <= vbuflen);
-        EXPECT_EQ(0, ark_get(ark,
-                             db[i].klen,
-                             db[i].key,
-                             db[i].vlen,
-                             gvalue,
-                             0,
-                             &res));
+        while (EAGAIN == (rc=ark_get(ark,
+                                     db[i].klen,
+                                     db[i].key,
+                                     db[i].vlen,
+                                     gvalue,
+                                     0,
+                                     &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
         EXPECT_EQ(db[i].vlen, res);
         EXPECT_EQ(0, memcmp(db[i].value,gvalue,db[i].vlen));
-        EXPECT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
+        while (EAGAIN == (rc=ark_exists(ark,
+                                        db[i].klen,
+                                        db[i].key,
+                                        &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
     }
     free(gvalue);
 }
@@ -162,6 +170,7 @@ void fvt_kv_utils_query_off(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
  ******************************************************************************/
 void fvt_kv_utils_del(ARK *ark, kv_t *db, uint32_t LEN)
 {
+    int      rc  = 0;
     uint32_t i   = 0;
     int64_t  res = 0;
 
@@ -171,7 +180,11 @@ void fvt_kv_utils_del(ARK *ark, kv_t *db, uint32_t LEN)
 
     for (i=0; i<LEN; i++)
     {
-        EXPECT_EQ(0, ark_del(ark, db[i].klen, db[i].key, &res));
+        while (EAGAIN == (rc=ark_del(ark,
+                                     db[i].klen,
+                                     db[i].key,
+                                     &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
         EXPECT_EQ(db[i].vlen, res);
     }
 }

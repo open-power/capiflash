@@ -50,7 +50,11 @@ TEST(FVT_KV_GOOD_PATH, PERSIST_FIXED_512x128x50000)
     uint8_t  gvalue[vlen];
     struct stat sbuf;
 
-    if (NULL == dev || stat(dev,&sbuf) != 0)
+    if (NULL == dev ||
+        (!(strncmp(dev,"/dev",4)==0 ||
+           strncmp(dev,"RAID",4)==0 ||
+           stat(dev,&sbuf) == 0))
+       )
     {
         TESTCASE_SKIP("FVT_DEV_PERSIST==NULL or file not found");
         return;
@@ -149,7 +153,11 @@ TEST(FVT_KV_GOOD_PATH, PERSIST)
     uint8_t  gvalue[vlen];
     struct stat sbuf;
 
-    if (NULL == dev || stat(dev,&sbuf) != 0)
+    if (NULL == dev ||
+        (!(strncmp(dev,"/dev",4)==0 ||
+           strncmp(dev,"RAID",4)==0 ||
+           stat(dev,&sbuf) == 0))
+       )
     {
         TESTCASE_SKIP("FVT_DEV_PERSIST==NULL or file not found");
         return;

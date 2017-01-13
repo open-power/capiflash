@@ -406,6 +406,15 @@ int ioctl_7_1_203()
     int rc=0;
     rc = setenv("NCHAN_VALUE", "0", true);
     CHECK_RC(rc, "NCHAN_VALUE env value setting failed \n");
+
+#ifndef _AIX
+    if( diskSizeCheck( cflash_path, 256))
+    {
+       TESTCASE_SKIP("DISK SIZE is less than required \n");
+       return 0;
+    }
+#endif
+
     MAX_RES_HANDLE=get_max_res_hndl_by_capacity(cflash_path);
     if (MAX_RES_HANDLE <= 0)
     {

@@ -49,6 +49,8 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   ark_io_list_t *bl_array   = NULL;
   int32_t        rc         = 0;
 
+  scbp->poolstats.ops_cnt+=1;
+
   // Acquire the block that contains the hash entry
   // control information.
   tcbp->hblk = HASH_LBA(HASH_GET(_arkp->ht, rcbp->pos));
@@ -78,6 +80,7 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     tcbp->state = ARK_CMD_DONE;
     goto ark_del_start_err;
   }
+
   rc = bt_growif(&(tcbp->inb), &(tcbp->inb_orig), &(tcbp->inblen), 
                   (tcbp->blen * _arkp->bsize));
   if (rc != 0)
@@ -103,14 +106,16 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   tcbp->old_btsize = tcbp->inb->len;
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  KV_TRC_IO(pAT, "read hash entry ttag:%d", tcbp->ttag);
+  KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d", tid, tcbp->ttag);
   // Schedule the IO to read the hash entry from storage
   ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array,
                        tcbp->blen, 0, tcbp->ttag, ARK_DEL_PROCESS);
-  if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
-      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
+
+  if (iocbp->ea->st_type == EA_STORE_TYPE_MEMORY)
   {
-      ark_del_process(_arkp, tid, tcbp);
+      ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
+      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
+      if (iotcbp->state == ARK_DEL_PROCESS) {ark_del_process(_arkp, tid, tcbp);}
   }
 
 ark_del_start_err:
@@ -145,14 +150,14 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   // and save off the length of the value
   rcbp->res = bt_del_def(tcbp->oub, tcbp->inb, rcbp->klen, 
                           rcbp->key, (uint8_t*)&dblk, &oldvlen);
-  
+
   if (rcbp->res >= 0)
   {
     // Return the blocks of the hash entry back to
     // the free list
     ark_drop_pool(_arkp, &(scbp->poolstats), tcbp->hblk);
     if (dblk > 0)
-    { 
+    {
       // Return the blocks used to store the value if it
       // wasn't stored in the hash entry
       ark_drop_pool(_arkp, &(scbp->poolstats), dblk);
@@ -161,7 +166,6 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
     // Are there entries in the hash bucket.
     if (tcbp->oub->cnt > 0)
     {
-
       // Determine how many blocks will be needed for the
       // out buffer and then get them from the free
       // block list
@@ -188,18 +192,20 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
         goto ark_del_process_err;
       }
 
-      scbp->poolstats.io_cnt += blkcnt;
+      scbp->poolstats.io_cnt   += blkcnt;
       scbp->poolstats.byte_cnt -= (tcbp->old_btsize + oldvlen);
       scbp->poolstats.byte_cnt += tcbp->oub->len;
 
-      KV_TRC_IO(pAT, "write updated hash entry ttag:%d", tcbp->ttag);
+      KV_TRC(pAT, "WR_HASH tid:%d ttag:%3d", tid, tcbp->ttag);
       // Schedule the WRITE IO of the updated hash entry.
       ea_async_io_init(_arkp, ARK_EA_WRITE, (void *)tcbp->oub,
                        bl_array, blkcnt, 0, tcbp->ttag, ARK_DEL_FINISH);
-      if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
-          ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
+
+      if (iocbp->ea->st_type == EA_STORE_TYPE_MEMORY)
       {
-          ark_del_finish(_arkp, tid, tcbp);
+          ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
+          ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
+          if (iotcbp->state == ARK_DEL_FINISH) {ark_del_finish(_arkp,tid,tcbp);}
       }
     }
     else
@@ -208,7 +214,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       scbp->poolstats.byte_cnt += tcbp->oub->len;
       scbp->poolstats.kv_cnt--;
 
-      KV_TRC_IO(pAT, "no write required for hash entry ttag:%d", tcbp->ttag);
+      KV_TRC(pAT, "WR_HASH tid:%d ttag:%3d NO_WRITE_REQD", tid, tcbp->ttag);
       // Nothing left in this hash entry, so let's clear out
       // the hash entry control block to show there is no
       // data in the store for this hash entry

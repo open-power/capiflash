@@ -38,7 +38,7 @@
 #include <pthread.h>
 #include <cflash_tools_user.h>
 #include <sys/time.h>
-#include <ut.h>
+#include <ticks.h>
 
 //#define PRI(wh, args...) fprintf(wh, ##args)
 #define PRI(wh, args...) 

@@ -1,4 +1,4 @@
-	/* IBM_PROLOG_BEGIN_TAG                                                   */
+/* IBM_PROLOG_BEGIN_TAG                                                   */
 /* This is an automatically generated prolog.                             */
 /*                                                                        */
 /* $Source: src/cflash/test/cflash_test.h $                               */
@@ -28,6 +28,23 @@
 // If MANUAL flag enabled then semi automated test also get build
 // For jenkins run, we won't build manual tests by default !
 //#define MANUAL
+
+// AIX_MANUAL : under this tag test cases are MANUAL in AIX but automated in Linux
+// Like - EEH test cases.
+#ifndef _AIX
+
+#define AIX_MANUAL
+
+#endif
+
+// Incase we define MANUAL then all the test case either MANUAL or AIX_MANUAL will be
+/// enabled and available to user.
+
+#ifdef MANUAL
+
+#define AIX_MANUAL
+
+#endif
 
 #include <asmrw.h>
 #include<stdbool.h>
@@ -77,7 +94,6 @@ typedef __u64 dev64_t; //no use in Linux, its dummy
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <inttypes.h>
-
 #include <cxl.h>
 
 #define MC_PATHLEN       64
@@ -92,6 +108,8 @@ typedef __u64 dev64_t; //no use in Linux, its dummy
 
 #define CFLASH_ADAP_POLL_INDX  0
 #define CFLASH_DISK_POLL_INDX  1
+
+#define CFLSH_NUM_INTERRUPTS 4
 
 // below flags are going to be used in do_write_or_read()
 // depending on the user need 
@@ -139,10 +157,16 @@ typedef __u64 dev64_t; //no use in Linux, its dummy
 #define MAX_OPENS 494
 #else
 #define MAX_OPENS 508
+#define MAX_OPENS_PVM 502
 #endif
 
 //max allowd VLUNS
 #define MAX_VLUNS 1024
+
+
+#ifndef _AIX
+#define RECO_DISK_SIZE 500
+#endif
 
 #ifndef _AIX
 #define B_DONE   0x01
@@ -198,6 +222,7 @@ typedef struct eehCmd
 int diskToPCIslotConv( char *, char * );
 int prepEEHcmd(char *, char * );
 void * do_trigger_eeh_cmd( void * );
+int is_UA_device( char * disk_name );
 
 //Context structure.
 
@@ -209,6 +234,7 @@ struct ctx
     char rbuf[NUM_CMDS][0x1000];    // 4K read data buffer (page aligned)
     char wbuf[NUM_CMDS][0x1000];    // 4K write data buffer (page aligned)
     __u64 rrq_entry[NUM_RRQ_ENTRY]; // 128B RRQ (page aligned)
+    sisl_ioarcb_t sq_entry[NUM_RRQ_ENTRY+1];
 
     struct afu_cmd
     {
@@ -235,6 +261,12 @@ struct ctx
     __u64 *p_hrrq_start;
     __u64 *p_hrrq_end;
     volatile __u64 *p_hrrq_curr;
+
+    //SQ support 
+    sisl_ioarcb_t *p_sq_start;
+    sisl_ioarcb_t *p_sq_end;
+    volatile sisl_ioarcb_t *p_sq_curr;
+
     unsigned int toggle;
 
 
@@ -266,6 +298,8 @@ struct ctx
     uint64_t exceptions;
     char sense_data[512];
     int dummy_sense_flag;
+    int close_adap_fd_flag; /* set when attach returns APP_CLOSE_ADAP_FD */
+    int sq_mode_flag;       /* flag will be set when AFU is in SQ mode */
     uint64_t adap_except_type;
     uint64_t adap_except_time;
     uint64_t adap_except_data;
@@ -341,6 +375,18 @@ struct flash_disk
 
 };
 
+#ifndef _AIX
+typedef
+enum {
+    CFLASH_HOST_UNKNOWN   = 0,  /* Unknown host type                */
+    CFLASH_HOST_NV        = 1,  /* Bare Metal (or No virtualization */
+    CFLASH_HOST_PHYP      = 2,  /* pHyp host type                   */
+    CFLASH_HOST_KVM       = 3,  /* KVM host type                    */
+} cflash_host_type_t;
+
+cflash_host_type_t     host_type ;
+
+#endif
 
 typedef
 enum
@@ -642,6 +688,7 @@ int ctx_reinit(struct ctx *p_ctx);
 int ctx_close(struct ctx *p_ctx);
 void ctx_close_thread(void *);
 int get_fvt_dev_env();
+int cflash_interrupt_number(void );
 
 int test_init(struct ctx *p_ctx);
 void *ctx_rrq_rx(void *arg);
@@ -748,6 +795,7 @@ int create_resource(struct ctx *p_ctx, __u64 nlba,
                      __u64 flags, __u16 lun_type);
 int vlun_resize(struct ctx *p_ctx, __u64 nlba);
 int wait4all();
+int wait4allOnlyRC();
 int do_io(struct ctx *p_ctx, __u64 stride);
 int do_io_nocompare(struct ctx *p_ctx, __u64 stride);
 int do_large_io(struct ctx *p_ctx, struct rwlargebuf *rwbuf, __u64 size);
@@ -761,6 +809,14 @@ int ioctl_dk_capi_query_path_check_flag(struct ctx *p_ctx,
                                         int flag1, int flag2);
 int setRUnlimited();
 char * diskWithoutDev(char * source , char * destination );
+#endif
+#ifndef _AIX
+int turnOffTestCase( char * );
+void setupFVT_ENV( void );
+int diskSizeCheck( char * , float );
+void identifyHostType( void );
+int diskToWWID ( char * WWID);
+int WWIDtoDisk ( char * WWID);
 #endif
 int test_spio_vlun(int);
 int test_spio_plun();

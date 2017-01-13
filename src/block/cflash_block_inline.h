@@ -30,7 +30,7 @@
 
 #include "cflash_block_internal.h"
 #include "cflash_block_protos.h"
-
+#include <ticks.h>
 
 
 
@@ -379,16 +379,16 @@ static inline int CBLK_INVALID_CMD_CMDI(cflsh_chunk_t *chunk,
 
 
 
-	CBLK_TRACE_LOG_FILE(1,"cmdi = %p with index %d is invalid, chunk->num_cmds = %d",
-			    cmdi,cmdi->index, chunk->num_cmds,fcn_name);
+	CBLK_TRACE_LOG_FILE(1,"cmdi = %p with index %d is invalid, chunk->num_cmds = %d, chunk->flags =0x%x for fcn = %s",
+			    cmdi,cmdi->index, chunk->num_cmds,chunk->flags,fcn_name);
 	return -1;
 
     }
 
     if (CFLSH_EYECATCH_CMDI(cmdi)) {
 
-	CBLK_TRACE_LOG_FILE(1,"Invalid eyecatcher cmdi = %p is invalid, chunk->num_cmds = %d",
-			    cmdi,cmdi->index, chunk->num_cmds,fcn_name);
+	CBLK_TRACE_LOG_FILE(1,"Invalid eyecatcher cmdi = %p is invalid, chunk->num_cmds = %d, chunk->flags =0x%x for fcn = %s",
+			    cmdi,cmdi->index, chunk->num_cmds,chunk->flags,fcn_name);
 	return -1;
 
     }
@@ -452,7 +452,7 @@ static inline int CBLK_INVALID_CMD_CMDI(cflsh_chunk_t *chunk,
 
 
 	    CBLK_TRACE_LOG_FILE(1,
-				"cmdi = %p with index %d has invalid free_next pointer = %p, chunk->num_cmds = %d for fcn = %s",
+				"cmdi = %p with index %d has invalid active_next pointer = %p, chunk->num_cmds = %d for fcn = %s",
 				cmdi,cmdi->index, tmp_cmdi,chunk->num_cmds,fcn_name);
 	    return -1;
 
@@ -471,7 +471,7 @@ static inline int CBLK_INVALID_CMD_CMDI(cflsh_chunk_t *chunk,
 
 
 	    CBLK_TRACE_LOG_FILE(1,
-				"cmdi = %p with index %d has invalid free_next pointer = %p, chunk->num_cmds = %d for fcn = %s",
+				"cmdi = %p with index %d has invalid active_prev pointer = %p, chunk->num_cmds = %d for fcn = %s",
 				cmdi,cmdi->index, tmp_cmdi,chunk->num_cmds,fcn_name);
 	    return -1;
 
@@ -773,8 +773,7 @@ static inline uint64_t  CBLK_GET_INTRPT_STATUS(cflsh_chunk_t *chunk, int path_in
 /*
  * NAME: CBLK_INC_RRQ
  *
- * FUNCTION: This routine is called whenever an RRQ has been processed and
- *           the path lock is needed.
+ * FUNCTION: This routine is called whenever an RRQ has been processed.
  *  
  *
  * NOTE;    This routine assumes the caller is holding chunk->lock.
@@ -823,9 +822,62 @@ static inline void  CBLK_INC_RRQ(cflsh_chunk_t *chunk, int path_index)
 }
 
 /*
+ * NAME: CBLK_INC_SQ
+ *
+ * FUNCTION: This routine is called whenever an SQ entry has been queued.
+ *           
+ *  
+ *
+ * NOTE;    This routine assumes the caller is holding chunk->lock.
+ *
+ * RETURNS: None
+ *     
+ *    
+ */
+
+static inline void  CBLK_INC_SQ(cflsh_chunk_t *chunk, int path_index)
+{
+
+ 
+
+    if (chunk == NULL) {
+
+	errno = EINVAL;
+
+	return;
+    }
+
+    if (chunk->path[path_index] == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"path is null");
+	
+	errno = EINVAL;
+
+	return;
+
+    }
+
+    if (chunk->path[path_index]->fcn_ptrs.inc_sq == NULL) {
+
+	errno = EINVAL;
+
+	return;
+    }
+
+
+
+    chunk->path[path_index]->fcn_ptrs.inc_sq(chunk,path_index);
+
+
+
+    return ;
+}
+
+/*
  * NAME: CBLK_INC_RRQ_LOCK
  *
- * FUNCTION: This routine is called whenever an RRQ has been processed.
+ * FUNCTION: This routine is called whenever an RRQ has been processed and
+ *           the path lock is needed.
  *  
  *
  * NOTE;    This routine assumes the caller is holding chunk->lock.
@@ -1116,6 +1168,79 @@ static inline int CBLK_ADAP_SETUP(cflsh_chunk_t *chunk, int path_index)
     }
 
     rc = chunk->path[path_index]->fcn_ptrs.adap_setup(chunk,path_index);
+
+    CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
+
+    return rc;
+}
+
+/*
+ * NAME: CBLK_ADAP_SQ_SETUP
+ *
+ * FUNCTION: Sets up an adapter's SQ
+ *  
+ *
+ * NOTE;    This routine assumes the caller is holding chunk->lock.
+ *
+ * RETURNS: None
+ *     
+ *    
+ */
+static inline int CBLK_ADAP_SQ_SETUP(cflsh_chunk_t *chunk, int path_index)
+{
+    int rc = 0;
+
+    if (chunk == NULL) {
+
+	errno = EINVAL;
+
+	return -1;
+    }
+
+    if (chunk->path[path_index] == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"path is null");
+	
+	errno = EINVAL;
+
+	return -1;
+
+    }
+
+    if (chunk->path[path_index]->afu == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"afu is null");
+	
+	errno = EINVAL;
+
+	return -1;
+
+    }
+
+    if (chunk->path[path_index]->fcn_ptrs.adap_sq_setup == NULL) {
+
+	errno = EINVAL;
+
+	return -1;
+    }
+
+    CFLASH_BLOCK_AFU_SHARE_LOCK(chunk->path[path_index]->afu);
+
+    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_HALTED) {
+
+	/*
+	 * If path is in a halted state then fail 
+	 * from this routine
+	 */
+
+	
+	CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
+
+	return -1;
+
+    }
+
+    rc = chunk->path[path_index]->fcn_ptrs.adap_sq_setup(chunk,path_index);
 
     CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
 
@@ -2129,6 +2254,51 @@ static inline void CBLK_FREE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd)
 
 
 /*
+ * NAME:        CBLK_FREE_CMDI
+ *
+ * FUNCTION:    Marks command info as free and ready for reuse
+ *
+ *
+ * INPUTS:
+ *              chunk - The chunk to which a free
+ *                      command is needed.
+ *          
+ *              cmd   - Pointer to found command.
+ *
+ * RETURNS:
+ *              0         - Command was found.
+ *              otherwise - error
+ *              
+ */
+
+static inline void CBLK_FREE_CMDI(cflsh_chunk_t *chunk, cflsh_cmd_info_t *cmdi)
+{
+    if ((chunk == NULL) ||
+	(cmdi == NULL)) {
+
+
+	return;
+    }
+
+    cmdi->in_use = 0;
+
+    /*
+     * Remove command from active list
+     */
+
+    CBLK_DQ_NODE(chunk->head_act,chunk->tail_act,cmdi,act_prev,act_next);
+
+    /*
+     * Place command on free list
+     */
+
+    CBLK_Q_NODE_TAIL(chunk->head_free,chunk->tail_free,cmdi,free_prev,free_next);
+
+    return;
+}
+
+
+/*
  * NAME: CBLK_ISSUE_CMD
  *
  * FUNCTION: Issues a commd to the adapter.
@@ -2223,6 +2393,50 @@ static inline int CBLK_ISSUE_CMD(cflsh_chunk_t *chunk,
 }
 
 /*
+ * NAME:        CBLK_IO_LATENCY
+ *
+ * FUNCTION:    update latency vars for a rd/wr cmd,
+ *              trace latency once per second per chunk
+ *
+ * Environment: This routine assumes the chunk mutex
+ *              lock is held by the caller.
+ *
+ * INPUTS:
+ *              chunk - Chunk the cmd is associated.
+ *              cmd   - Cmd which just completed
+ *
+ * RETURNS:
+ */
+static inline void CBLK_IO_LATENCY(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd)
+{
+    /* calc and save r/w latency */
+    if (cmd->cmdi->flags & CFLSH_MODE_READ)
+    {
+        chunk->rcmd += 1;
+        chunk->rlat += UDELTA(cmd->stime,cflsh_blk.nspt);
+    }
+    else if (cmd->cmdi->flags & CFLSH_MODE_WRITE)
+    {
+        chunk->wcmd += 1;
+        chunk->wlat += UDELTA(cmd->stime,cflsh_blk.nspt);
+    }
+
+    /* trace latency */
+    if (cblk_log_verbosity >= 4)
+    {
+        if (SDELTA(chunk->ptime,cflsh_blk.nspt) > 1)
+        {
+            chunk->ptime = getticks();
+            CBLK_TRACE_LOG_FILE(4, "id:%4ld tlat:%6ld rlat:%6ld wlat:%6ld",
+                    chunk->index,
+                    (chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd),
+                    chunk->rlat/chunk->rcmd,
+                    chunk->wlat/chunk->wcmd);
+        }
+    }
+}
+
+/*
  * NAME:        CBLK_COMPLETE_CMD
  *
  * FUNCTION:    Cleans up and ootential frees a command,
@@ -2289,7 +2503,8 @@ static inline int CBLK_COMPLETE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, 
 	rc = -1;
     }
 
-    
+    CBLK_IO_LATENCY(chunk, cmd);
+
     /*
      * This command completed,
      * clean it up.
@@ -2384,9 +2599,13 @@ static inline int CBLK_COMPLETE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, 
 	CBLK_FREE_CMD(chunk,cmd);
     }
 
-	
-    CBLK_TRACE_LOG_FILE(8,"cmdi->in_use= 0x%x cmdi->lba = 0x%llx, rc = %d, chunk->index = %d, cmdi->flags = 0x%x",
-			cmdi->in_use,cmdi->lba,rc,chunk->index,cmdi->flags);	
+
+    CBLK_TRACE_LOG_FILE(5,"in_use:0x%x lba:%8llx rc:%d lat:%6ld "
+                          "flags:0x%x id:%2d rd:%d",
+                           cmdi->in_use,cmdi->lba,rc,
+                           UDELTA(cmd->stime,cflsh_blk.nspt),
+                           cmdi->flags, chunk->index,
+                           ((cmdi->flags & CFLSH_MODE_READ)!=0));
 
     return (rc);
 }
@@ -2419,6 +2638,7 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
     cflsh_cmd_info_t *cmdi;
     cflsh_cmd_mgm_t *p_cmd;
     int rc = 0;
+    int cmd_rc = 0;
     time_t timeout;
 
 
@@ -2504,11 +2724,10 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
 
 		if (cmdi->cmd_time < timeout) {
 
-		    CBLK_TRACE_LOG_FILE(1,"Timeout for for cmd  lba = 0x%llx, cmd = 0x%llx cmd_index = %d, chunk->index = %d",
+		    CBLK_TRACE_LOG_FILE(1,"Timeout for  cmd  lba = 0x%llx, cmd = 0x%llx cmd_index = %d, chunk->index = %d",
 				cmdi->lba,(uint64_t)cmd,cmd->index,chunk->index);
 
-		    
-		    cmdi->status = ETIMEDOUT;
+		    cmdi->status = 0;
 		    cmdi->transfer_size = 0;
 
 		    
@@ -2527,11 +2746,29 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
 				
 		    CFLASH_BLOCK_LOCK(chunk->lock);
 
-		    *cmd_complete = TRUE;
+		    if ((cmdi->retry_count >= CAPI_CMD_MAX_RETRIES) ||
+			(cmdi->status)) {
 
-		    errno = ETIMEDOUT;
+			/*
+			 * Don't fail yet, until all retries have
+			 * been attempted. Also if the resume command
+			 * logic in the block library fails to re-issue
+			 * the command, then cmdi->status will be non-zero.
+			 * NOTE: We cleared cmdi->status before unlocking
+			 * and calling reset_context.  
+			 */
 
-		    rc = -1;
+			CBLK_TRACE_LOG_FILE(1,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
+					    cmdi->lba,(uint64_t)cmd,cmdi->retry_count,cmdi->status);
+
+			cmdi->status = ETIMEDOUT;
+
+			*cmd_complete = TRUE;
+
+			errno = ETIMEDOUT;
+
+			rc = -1;
+		    }
 		}
 
 	    } else {
@@ -2596,7 +2833,7 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
             p_cmdi->state = CFLSH_MGM_CMP;
             
                 
-            rc = cblk_process_cmd(chunk,path_index,p_cmd);
+            cmd_rc = cblk_process_cmd(chunk,path_index,p_cmd);
             
         
             if (p_cmd == cmd) {
@@ -2606,8 +2843,8 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
                  */
                 
         
-                if ((rc != CFLASH_CMD_RETRY_ERR) &&
-                    (rc != CFLASH_CMD_DLY_RETRY_ERR)) {
+                if ((cmd_rc != CFLASH_CMD_RETRY_ERR) &&
+                    (cmd_rc != CFLASH_CMD_DLY_RETRY_ERR)) {
                     
                     /*
                      * Since we found our command completed and
@@ -2629,6 +2866,11 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
 #endif
 
                     *cmd_complete = TRUE;
+
+		    if (cmd_rc == CFLASH_CMD_FATAL_ERR) {
+
+			rc = -1;
+		    }
                     
                 }
                 
@@ -2696,10 +2938,10 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
     }
 
 
-    CBLK_TRACE_LOG_FILE(9,"waiting for cmd with cmd_index = 0x%x on chunk->index = %d",
-			*cmd_index,chunk->index);
-    CBLK_TRACE_LOG_FILE(9,"chunk->fd = %d, poll_fd= %d",
-			chunk->fd,chunk->path[path_index]->afu->poll_fd);
+    CBLK_TRACE_LOG_FILE(9,"waiting for cmd with cmd_index = 0x%x on chunk->index = %d, path_index = %d",
+			*cmd_index,chunk->index,path_index);
+    CBLK_TRACE_LOG_FILE(9,"chunk->fd = %d, poll_fd= %d, afu = %p",
+			chunk->fd,chunk->path[path_index]->afu->poll_fd,chunk->path[path_index]->afu);
 
 #ifndef BLOCK_FILEMODE_ENABLED
 
@@ -2798,7 +3040,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 
 	CFLASH_BLOCK_LOCK(chunk->lock);
 
-	CBLK_TRACE_LOG_FILE(8,"poll_ret = 0x%x, chunk->index = %d",poll_ret,chunk->index);
+	CBLK_TRACE_LOG_FILE(8,"poll_ret = 0x%x, chunk->index = %d, path_index = %d",poll_ret,chunk->index,path_index);
 
 
 
@@ -3069,8 +3311,9 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 
 	    if (chunk->path[path_index]->afu->p_hrrq_curr) {
 
-		CBLK_TRACE_LOG_FILE(7,"*(chunk->path[path_index]->afu->p_hrrq_curr) = 0x%llx, chunk->path[path_index]->toggle = 0x%llx , chunk->index = %d",
-				    *(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,
+		CBLK_TRACE_LOG_FILE(7,"*(chunk->path[%d]->afu->p_hrrq_curr) = 0x%llx, chunk->path[path_index]->toggle = 0x%llx , chunk->index = %d",
+				    path_index,
+				    CBLK_READ_ADDR_CHK_UE(chunk->path[path_index]->afu->p_hrrq_curr),chunk->path[path_index]->afu->toggle,
 				    chunk->index);	
 
 	    }
@@ -3147,11 +3390,20 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 
 		    if (cmdi->cmd_time < timeout) {
 
+			/*
+			 * Don't fail yet, until all retries have
+			 * been attempted. Also if the resume command
+			 * logic in the block library fails to re-issue
+			 * the command, then cmdi->status will be non-zero.
+			 * NOTE: We cleared cmdi->status before unlocking
+			 * and calling reset_context.  
+			 */
+
 			CBLK_TRACE_LOG_FILE(1,"Timeout for for cmd  lba = 0x%llx, cmd = 0x%llx cmd_index = %d, chunk->index = %d",
 					    cmdi->lba,(uint64_t)cmd,cmd->index,chunk->index);
 
 		    
-			cmdi->status = ETIMEDOUT;
+			cmdi->status = 0;
 			cmdi->transfer_size = 0;
 
 		    
@@ -3167,11 +3419,19 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 				
 			CFLASH_BLOCK_LOCK(chunk->lock);
 
-			*cmd_complete = TRUE;
+			if ((cmdi->retry_count >= CAPI_CMD_MAX_RETRIES) ||
+			    (cmdi->status)) {
 
-			errno = ETIMEDOUT;
+			    CBLK_TRACE_LOG_FILE(1,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
+						cmdi->lba,(uint64_t)cmd,cmdi->retry_count,cmdi->status);
 
-			rc = -1;
+			    *cmd_complete = TRUE;
+
+			    cmdi->status = ETIMEDOUT;
+			    errno = ETIMEDOUT;
+
+			    rc = -1;
+			}
 		    }
 
 		    /*
@@ -3252,13 +3512,6 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 	 */
 	rc = CBLK_PROCESS_ADAP_CONVERT_INTRPT(chunk,&cmd,CFLSH_BLK_INTRPT_CMD_CMPLT,cmd_complete, transfer_size);
 
-#ifdef _PERF_TEST
-	CFLASH_BLOCK_UNLOCK(chunk->lock);
-	usleep(cflsh_blk.adap_poll_delay);
-	    
-	CFLASH_BLOCK_LOCK(chunk->lock);
-#endif /* _PERF_TEST */
-
 #endif
 
 
@@ -3337,16 +3590,7 @@ static inline int CBLK_INTR_DELAY_WAIT(cflsh_chunk_t *chunk, int lib_flags, int 
 	 * If there is a back ground thread for
 	 * processing interrupts.
 	 */
-
-	if (loop_cnt > CFLASH_MIN_POLL_RETRIES) {
-
-	    /*
-	     * Do not start delaying until we have done
-	     * some checking for completion
-	     */
-		    
-	    usleep(CFLASH_DELAY_NO_CMD_INTRPT);
-	} 
+	 usleep(CFLASH_DELAY_NO_CMD_INTRPT);
 
 	if ( (rc) && (loop_cnt > CFLASH_MAX_POLL_RETRIES)) {
 			
@@ -3379,16 +3623,7 @@ static inline int CBLK_INTR_DELAY_WAIT(cflsh_chunk_t *chunk, int lib_flags, int 
 	     * until a command completes or we time-out.
 	     */
 
-	    if (loop_cnt > CFLASH_MIN_POLL_RETRIES) {
-
-		/*
-		 * Do not start delaying until we have done
-		 * some checking for completion
-		 */
-		    
 		usleep(CFLASH_DELAY_NO_CMD_INTRPT);
-	    } 
-
 
 
 	} else if ( (rc) && (loop_cnt > CFLASH_MAX_POLL_RETRIES)) {
@@ -3511,8 +3746,8 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE(cflsh_chunk_t *chunk,
     
 	if ( (cmd->cmdi->in_use == 0) || (cmd->cmdi->state == CFLSH_MGM_ASY_CMP)) {
 
-	    CBLK_TRACE_LOG_FILE(1,"cmd->cmdi->in_use = 0 flags = 0x%x lba = 0x%llx, chunk->index = %d",
-				cmd->cmdi->flags,cmd->cmdi->lba,chunk->index);
+	    CBLK_TRACE_LOG_FILE(1,"cmd->cmdi->in_use = 0 flags = 0x%x lba = 0x%llx, chunk->index = %d chunk->flags = %d",
+				cmd->cmdi->flags,cmd->cmdi->lba,chunk->index,chunk->flags);
 
 	    errno = EINVAL;
 
@@ -3533,7 +3768,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE(cflsh_chunk_t *chunk,
 	poll_fail_retries = 0;
 
 	while ((!cmd_complete) &&
-	       (loop_cnt < CFLASH_MAX_WAIT_LOOP_CNT)) {
+	       (loop_cnt < CFLASH_DELAY_LOOP_CNT)) {
 	
 
 	    rc = CBLK_WAIT_FOR_IO_COMPLETE_PATH(chunk, path_index,cmd,cmd_index, transfer_size,wait,
@@ -3593,6 +3828,9 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE(cflsh_chunk_t *chunk,
 
     } else {
 
+	CBLK_TRACE_LOG_FILE(9,"chunk->index = %d, num_paths = %d",
+			    chunk->index,chunk->num_paths);
+
 	for (path_index=0;path_index < chunk->num_paths;path_index++) {
 
 
@@ -3609,7 +3847,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE(cflsh_chunk_t *chunk,
 		
 		
 		while ((!cmd_complete) &&
-		       (loop_cnt < CFLASH_MAX_WAIT_LOOP_CNT)) {
+		       (loop_cnt < CFLASH_DELAY_LOOP_CNT)) {
 	
 		    rc = CBLK_WAIT_FOR_IO_COMPLETE_PATH(chunk, path_index,cmd,cmd_index, transfer_size,wait,
 							&cmd_complete,&poll_retry,&poll_fail_retries);
@@ -3671,6 +3909,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE(cflsh_chunk_t *chunk,
     }
 
     if (cmd) {
+        if (rc==0) {errno=0;}
 
 	CBLK_TRACE_LOG_FILE(5,"waiting returned for cmd with lba = 0x%llx, with rc = %d, errno = %d in_use = %d, chunk->index = %d",
 			    cmd->cmdi->lba, rc, errno,cmd->cmdi->in_use,chunk->index);

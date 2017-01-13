@@ -102,6 +102,19 @@ TEST(FVT_KV_GOOD_PATH, ASYNC_CB_BIG_BLOCKS)
  *******************************************************************************
  * \brief
  ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, ASYNC_CB_BIG_BLOCKS_STARVE)
+{
+    uint32_t secs = 5;
+
+    kv_async_init_ctxt_starve   (ASYNC_SINGLE_CONTEXT, 20, 256, secs);
+    kv_async_init_job_BIG_BLOCKS(ASYNC_SINGLE_CONTEXT);
+    kv_async_run_jobs();
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 TEST(FVT_KV_GOOD_PATH, ASYNC_CB_STRESS_LOW)
 {
     uint32_t secs = 5;

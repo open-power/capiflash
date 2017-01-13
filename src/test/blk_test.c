@@ -432,12 +432,8 @@ parse_args(int argc, char **argv)
 	    }
 	    break;
 	case 'm' :
-#ifndef _AIX
-	    fprintf(stderr,"-m flag is not supported on this operating system\n");
-	    rc = EINVAL;
-#else
 	    mpio_flag = TRUE;
-#endif 
+
 	    
 	    break;  
 	case 'n' :
@@ -781,13 +777,13 @@ void *run_loop(void *data)
 	    open_flags |= CBLK_OPN_SHARE_CTXT;
 	}
 
-#ifdef _AIX
 
 	if (mpio_flag) {
 
 	    open_flags |= CBLK_OPN_MPIO_FO;
 	}
 
+#ifdef _AIX
 	if (reserve_flag) {
 
 	    open_flags |= CBLK_OPN_RESERVE;
@@ -1626,27 +1622,36 @@ void *run_loop(void *data)
 	     */
 	    
 
+	    if (virtual_lun_flag) {
 
-	    if (verbose_flag && !thread_flag) {
+		/*
+		 * Clone after fork is only supported for
+		 * virtual luns. Physical luns do not need this.
+		 */
 
-		fprintf(stderr,"Calling cblk_clone_after_fork...\n");
 
-	    }
-	    rc = cblk_clone_after_fork(blk_data->chunk_id,O_RDONLY,0);
+		if (verbose_flag && !thread_flag) {
+
+		    fprintf(stderr,"Calling cblk_clone_after_fork...\n");
+
+		}
+		rc = cblk_clone_after_fork(blk_data->chunk_id,O_RDONLY,0);
 
 	    
-	    if (verbose_flag && !thread_flag) {
-		printf("clone completed with rc = %d, errno = %d\n",rc,errno);
-	    }
+		if (verbose_flag && !thread_flag) {
+		    printf("clone completed with rc = %d, errno = %d\n",rc,errno);
+		}
 
-	    if (rc) {
+		if (rc) {
 
 
-		fprintf(stderr,"cblk_chunk_clone failed with rc = 0x%x errno = %d\n",rc, errno);
-		free(comp_data_buf);
+		    fprintf(stderr,"cblk_chunk_clone failed with rc = 0x%x errno = %d\n",rc, errno);
+		    free(comp_data_buf);
 		
-		free(data_buf);
-		return (ret_code);
+		    free(data_buf);
+		    return (ret_code);
+		}
+
 	    }
 
 
@@ -2238,12 +2243,12 @@ int main (int argc, char **argv)
 	    flags |= CBLK_OPN_SHARE_CTXT;
 	}
 
-#ifdef _AIX
 
 	if (mpio_flag) {
 
 	    flags |= CBLK_OPN_MPIO_FO;
 	}
+#ifdef _AIX
 
 	if (reserve_flag) {
 
@@ -2475,46 +2480,55 @@ int main (int argc, char **argv)
 	     */
 	    
 
+	    
+	    if (virtual_lun_flag) {
 
-	    if (verbose_flag && !thread_flag) {
+		/*
+		 * Clone after fork is only supported for
+		 * virtual luns. Physical luns do not need this.
+		 */
 
-		fprintf(stderr,"Calling cblk_clone_after_fork...\n");
+		if (verbose_flag && !thread_flag) {
 
-	    }
-	    rc = cblk_clone_after_fork(chunk_id,O_RDWR,0);
+		    fprintf(stderr,"Calling cblk_clone_after_fork...\n");
+
+		}
+		rc = cblk_clone_after_fork(chunk_id,O_RDWR,0);
 
 	    
-	    if (verbose_flag && !thread_flag) {
-		printf("clone completed with rc = %d, errno = %d\n",rc,errno);
-	    }
-
-	    if (rc) {
-
-
-		fprintf(stderr,"cblk_chunk_clone failed with rc = 0x%x errno = %d\n",rc, errno);
-
-
-	    }
-
-
-	    if ((!rc) && (shared_contxt_flag))  {
-		
-		
-		rc2 = cblk_clone_after_fork(alt_chunk_id,O_RDWR,0);
-		
-		
 		if (verbose_flag && !thread_flag) {
 		    printf("clone completed with rc = %d, errno = %d\n",rc,errno);
 		}
-		
-		if (rc2) {
-		    
-		    
+
+		if (rc) {
+
+
 		    fprintf(stderr,"cblk_chunk_clone failed with rc = 0x%x errno = %d\n",rc, errno);
-		    
-		    
+
+
 		}
-	    }
+
+
+		if ((!rc) && (shared_contxt_flag))  {
+		
+		
+		    rc2 = cblk_clone_after_fork(alt_chunk_id,O_RDWR,0);
+		
+		
+		    if (verbose_flag && !thread_flag) {
+			printf("clone completed with rc = %d, errno = %d\n",rc,errno);
+		    }
+		
+		    if (rc2) {
+		    
+		    
+			fprintf(stderr,"cblk_chunk_clone failed with rc = 0x%x errno = %d\n",rc, errno);
+		    
+		    
+		    }
+		}
+
+	    } /* if (virtual_lun_flag) */
 
 
 	    if ((!rc) && (!rc2) &&

@@ -30,6 +30,7 @@
 #define CFLSH_BLK_FILENUM 0x0100
 #include "cflash_block_internal.h"
 #include "cflash_block_inline.h"
+#include <ticks.h>
 
 #ifndef _AIX
 #include <revtags.h>
@@ -54,10 +55,7 @@ REVISION_TAGS(block);
 #else
 #include <sys/scsi.h>
 #endif
- 
-#define CFLSH_BLK_FILENUM 0x0100
-#include "cflash_block_internal.h"
-#include "cflash_block_inline.h"
+
 cflsh_block_t cflsh_blk;
 
 
@@ -118,71 +116,60 @@ static int cflsh_blk_term = 0;
  *              pointer = chunk found.
  *              
  */
-
 inline cflsh_chunk_t *CBLK_GET_CHUNK_HASH(chunk_id_t chunk_id, int check_rdy)
-
 {
-    cflsh_chunk_t *chunk = NULL;
+    cflsh_chunk_hash_t *p_hash = NULL;
+    cflsh_chunk_t      *chunk  = NULL;
 
+    p_hash = &cflsh_blk.hash[chunk_id & CHUNK_HASH_MASK];
 
-    chunk = cflsh_blk.hash[chunk_id & CHUNK_HASH_MASK];
+    CFLASH_BLOCK_WR_RWLOCK(p_hash->lock);
 
+    chunk = p_hash->head;
 
     while (chunk) {
 
-	if ( (ulong)chunk & CHUNK_BAD_ADDR_MASK ) {
+        if ( (ulong)chunk & CHUNK_BAD_ADDR_MASK ) {
 
-	    CBLK_TRACE_LOG_FILE(1,"Corrupted chunk address = 0x%llx, index = 0x%x", 
-				(uint64_t)chunk, (chunk_id & CHUNK_HASH_MASK));
+            CBLK_TRACE_LOG_FILE(1,"Corrupted chunk address:0x%llx, index:0x%x",
+                    (uint64_t)chunk, (chunk_id & CHUNK_HASH_MASK));
 
-	    cflsh_blk.num_bad_chunk_ids++;
-	    chunk = NULL;
+            cflsh_blk.num_bad_chunk_ids++;
+            chunk = NULL;
+            break;
+        }
 
-	    break;
+        if (chunk->index == chunk_id) {
 
-	}
+            /*
+             * Found the specified chunk. Let's
+             * validate it.
+             */
 
+            if (CFLSH_EYECATCH_CHUNK(chunk)) {
+            /*
+             * Invalid chunk
+             */
+                CBLK_TRACE_LOG_FILE(1,"Invalid chunk, chunk_id = %d",
+                            chunk_id);
+                chunk = NULL;
+            } else if ((!(chunk->flags & CFLSH_CHNK_RDY)) && (check_rdy)) {
 
-	if (chunk->index == chunk_id) {
+                /*
+                 * This chunk is not ready
+                 */
+                CBLK_TRACE_LOG_FILE(1,"chunk not ready, chunk_id = %d",
+                            chunk_id);
+                chunk = NULL;
+            }
+            break;
+        }
 
-
-	    /*
-	     * Found the specified chunk. Let's
-	     * validate it.
-	     */
-
-	    if (CFLSH_EYECATCH_CHUNK(chunk)) {
-		/*
-		 * Invalid chunk
-		 */
-		
-		CBLK_TRACE_LOG_FILE(1,"Invalid chunk, chunk_id = %d",
-				    chunk_id);
-		chunk = NULL;
-	    } else if ((!(chunk->flags & CFLSH_CHNK_RDY)) &&
-		       (check_rdy)) {
-
-
-		/*
-		 * This chunk is not ready
-		 */
-		
-		CBLK_TRACE_LOG_FILE(1,"chunk not ready, chunk_id = %d",
-				    chunk_id);
-		chunk = NULL;
-	    } 
-	    break;
-	}
-
-	chunk = chunk->next;
+        chunk = chunk->next;
 
     } /* while */
 
-    
-
-    
-
-
+    CFLASH_BLOCK_RWUNLOCK(p_hash->lock);
     return (chunk);
 }
 
@@ -269,6 +256,14 @@ void _cflsh_blk_init(void)
     char *env_adap_poll_delay = getenv("CFLSH_BLK_ADAP_POLL_DLY");
 #endif /* _SKIP_READ_CALL */
     int rc;
+    int i=0;
+
+    memset(cflsh_blk.hash,0,sizeof(cflsh_blk.hash));
+
+    for (i=0; i<MAX_NUM_CHUNKS_HASH; i++)
+    {
+        CFLASH_BLOCK_RWLOCK_INIT(cflsh_blk.hash[i].lock);
+    }
 
     /*
      * Require that the cflash_cmd_mgm_t structure be a multiple
@@ -429,6 +424,16 @@ void _cflsh_blk_init(void)
     }
 
     cflsh_blk.caller_pid = getpid();
+
+
+    /*
+     * Determine host type
+     */
+
+    cblk_get_host_type();
+
+    cflsh_blk.nspt = time_per_tick(1000, 100);
+
     return;
 }
 
@@ -448,7 +453,6 @@ void _cflsh_blk_init(void)
 
 void _cflsh_blk_free(void)
 {
-
 
     if (cflsh_blk.flags & CFLSH_G_SYSLOG) {
 
@@ -894,6 +898,7 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
     }
 
     *cmd_index = cmd->index;
+    cmd->stime = getticks();
 
     if (flags & CBLK_ARW_USER_STATUS_FLAG) {
 	    
@@ -1262,10 +1267,6 @@ int cblk_term(void *arg,uint64_t flags)
 }
 
 
-
-
-
-
 /*
  * NAME:        cblk_open
  *
@@ -1290,22 +1291,27 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
     int open_flags;
     int cleanup_depth;
     cflsh_chunk_t *chunk = NULL;
+    int rc = 0;
 
 #ifdef _AIX
     int ext_flags = 0;
 #endif /* _AIX */
-    errno = 0;
-
 
 
 #ifdef _AIX
     cflsh_blk_init();
 #endif /* AIX */
 
+    if (flags & CBLK_OPN_GROUP)
+    {
+        flags &= ~CBLK_OPN_GROUP;
+        rc     = cblk_cg_open(path,max_num_requests,mode,(int)ext,ext,flags);
+        return (rc);
+    }
 
     CFLASH_BLOCK_WR_RWLOCK(cflsh_blk.global_lock);
 
-    CBLK_TRACE_LOG_FILE(5,"opening %s with max_num_requests = %d, mode = 0x%x, flags = 0x%x for pid = 0x%llx",
+    CBLK_TRACE_LOG_FILE(4,"opening %s with max_num_requests = %d, mode = 0x%x, flags = 0x%x for pid = 0x%llx",
 			path,max_num_requests,mode,flags,(uint64_t)cflsh_blk.caller_pid);
 
 
@@ -1320,10 +1326,9 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
 
 
     ret_chunk_id = cblk_get_chunk(CFLSH_BLK_CHUNK_SET_UP, max_num_requests);
+    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
     chunk = CBLK_GET_CHUNK_HASH(ret_chunk_id,FALSE);
-
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
     if (chunk) {
 
@@ -1350,7 +1355,7 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
 	    cblk_chunk_open_cleanup(chunk,20);
 
 	    CFLASH_BLOCK_UNLOCK(chunk->lock);
-	    
+
 	    free(chunk);
 
 
@@ -1504,6 +1509,13 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
 
 	chunk->fd = openx(chunk->dev_name,open_flags,0,ext_flags);
 #else
+
+	if (flags & CBLK_OPN_MPIO_FO) {
+
+
+	    chunk->flags |= CFLSH_CHNK_MPIO_FO;
+	}
+
 	
 	open_flags = O_RDWR | O_NONBLOCK;   
 
@@ -1629,7 +1641,11 @@ int cblk_close(chunk_id_t chunk_id, int flags)
     cflsh_chunk_t *chunk;
     int loop_cnt = 0;
 
-    errno = 0;
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return (cblk_cg_close(chunk_id,flags));
+    }
 
     if ((chunk_id <= NULL_CHUNK_ID) ||
 	(chunk_id >= cflsh_blk.next_chunk_id)) {
@@ -1649,8 +1665,8 @@ int cblk_close(chunk_id_t chunk_id, int flags)
     if (chunk == NULL) { 
 
 
-	CBLK_TRACE_LOG_FILE(1,"closing failed because chunk not found, chunk_id = %d",
-			    chunk_id);
+	CBLK_TRACE_LOG_FILE(1,"closing failed because chunk not found, chunk_id = %d, num_active_chunks = 0x%x",
+			    chunk_id,cflsh_blk.num_active_chunks);
 	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
@@ -1658,8 +1674,8 @@ int cblk_close(chunk_id_t chunk_id, int flags)
 
     if (chunk->in_use == FALSE) {
 
-	CBLK_TRACE_LOG_FILE(1,"closing failed because chunk not in use, rchunk_id = %d, path = %s",
-			    chunk_id,chunk->dev_name);
+	CBLK_TRACE_LOG_FILE(1,"closing failed because chunk not in use, rchunk_id = %d, path = %s, num_active_chunks = 0x%x",
+			    chunk_id,chunk->dev_name,cflsh_blk.num_active_chunks);
 	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;
@@ -1693,7 +1709,8 @@ int cblk_close(chunk_id_t chunk_id, int flags)
 	return -1;
     }
 
-    CBLK_TRACE_LOG_FILE(9,"closing  chunk->dev_name = %s",chunk->dev_name);
+    CBLK_TRACE_LOG_FILE(9,"closing  chunk->dev_name = %s, num_paths = %d",
+			chunk->dev_name,chunk->num_paths);
 
     if (chunk->flags & CFLSH_CHNK_CLOSE) {
 
@@ -1807,8 +1824,13 @@ int cblk_get_lun_size(chunk_id_t chunk_id, size_t *nblocks, int flags)
     int rc = 0;
     cflsh_chunk_t *chunk;
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_get_lun_size(chunk_id, nblocks, flags);
+    }
 
-    errno = 0;
+
     if ((chunk_id <= NULL_CHUNK_ID) ||
 	(chunk_id >= cflsh_blk.next_chunk_id)) {
 
@@ -1822,11 +1844,9 @@ int cblk_get_lun_size(chunk_id_t chunk_id, size_t *nblocks, int flags)
 	return -1;
     }
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
-
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
+    if (chunk == NULL) {errno=EINVAL; return -1;}
 
     *nblocks = chunk->num_blocks_lun;
 
@@ -1859,8 +1879,12 @@ int cblk_get_size(chunk_id_t chunk_id, size_t *nblocks, int flags)
     int rc = 0;
     cflsh_chunk_t *chunk;
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_get_size(chunk_id, nblocks, flags);
+    }
 
-    errno = 0;
     if ((chunk_id <= NULL_CHUNK_ID) ||
 	(chunk_id >= cflsh_blk.next_chunk_id)) {
 
@@ -1874,16 +1898,11 @@ int cblk_get_size(chunk_id_t chunk_id, size_t *nblocks, int flags)
 	return -1;
     }
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
-
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
-
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
     *nblocks = chunk->num_blocks;
 
-    CBLK_TRACE_LOG_FILE(5,"get_size returned = 0x%llx, rc = %d",(uint64_t)(*nblocks), rc);
-
+    CBLK_TRACE_LOG_FILE(5,"id:%d *nblocks:%ld rc:%d", chunk_id, *nblocks, rc);
 
     return rc;
 }
@@ -1914,9 +1933,12 @@ int cblk_set_size(chunk_id_t chunk_id, size_t nblocks, int flags)
     int rc = 0;
     cflsh_chunk_t *chunk;
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_set_size(chunk_id, nblocks, flags);
+    }
 
-
-    errno = 0;
     if ((chunk_id <= NULL_CHUNK_ID) ||
 	(chunk_id >= cflsh_blk.next_chunk_id)) {
 
@@ -1927,8 +1949,6 @@ int cblk_set_size(chunk_id_t chunk_id, size_t nblocks, int flags)
 
     CBLK_TRACE_LOG_FILE(5,"set_size size = 0x%llx",(uint64_t)nblocks);
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
-
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
     if (chunk == NULL) { 
@@ -1936,15 +1956,12 @@ int cblk_set_size(chunk_id_t chunk_id, size_t nblocks, int flags)
 
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
-	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
     }
 
    
     CFLASH_BLOCK_LOCK(chunk->lock);
-
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
     if (!(chunk->flags & CFLSH_CHNK_VLUN)) {
 
@@ -2039,9 +2056,12 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
     int pthread_rc;
 #endif
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_read(chunk_id, buf, lba, nblocks, flags);
+    }
 
-
-    errno = 0;
     CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p",chunk_id,lba,(uint64_t)nblocks,buf);
 
 
@@ -2051,7 +2071,6 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
     }
 
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
     if (chunk == NULL) { 
@@ -2059,18 +2078,17 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
 
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
-	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
     }
 
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
 
     if (nblocks > chunk->stats.max_transfer_size) {
 
 
-	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx",nblocks);
+	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx, max_transfer_size = 0x%llx",nblocks,
+			    chunk->stats.max_transfer_size);
 
 	errno = EINVAL;
 	return -1;
@@ -2232,8 +2250,13 @@ int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
     int pthread_rc;
 #endif
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_write(chunk_id, buf, lba, nblocks, flags);
+    }
 
-    errno = 0;
+
     CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p",chunk_id,lba,(uint64_t)nblocks,buf);
 
     if (CBLK_VALIDATE_RW(chunk_id,buf,lba,nblocks)) {
@@ -2242,7 +2265,6 @@ int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
     }
 
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
     if (chunk == NULL) { 
@@ -2250,17 +2272,15 @@ int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
 
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
-	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
     }
 
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
-
 
     if (nblocks > chunk->stats.max_transfer_size) {
 
-	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx",nblocks);
+	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx, max_transfer_size = 0x%llx",nblocks,
+			    chunk->stats.max_transfer_size);
 
 	errno = EINVAL;
 	return -1;
@@ -2423,7 +2443,8 @@ static inline int _cblk_aread(cflsh_chunk_t *chunk,void *buf,cflash_offset_t lba
     
     if (nblocks > chunk->stats.max_transfer_size) {
 
-	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx",nblocks);
+	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx, max_transfer_size = 0x%llx",nblocks,
+			    chunk->stats.max_transfer_size);
 
 	errno = EINVAL;
 	return -1;
@@ -2539,7 +2560,11 @@ int cblk_aread(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
 {
     cflsh_chunk_t *chunk;
 
-    errno = 0;
+    if (flags & CBLK_GROUP_MASK)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
     CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p",chunk_id,lba,(uint64_t)nblocks,buf);
 
@@ -2548,7 +2573,6 @@ int cblk_aread(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
 	return -1;
     }
     
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
     if (chunk == NULL) { 
@@ -2556,12 +2580,10 @@ int cblk_aread(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
 
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
-	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
     }
 
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
     return (_cblk_aread(chunk,buf,lba,nblocks,tag,status,flags));
 }
@@ -2594,7 +2616,8 @@ static inline int _cblk_awrite(cflsh_chunk_t *chunk,void *buf,cflash_offset_t lb
 
     if (nblocks > chunk->stats.max_transfer_size) {
 
-	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx",nblocks);
+	CBLK_TRACE_LOG_FILE(1,"nblocks too large = 0x%llx, max_transfer_size = 0x%llx",nblocks,
+			    chunk->stats.max_transfer_size);
 
 	errno = EINVAL;
 	return -1;
@@ -2705,10 +2728,14 @@ int cblk_awrite(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblock
 
     cflsh_chunk_t *chunk;
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
-    errno = 0;
-
-    CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p",chunk_id,lba,(uint64_t)nblocks,buf);
+    CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p flags:%x",
+            chunk_id,lba,(uint64_t)nblocks,buf, flags);
 
 
     if (CBLK_VALIDATE_RW(chunk_id,buf,lba,nblocks)) {
@@ -2717,7 +2744,6 @@ int cblk_awrite(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblock
     }
 
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
     if (chunk == NULL) { 
@@ -2725,13 +2751,10 @@ int cblk_awrite(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblock
 
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
-	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
     }
 
-
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
     return (_cblk_awrite(chunk,buf,lba,nblocks,tag,status,flags));
 }
@@ -2748,7 +2771,6 @@ int cblk_awrite(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblock
  *              tag         - Tag associated with this request that
  *                            completed.
  *              flags       - Flags on this request.
- *              harvest     - 0 to skip harvest call, else do harvest
  *
  * RETURNS:
  *              0   for good completion, but requested tag has not yet completed.
@@ -2759,7 +2781,7 @@ int cblk_awrite(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblock
  */
 
 static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
-                                int flags, int harvest)
+                                int flags)
 {
 
     int rc = 0;
@@ -2789,7 +2811,11 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 
     *status = 0;
 
-    if (chunk->flags & CFLSH_CHNK_NO_BG_TD && harvest)
+    if (chunk->flags & CFLSH_CHNK_NO_BG_TD
+#ifndef BLOCK_FILEMODE_ENABLED
+        && (flags & CBLK_ARESULT_NO_HARVEST)==0
+#endif
+       )
     {
         int do_poll=1, lib_flags = CFLASH_ASYNC_OP;
 
@@ -2841,7 +2867,7 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 	     * No commands are active to wait on.
 	     */
  
-	    errno = EINVAL;
+	    errno = ENOENT;
 	    
 	    CFLASH_BLOCK_UNLOCK(chunk->lock);
 	    return -1;
@@ -2878,7 +2904,11 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 		 * but has not yet been seen by a caller.
 		 */
 
-	        *tag = cmdi->index;
+		if (cmdi->flags & CFLSH_CMD_INFO_UTAG) {
+		    *tag = cmdi->user_tag;
+		} else {
+		    *tag = cmdi->index;
+		}
 		break;
 	    }
 	    
@@ -2962,8 +2992,13 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 			     * This is an async command that completed
 			     * but has not yet been seen by a caller.
 			     */
-
-			    *tag = cmdi->index;
+			    
+			    
+			    if (cmdi->flags & CFLSH_CMD_INFO_UTAG) {
+				*tag = cmdi->user_tag;
+			    } else {
+				*tag = cmdi->index;
+			    }
 			    break;
 			}
 	    
@@ -3210,8 +3245,6 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 
 	     rc = cmd->cmdi->transfer_size;
 
-	     errno = 0;
-
 	     if (rc == 0) {
 
 		 /*
@@ -3238,6 +3271,8 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 	    
 	} 
     
+         CBLK_IO_LATENCY(chunk, cmd);
+
 	if (cmd->cmdi->flags & CFLSH_ASYNC_IO) {
 	    
 	    if (cmd->cmdi->flags & CFLSH_MODE_READ) {
@@ -3393,8 +3428,11 @@ int cblk_aresult(chunk_id_t chunk_id,int *tag, uint64_t *status, int flags)
 {
     cflsh_chunk_t *chunk;
 
-
-    errno = 0;
+    if (flags & CBLK_GROUP_MASK)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
     CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, flags = 0x%x, tag = 0x%x",chunk_id,flags,*tag);
 
@@ -3406,8 +3444,6 @@ int cblk_aresult(chunk_id_t chunk_id,int *tag, uint64_t *status, int flags)
 	return -1;
     }
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
-
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
     if (chunk == NULL) { 
@@ -3415,14 +3451,11 @@ int cblk_aresult(chunk_id_t chunk_id,int *tag, uint64_t *status, int flags)
 
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
-	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
     }
 
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
-
-    return (_cblk_aresult(chunk,tag,status,flags,1));
+    return (_cblk_aresult(chunk,tag,status,flags));
 }
   
 
@@ -3470,12 +3503,9 @@ int cblk_listio(chunk_id_t chunk_id,
     int avail_completions;
     int harvest=1;/* send TRUE to aresult for the first cmd in the list only */
 
-    errno = 0;
-
     CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, issue_items = 0x%x, pending_items = 0x%x, wait_items = 0x%x, timeout = 0x%llx,flags = 0x%x",
 			chunk_id,issue_items,pending_items,wait_items,timeout,flags);
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
 
     if (chunk == NULL) { 
@@ -3483,13 +3513,9 @@ int cblk_listio(chunk_id_t chunk_id,
 
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
-	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	errno = EINVAL;
 	return -1;	
     }
-
-
-    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
 
 
@@ -3842,10 +3868,11 @@ int cblk_listio(chunk_id_t chunk_id,
 
 	    } 
 
-	    rc = _cblk_aresult(chunk,&(io->tag),&status,io_flags,harvest);
+	    rc = _cblk_aresult(chunk,&(io->tag),&status,io_flags);
 
 	    if (harvest) {
-		harvest=0;
+	        io_flags |= CBLK_ARESULT_NO_HARVEST;
+	        harvest=0;
 	    }
 
 	    if (rc < 0) {
@@ -4233,9 +4260,12 @@ int cblk_clone_after_fork(chunk_id_t chunk_id, int mode, int flags)
     int rc = 0;
     cflsh_chunk_t *chunk;
 
-    errno = 0;
 
-    
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_clone_after_fork(chunk_id, mode, flags);
+    }
 
     CBLK_TRACE_LOG_FILE(5,"orig_chunk_id = %d mode = 0x%x, flags = 0x%x",
 			chunk_id,mode,flags);
@@ -4247,8 +4277,9 @@ int cblk_clone_after_fork(chunk_id_t chunk_id, int mode, int flags)
 	return -1;
     }
 
-    CFLASH_BLOCK_WR_RWLOCK(cflsh_blk.global_lock);
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
+
+    CFLASH_BLOCK_WR_RWLOCK(cflsh_blk.global_lock);
 
     if (chunk == NULL) { 
 
@@ -4276,31 +4307,7 @@ int cblk_clone_after_fork(chunk_id_t chunk_id, int mode, int flags)
 
     CFLASH_BLOCK_LOCK(chunk->lock);
 
-    /*
-     * Since we forked the child, get its new PID
-     * and clear its old process name if known.
-     */
 
-    cflsh_blk.caller_pid = getpid();
-
-
-    if (cflsh_blk.process_name) {
-
-	free(cflsh_blk.process_name);
-    }
-    
-
-
-    /*
-     * Since we forked the child, if we have tracing turned
-     * on for a trace file per process, then we need to
-     * open the new file for this child's PID.  The routine
-     * cblk_setup_trace_files will handle the situation
-     * where multiple chunks are cloned and using the same
-     * new trace file.
-     */
-
-    cblk_setup_trace_files(TRUE);
 
 
     if (chunk->num_active_cmds > 0) {
@@ -4445,9 +4452,8 @@ int cblk_clone_after_fork(chunk_id_t chunk_id, int mode, int flags)
 	 */
 
 
-	// TODO: ?? this assumes rrq size matches this chunk's num_cmds
-	bzero((void *)chunk->path[chunk->cur_path]->afu->p_hrrq_start ,
-	      (sizeof(*(chunk->path[chunk->cur_path]->afu->p_hrrq_start)) * chunk->path[chunk->cur_path]->afu->num_rrqs));
+
+	bzero((void *)chunk->path[chunk->cur_path]->afu->p_hrrq_start ,chunk->path[chunk->cur_path]->afu->size_rrq);
 
 	chunk->path[chunk->cur_path]->afu->p_hrrq_curr = chunk->path[chunk->cur_path]->afu->p_hrrq_start;
 
@@ -4464,6 +4470,20 @@ int cblk_clone_after_fork(chunk_id_t chunk_id, int mode, int flags)
 	chunk->path[chunk->cur_path]->afu->num_issued_cmds = 0;
 
 	chunk->cmd_curr = chunk->cmd_start;
+
+	if (chunk->path[chunk->cur_path]->afu->flags & CFLSH_AFU_SQ) {
+
+	    /*
+	     * If this AFU is using Submission Queues (SQ)
+	     * then, reinitialize the SQ.
+	     */ 
+	    bzero((void *)chunk->path[chunk->cur_path]->afu->p_sq_start ,chunk->path[chunk->cur_path]->afu->size_sq);
+
+	    chunk->path[chunk->cur_path]->afu->p_sq_curr = chunk->path[chunk->cur_path]->afu->p_sq_start;
+
+
+	}
+
 
     }
 
@@ -4499,10 +4519,12 @@ int cblk_get_stats(chunk_id_t chunk_id, chunk_stats_t *stats, int flags)
     int rc = 0;
     cflsh_chunk_t *chunk;
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_get_stats(chunk_id, stats, flags);
+    }
 
-    
-    errno = 0;
-    
     CBLK_TRACE_LOG_FILE(6,"flags = 0x%x",flags);
 			
 
@@ -4522,8 +4544,9 @@ int cblk_get_stats(chunk_id_t chunk_id, chunk_stats_t *stats, int flags)
 	return -1;
     }
 
-    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
     chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
+
+    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
 
     if (chunk == NULL) { 
 

@@ -1,0 +1,167 @@
+#! /usr/bin/perl
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/cflash_perfcheck.pl $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+##
+
+use strict;
+use warnings;
+use Fcntl;
+use Fcntl ':seek';
+use Getopt::Long;
+use Time::HiRes qw(usleep);
+
+my @devs;
+my $devstr="";
+my $prthelp="";
+my $all;
+my $verbose="";
+my $out_vrd;
+my $out_vwr;
+my $out_prd;
+my $out_pwr;
+
+#-------------------------------------------------------------------------------
+# print usage
+#-------------------------------------------------------------------------------
+sub usage()
+{
+  print "\n";
+  print "Usage: [-d /dev/sgX:/dev/sgY] [-a]                        \n";
+  print "    -d             : device(s) to use                     \n";
+  print "    -a             : run All checks (ioppt, multi-process)\n";
+  print "    -h or --help   : Help - Print this message            \n";
+  exit 0;
+}
+
+#-------------------------------------------------------------------------------
+# Main
+#-------------------------------------------------------------------------------
+if (@ARGV==0) {usage();}
+
+if (! GetOptions ("d=s"        => \$devstr,
+                  "h|help!"    => \$prthelp,
+                  "a"          => \$all,
+                  "v"          => \$verbose,
+                  ))
+{
+  usage();
+}
+if ($ARGV[0])
+{
+  print "\nUnknown Command Line Options:\n";
+  foreach(@ARGV)
+  {
+    print "   $_\n";
+  }
+  print "\n";
+  usage();
+}
+if ($prthelp) {usage();}
+
+$ENV{'PATH'}="$ENV{'PATH'}:/opt/ibm/capikv/bin:/opt/ibm/capikv/test:/opt/ibm/capikv/afu";
+
+print "latency       vlun    plun\n";
+$out_vrd=`blockio -d $devstr -s8 -q1       |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+$out_vwr=`blockio -d $devstr -s8 -q1 -r0   |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+$out_prd=`blockio -d $devstr -s8 -q1 -p    |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+$out_pwr=`blockio -d $devstr -s8 -q1 -p -r0|awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+printf "  rd       %7d %7d\n", $out_vrd, $out_prd;
+printf "  wr       %7d %7d\n", $out_vwr, $out_pwr;
+
+print "1P QD1\n";
+$out_vrd=`blockio -d $devstr -s8 -q1       |awk -Fiops: \'{print \$2}\'`;
+$out_vwr=`blockio -d $devstr -s8 -q1 -r0   |awk -Fiops: \'{print \$2}\'`;
+$out_prd=`blockio -d $devstr -s8 -q1 -p    |awk -Fiops: \'{print \$2}\'`;
+$out_pwr=`blockio -d $devstr -s8 -q1 -p -r0|awk -Fiops: \'{print \$2}\'`;
+printf "  rd       %7d %7d\n", $out_vrd, $out_prd;
+printf "  wr       %7d %7d\n", $out_vwr, $out_pwr;
+
+print "1P QD128\n";
+$out_vrd=`blockio -d $devstr -s8 -q128       |awk -Fiops: \'{print \$2}\'`;
+$out_vwr=`blockio -d $devstr -s8 -q128 -r0   |awk -Fiops: \'{print \$2}\'`;
+$out_prd=`blockio -d $devstr -s8 -q128 -p    |awk -Fiops: \'{print \$2}\'`;
+$out_pwr=`blockio -d $devstr -s8 -q128 -p -r0|awk -Fiops: \'{print \$2}\'`;
+printf "  rd       %7d %7d\n", $out_vrd, $out_prd;
+printf "  wr       %7d %7d\n", $out_vwr, $out_pwr;
+
+print "1P QD32 N16\n";
+$out_prd=`blockio -d $devstr -s8 -q32 -p -n16    |awk -F"4k-iops:" \'{print \$2}\'`;
+$out_pwr=`blockio -d $devstr -s8 -q32 -p -n16 -r0|awk -F"4k-iops:" \'{print \$2}\'`;
+printf "  rd               %7d\n", $out_prd;
+printf "  wr               %7d\n", $out_pwr;
+
+if ($all)
+{
+  print "\n";
+  print "100% reads 1P QD1    ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q1\"   -n 1`;
+  print "100% reads 1P QD8    ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q8\"   -n 1`;
+  print "100% reads 1P QD16   ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q16\"  -n 1`;
+  print "100% reads 1P QD32   ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q32\"  -n 1`;
+  print "100% reads 1P QD128  ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q128\" -n 1`;
+  print "\n";
+  print "70%  reads 1P QD1    ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q1   -r70\"   -n 1`;
+  print "70%  reads 1P QD8    ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q8   -r70\"   -n 1`;
+  print "70%  reads 1P QD16   ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q16  -r70\"  -n 1`;
+  print "70%  reads 1P QD32   ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q32  -r70\"  -n 1`;
+  print "70%  reads 1P QD128  ";
+  print `ioppt.pl -c \"blockio -d $devstr -s5 -q128 -r70\" -n 1`;
+  print "\n";
+
+  print "400P QD1  blockio vlun  100% reads     ";
+  print `ioppt.pl -c \"blockio -d $devstr -s15 -q1\" -n 400`;
+
+  print "400P QD1  blockio vlun  100% writes    ";
+  print `ioppt.pl -c \"blockio -d $devstr -s15 -q1 -r0\" -n 400`;
+
+  print "100P QD64 blockio vlun  100% reads     ";
+  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64\" -n 100`;
+
+  print "100P QD64 blockio vlun  100% writes    ";
+  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -r0\" -n 100`;
+
+  print "100P QD64 blockio plun  100% reads     ";
+  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -p\" -n 100`;
+
+  print "100P QD64 blockio plun  100% writes    ";
+  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -r0 -p\" -n 100`;
+
+  print "100P QD64 kv_benchmark  100% reads     ";
+  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s15 -q64\" -n 100`;
+
+  print "100P QD64 kv_benchmark  75%  reads     ";
+  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s15 -q64 -r75\" -n 100`;
+
+  print "100P QD64 blockio vlun  75%  reads     ";
+  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -r75\" -n 100`;
+}

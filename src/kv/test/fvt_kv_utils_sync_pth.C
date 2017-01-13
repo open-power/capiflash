@@ -195,7 +195,25 @@ void Sync_pth::run_multi_ctxt(uint32_t num_ctxt,
     uint32_t ops = 0;
     uint32_t ios = 0;
 
-    run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN, secs, &ops, &ios);
+    run_multi_ctxt(num_ctxt, num_pth, vlen, LEN, secs, &ops, &ios);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+void Sync_pth::run_multi_ctxt(uint32_t num_ctxt,
+                              uint32_t num_pth,
+                              uint32_t nasync,
+                              uint32_t basync,
+                              uint32_t vlen,
+                              uint32_t LEN,
+                              uint32_t secs)
+{
+    uint32_t ops = 0;
+    uint32_t ios = 0;
+
+    run_multi_ctxt(num_ctxt,num_pth,1,nasync,basync,vlen,LEN, secs, &ops, &ios);
 }
 
 /**
@@ -210,7 +228,7 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
                               uint32_t *p_ops,
                               uint32_t *p_ios)
 {
-    run_multi_ctxt(num_ctxt, num_pth, 1, vlen, LEN, secs, p_ops, p_ios);
+    run_multi_ctxt(num_ctxt, num_pth, 1, 512, KV_8K, vlen,LEN,secs,p_ops,p_ios);
 }
 
 /**
@@ -220,6 +238,8 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
 void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
                               uint32_t  num_pth,
                               uint32_t  npool,
+                              uint32_t  nasync,
+                              uint32_t  basync,
                               uint32_t  vlen,
                               uint32_t  LEN,
                               uint32_t  secs,
@@ -259,8 +279,8 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
                                         4096,
                                         1048576,
                                         npool,
-                                        256,
-                                        8*1024,
+                                        nasync,
+                                        basync,
                                         ARK_KV_VIRTUAL_LUN));
         ASSERT_TRUE(NULL != ark[ctxt_i]);
     }

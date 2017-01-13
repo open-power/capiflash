@@ -709,7 +709,13 @@ int mc_test_chunk_regress(int cmd)
     int i;
     //pid_t pid1;
     int max_p= MAX_OPENS;
-
+#ifndef _AIX
+    /* By default max_p will be set to BML max user context value */
+    if ( host_type == CFLASH_HOST_PHYP )
+    {
+        max_p = MAX_OPENS_PVM ;
+    }
+#endif
     pid = getpid();
     MAX_RES_HANDLE=get_max_res_hndl_by_capacity(cflash_path);
     if (MAX_RES_HANDLE <= 0)
@@ -931,8 +937,8 @@ int test_mc_good_error_afu_dev()
     cfdisk = get_flash_disks(fldisks, FDISKS_ALL);
     if (cfdisk < 2)
     {
-        fprintf(stderr, "Failed,need 2 flash disks \n");
-        return -1;
+        TESTCASE_SKIP("Failed,need 2 flash disks ");
+        return 0;
     }
 
     char *str1 = getenv("LONG_RUN");

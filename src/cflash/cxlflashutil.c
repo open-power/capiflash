@@ -151,7 +151,13 @@ error_t parse_opt (int key,
             }
             else
             {
-                TRACEV("Got a valid WWID\n");
+                int i;
+                TRACEV("Got a valid WWID: ");
+                for(i = 0; i<DK_CXLFLASH_MANAGE_LUN_WWID_LEN; i++)
+                {
+                    TRACEV("%02x", g_args.wwid[i]);
+                }
+                TRACEV("\n");
                 g_args.wwid_valid = true;
             }
             break;
@@ -236,7 +242,6 @@ int main (int argc, char *argv[])
     
     argp_parse (&argp, argc, argv, ARGP_IN_ORDER, 0, &g_args);
     
-    
     do
     {
         //if a LUN was specified, we need to make up a single-item LUN table
@@ -246,7 +251,7 @@ int main (int argc, char *argv[])
         //LUN to SIO mode or LEGACY.
         if(g_args.wwid_valid)
         {
-            TRACEV("Setting LUN %s to mode %d\n",g_args.wwid, g_args.target_mode);
+            TRACEV("Setting LUN to mode %d\n", g_args.target_mode);
             //make a single LUN table entry
             luntable_sz=1;
             memcpy(luntable[0].lun, g_args.wwid, DK_CXLFLASH_MANAGE_LUN_WWID_LEN);
@@ -324,24 +329,27 @@ int main (int argc, char *argv[])
                     }
                 }
             }
-            
-            
-            
-            bool l_success = cxlf_set_mode(g_args.target_device, g_args.target_mode, device_entry.lun);
-            if(!l_success)
+
+            errno=0;
+            int sm_rc = cxlf_set_mode(g_args.target_device, g_args.target_mode, device_entry.lun);
+            if (sm_rc == EBUSY)
             {
-                TRACED("ERROR: Device driver call returned an error.\n");
+                TRACED("EBUSY: cannot exclusively open %s.\n", g_args.target_device);
+            }
+            else if (sm_rc == false)
+            {
+                TRACED("ERROR: Device driver call failed, errno:%d.\n", errno);
                 rc = EIO; //arbitrary non-zero RC
                 break;
             }
             
         }
         
-        TRACED("SUCCESS\n");
+        if (rc==0) {TRACED("SUCCESS\n");}
         rc = 0;
     } while(0);
     
-    
+
     return(rc);
 }
 

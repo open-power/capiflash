@@ -1,0 +1,193 @@
+#! /usr/bin/perl
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/cflash_stick.pl $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+##
+use strict;
+use warnings;
+use Fcntl;
+use Fcntl ':seek';
+use Getopt::Long;
+
+#-------------------------------------------------------------------------------
+# Variables
+#-------------------------------------------------------------------------------
+my $list="0";
+my $filename="";
+my $target="";
+my $id="2";
+my $prthelp=0;
+my $verbose;
+my $v="";
+
+sub usage()
+{
+  print "\n";
+  print "Usage: cflash_stick.pl [-l] [-f fw_file] [-t <target>]        \n";
+  print "    -l             : List capi sticks available for download  \n";
+  print "    -f             : Firmware file                            \n";
+  print "    -t or --target : Target device to flash                   \n";
+  print "    -h or --help   : Help - Print this message                \n";
+  print "\n  ex: cflash_stick.pl -f fw -t /dev/sgX                   \n\n";
+  exit 0;
+}
+
+#-------------------------------------------------------------------------------
+# Parse Options
+#-------------------------------------------------------------------------------
+if ($#ARGV<0) {usage();}
+
+if (! GetOptions ("f=s"        => \$filename,
+                  "l"          => \$list,
+                  "t|target=s" => \$target,
+                  "id=s"       => \$id,
+                  "v"          => \$verbose,
+                  "h|help!"    => \$prthelp
+                  ))
+{
+  usage();
+}
+if ($ARGV[0])
+{
+  print "\nUnknown Command Line Options:\n";
+  foreach(@ARGV)
+  {
+    print "   $_\n";
+  }
+  print "\n";
+  usage();
+}
+if ($prthelp) {usage();}
+
+#check sudo permissions
+if (`id -u` != 0) {print "Run with sudo permissions\n"; exit 0;}
+
+#-------------------------------------------------------------------------------
+# Make stdout autoflush
+#-------------------------------------------------------------------------------
+select(STDOUT);
+$| = 1;
+
+#-------------------------------------------------------------------------------
+# list Devices
+#-------------------------------------------------------------------------------
+my @cards = `lspci |grep 0601`;
+my $cmd="";
+my @devices;
+my $stick;
+
+for my $cardN (@cards)
+{
+  my @Acard=split / /, $cardN;
+  my $card=$Acard[0];
+  chomp $card;
+  my $afustr=`ls -d /sys/devices/*/*/$Acard[0]/cxl/card*/afu*.0/afu*m 2>/dev/null`;
+  my @afu=split /\//, $afustr;
+  my $afu=pop @afu;
+  if (length $afu) {chomp $afu;}
+  else             {$afu="";}
+  $list && print "\nFound $Acard[5] $Acard[0] $afu\n";
+  my $cardstr=`ls -d /sys/devices/*/*/$Acard[0]/cxl/card* 2>/dev/null`;
+  chomp $cardstr;
+  my $cardN=substr $cardstr,-1;
+
+  for (my $i=0; $i<2; $i++)
+  {
+    my $Astick=`ls -d /sys/devices/*/*/$Acard[0]/*/*/host*/target*:$i:*/*:*:*:*/scsi_generic/* 2>/dev/null`;
+    if ($? != 0) {next;}
+    my @sdev=split /\//, $Astick;
+    my $dev=$sdev[12];
+    chomp $dev;
+    $list && print " /dev/$dev\n";
+    $list && system("/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null | grep NVMe$i");
+  }
+}
+
+#-------------------------------------------------------------------------------
+# exit if (-l) list option specified
+#-------------------------------------------------------------------------------
+$list && exit 0;
+
+#ensure sg_write_buffer is available
+my $ubuntu=0;
+my $redhat=0;
+
+#determine distro
+if ( `cat /etc/redhat-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}
+if ( `lsb_release -a 2>/dev/null` =~ "Ubuntu" ) {$ubuntu=1;}
+
+#ensure sg_write_buffer is available
+if ( $redhat ) {$cmd="rpm -qa | grep -v udev|grep -v libs | grep sg3_utils >/dev/null "; }
+if ( $ubuntu ) {$cmd="dpkg -l|grep -v udev|grep sg3-utils >/dev/null ";}
+
+system($cmd);
+if ($? != 0) {print "ERROR: package sg3-utils is not installed\n"; exit -1;}
+
+#-------------------------------------------------------------------------------
+# do the sg_write_buffer
+#-------------------------------------------------------------------------------
+if (! -e $filename)
+{
+  if (! ($filename =~ /images/))
+  {
+    if (-e "/opt/ibm/capikv/afu/images/$filename")
+    {
+      $filename = "/opt/ibm/capikv/afu/images/$filename";
+    }
+  }
+}
+if (! -e $filename) {die "ERROR: bad filename: $filename\n";}
+if (! -e $target)   {die "ERROR: bad target: $target\n";}
+my $flen= -s $filename;
+if ($flen==0) {die "ERROR: zero length file: $filename\n";}
+
+if ($verbose) {$v=" -v ";}
+
+# write fw
+my $rc=0;
+my $_64k=64*1024;
+my $wlen=0;
+my $off=0;
+my $tot=0;
+print "sg_write_buffer $flen bytes\n";
+do
+{
+  if ($tot+$_64k > $flen) {$wlen=$flen-$tot;}
+  else                    {$wlen=$_64k;}
+  $tot+=$wlen;
+  $cmd="sg_write_buffer -l $wlen -s $off -o $off -I $filename -m dmc_offs_defer -i $id $v $target";
+  system($cmd);
+  $rc=$?;
+  ($rc != 0) && die " write failure, rc=$rc\n";
+  $off+=$wlen;
+} while ($tot<$flen);
+
+# activate firmware
+$cmd="sg_write_buffer -m activate_mc -i $id $v $target";
+print "$cmd\n";
+system($cmd);
+$rc=$?;
+($rc != 0) && die " activate failure, rc=$rc\n";
+exit 0;
+

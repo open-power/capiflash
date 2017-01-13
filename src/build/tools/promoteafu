@@ -1,0 +1,80 @@
+#!/bin/bash -e
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/tools/promoteafu $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+set -x
+#name of our new AFU
+NEWAFU=$1
+#source directory
+AFURELDIR=/gsa/ausgsa/projects/s/surelock/images
+#destination dir
+RESOURCES=$SURELOCKROOT/src/build/install/resources
+#adapter flash script from installer
+FLASH_ADAPTER_SCRIPT=$RESOURCES/flash_all_adapters
+
+if [[ -z $SURELOCKROOT ]]; then echo "source env.bash first"; exit; fi
+
+cd $SURELOCKROOT
+
+#print usage
+if [ -z "$AFURELDIR/$NEWAFU" ]; then
+    echo "$0 afuname.ext"
+    echo "Usage: invoke this program with an AFU name. It will be copied from the afu release directory and committed into surelock."
+    exit 1
+fi
+
+#delete any old ones
+# Check image for Surelock card
+if [[ -f src/build/install/corsa*.bin && $1 =~ bin ]]; then
+    echo "removing current image file corsa*.bin"
+    git rm src/build/install/corsa*.bin
+
+# Check for image for Surelock Capi card with PAPR header
+elif [[ -f src/build/install/1410f004*.* && $1 =~ 1410f004 ]]; then
+    echo "removing current image file 1410f004*.* present"
+    git rm src/build/install/1410f0041410f004.*
+
+# Check image for NVMe card
+elif [[ -f src/build/install/14100106*.* && $1 =~ 14100106 ]]; then
+    echo "removing current image file 14100106*.* present"
+    git rm src/build/install/14100106*
+fi
+
+
+#make sure AFU has group-readable permissions and world-readable permissions
+#this is necessary because we don't always force a user to be gsa-logged-in
+chmod 755 $AFURELDIR/$NEWAFU
+
+#create the new sym link
+mkdir -p $RESOURCES
+ln -s $AFURELDIR/$NEWAFU $RESOURCES/$NEWAFU
+
+
+#add it to the flash script
+sed -i "s/^CORSA_IMAGE=.*/CORSA_IMAGE=$NEWAFU/" $FLASH_ADAPTER_SCRIPT
+
+#make a git commit with the necessary changes
+git add $RESOURCES/$NEWAFU
+git add $FLASH_ADAPTER_SCRIPT
+git commit -m "Promote new AFU - $NEWAFU"

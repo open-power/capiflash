@@ -36,9 +36,9 @@ ALLOW_WARNINGS = yes
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
 LIBPATHS = -L${ROOTPATH}/img
-LINKLIBS = -lcflsh_block 
+LINKLIBS = -lcflsh_block -lm
 
-BTESTS=blockio blocklistio blockplistio
+BTESTS=blockio blocklistio blockplistio blocksio blockr0io blockr0sio
 BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
 
 # AIX only
@@ -55,8 +55,7 @@ LINKLIBS+=-lpthread -ludev
 endif
 
 VPATH += \
- ${ROOTPATH}/src/common \
- ${ROOTPATH}/src/kv
+ ${ROOTPATH}/src/common
 
 
 GTESTS       = run_block_fvt
@@ -65,15 +64,14 @@ GTESTS64     = $(addsuffix 64, $(GTESTS))
 GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
 
 run_block_fvt_OFILES = fvt_block.o blk_api_tst.o cflash_tools_user.o
-blockio_OFILES       = ut.o
 
 DEPS=$(addprefix $(TESTDIR)/, $(run_block_fvt_OFILES:.o=.dep)) 
 
 CFLAGS += \
-   -g -D__FVT__\
+   -g -D__FVT__ -Wno-unused-result \
    -I$(ROOTPATH)/src/block \
    -I$(ROOTPATH)/src/include \
-   -I$(ROOTPATH)/src/test/framework/googletest/googletest/include 
+   -I$(ROOTPATH)/${GTESTINC} \
 
 CXXFLAGS+=$(CFLAGS)
 

@@ -23,42 +23,211 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-set -e
-DESTDIR=/tmp/cxlffdc
-TARBALL=cxlffdc.tgz
+
+DATADIR=/var/log/cflash/cxlffdc
+PREVDIR=/var/log/cflash/prev
+MISCDIR=/var/log/cflash/misc
+TARBALL=/var/log/cflash/cxlffdc."$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)".tgz
 AFUDIR=/opt/ibm/capikv/afu
 
-die()
+##################
+#Determine distro to differentiate dpkg | rpm
+##################
+if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
+if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+
+
+##################
+# wait 5 seconds for the pid to finish, then kill it if still running
+##################
+check_pid()
 {
-    echo "$1" 1>&2;
-    exit $2;
+  local cnt=0
+  while [[ $cnt -lt 5 ]]
+  do
+    sleep 1
+    if [[ ! $(ps -p $1) =~ $1 ]]; then break; fi
+    cnt=$((cnt+1))
+    echo "cxlffdc: waiting for slow process $1"
+  done
+  if [[ $(ps -p $1) =~ $1 ]]
+  then
+    kill -9 $1
+  fi
 }
 
+##################
+# print debug help
+##################
+if [[ $1 =~ help ]]
+then
+  echo "export CFLSH_BLK_TRC_VERBOSITY=4"
+  echo "export CFLSH_BLK_TRC_SYSLOG=off"
+  echo "export KV_TRC_VERBOSITY=2"
+  echo ""
+  echo "echo \"module cxlflash +p\" > /sys/kernel/debug/dynamic_debug/control"
+  if [[ $redhat ]]
+  then
+    echo "uncomment these two lines in /etc/rsyslog.conf"
+    echo "kern.*  /var/log/kern.log"
+    echo "\$ModLoad imklog"
+    echo ""
+    echo "Restart the service, run \"service rsyslog restart\""
+    echo "run \"journalctl\" to extract debug traces"
+  fi
+  exit 0
+fi
+
+##################
+# main
+##################
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root" 1>&2
+   echo "This script must be run with sudo" 1>&2
    exit 1
 fi
 
-mkdir $DESTDIR || die "ERROR: Delete previous FFDC at $DESTDIR and try again." 1
-pushd $DESTDIR
+ret=$(pwd)
+if [[ -e $DATADIR ]]; then rm -rf $DATADIR; fi
+if [[ -e $PREVDIR ]]; then rm -rf $PREVDIR; fi
+mkdir $DATADIR
+cd $DATADIR
+
 cardnums=`ls -d /sys/class/cxl/card* | awk -F"/sys/class/cxl/card" '{ print $2 }'`
-for i in $cardnums; do
-	mkdir card$i;
-	$AFUDIR/psl_trace_dump card$i $i || echo "WARNING: Error occcurred dumping card$i"; #psl_trace_dump needs to be on our path...
+for i in $cardnums
+do
+  #psl_trace_dump needs to be on our path
+  mkdir card$i;
+  if [[ $VM ]]
+  then
+    printf "\n ERROR:  psl_trace_dump on VM Not Supported! \n\n"
+  else
+    echo "Dumping PSL data for card$i"
+    $AFUDIR/psl_trace_dump card$i $i >/dev/null
+  fi
 done
+
+AFUs=`ls /dev/cxl/afu*m`
+for afu_m in $AFUs
+do
+  $AFUDIR/cxl_afu_dump $afu_m > $(basename $afu_m).txt
+done
+
+lspci -d 1014:0601 -vv | egrep "0601|LnkSta:" >> link_status.txt
+echo ""                                       >> link_status.txt
+
+for gt in $(lspci|grep 0601|awk '{print $1}')
+do
+  card=$(ls -d /sys/devices/*/*/$gt/cxl/card* 2>/dev/null)
+  cardN=${card: -1}
+  echo "afu$cardN:"                             >> cxl_afu_status.txt
+  $AFUDIR/cxl_afu_status -d afu$cardN.0m        >> cxl_afu_status.txt
+  printf "\n"                                   >> cxl_afu_status.txt
+done
+
+ps_fields="user,group,ruser,rgroup,pid,tid,ppid,pgid,uid,tgid,nlwp,sgi_p,nice,pri,\
+etime,pcpu,pmem,lim,rss,s,size,sz,vsz,trs,stat,f,stime,time,tty,comm,args"
+
+machine_info                         >  $DATADIR/machine_info
+ulimit -a                            >  $DATADIR/ulimits
+top -n 1 -b                          >  $DATADIR/top
+ps -Tdaeo $ps_fields                 >  $DATADIR/ps
+env                                  >  $DATADIR/env
+uptime                               >  $DATADIR/uptime
+date                                 >> $DATADIR/uptime
+lspci -vvv                           >  $DATADIR/lspci_vvv
+if [[ $ubuntu ]]
+then
+  lsb_release -a                       >  $DATADIR/codelevels 2>/dev/null
+elif [[ $redhat ]]
+then
+  cat /etc/*-release | egrep "PRETTY_NAME|^NAME|VERSION_ID|^VERSION=" >  $DATADIR/codelevels 2>/dev/null
+fi
+uname -a                             >> $DATADIR/codelevels
+if [[ $ubuntu ]]
+then
+  dpkg -l|egrep "cflash|cflashimage"   >> $DATADIR/codelevels
+elif [[ $redhat ]]
+then
+  rpm -qa|egrep "cflash|cflashimage"   >> $DATADIR/codelevels
+fi
+
+/opt/ibm/capikv/afu/capi_flash.pl -l >> $DATADIR/codelevels
+/opt/ibm/capikv/bin/cflash_version   >> $DATADIR/codelevels
+
+/opt/ibm/capikv/afu/cflash_temp.pl   >> $DATADIR/cflash_temp.txt&
+check_pid $!
+/opt/ibm/capikv/afu/cflash_wear.pl   >> $DATADIR/cflash_wear.txt&
+check_pid $!
+/opt/ibm/capikv/bin/cxlfstatus       >  $DATADIR/cxlfstatus&
+check_pid $!
+
+if [[ ! -z $(ls -A $MISCDIR) ]]
+then
+  mkdir $DATADIR/misc
+  cp $MISCDIR/* $DATADIR/misc
+  truncate --size=0 $MISCDIR/*
+fi
 
 dmesg > dmesg.txt
-cp /var/log/syslog $DESTDIR
-cp /sys/firmware/opal/msglog $DESTDIR/opal_msglog
+if [[ -e /var/log/syslog ]]
+then
+  cp /var/log/syslog $DATADIR
+  truncate --size=0 /var/log/syslog
+fi
 
-mcontexts=`ls /dev/cxl/afu*m`
-for mcontext in $mcontexts; do
-	$AFUDIR/cxl_afu_dump $mcontext > $(basename $mcontext).txt
+if [[ $redhat ]]
+then
+  journalctl -n 50000 > /$DATADIR/syslog
+fi
+
+#redhat version of syslog
+if [[ -e /var/log/messages ]]
+then
+  cp /var/log/messages $DATADIR
+  truncate --size=0   /var/log/messages
+fi
+
+if [[ -e /sys/firmware/opal/msglog ]]
+then
+  cp /sys/firmware/opal/msglog $DATADIR/opal_msglog
+fi
+
+for file in $(ls -1 /var/log/kern.log)
+do
+  lines=$(wc -l $file | awk '{print $1}')
+  if [[ $lines -gt 0 ]]
+  then
+    tail -1000000 $file  > $DATADIR/${file##*/}
+    truncate --size=0 $file
+  fi
 done
 
-popd
-tar -cvzf $TARBALL $DESTDIR
-rm -rf $DESTDIR
+for file in $(ls -1 /tmp/*.cflash_block_trc)
+do
+  lines=$(wc -l $file | awk '{print $1}')
+  if [[ $lines -gt 0 ]]
+  then
+    tail -1000000 $file  > $DATADIR/${file##*/}
+    truncate --size=0 $file
+  fi
+done
+
+for file in $(ls -1 /tmp/*.arkdb.kv.log)
+do
+  lines=$(wc -l $file | awk '{print $1}')
+  if [[ $lines -gt 0 ]]
+  then
+    tail -1000000 $file  > $DATADIR/${file##*/}
+    truncate --size=0 $file
+  fi
+done
+
+cd ..
+tar -cvzf $TARBALL cxlffdc
+mv $DATADIR $PREVDIR
+
 echo "INFO: FFDC Collected below."
 ls -l $TARBALL
 
+cd $ret

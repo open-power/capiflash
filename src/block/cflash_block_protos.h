@@ -36,7 +36,9 @@ void *cblk_async_recv_thread(void *data);
 #ifdef _REMOVE
 void  cblk_wait_for_read_alarm(int signum, siginfo_t *siginfo, void *uctx);
 #endif /* _REMOVE */
+void cblk_get_host_type(void);
 void  cblk_chunk_sigsev_handler (int signum, siginfo_t *siginfo, void *uctx);
+void cblk_reopen_after_fork(cflsh_chunk_t *chunk, int flags);
 void cblk_prepare_fork (void);
 void  cblk_parent_post_fork (void);
 void  cblk_child_post_fork (void);
@@ -46,6 +48,10 @@ void cblk_chunk_flush_cache (cflsh_chunk_t *chunk);
 void  cblk_init_mc_interface(void);
 void  cblk_cleanup_mc_interface(void);
 char *cblk_find_parent_dev(char *device_name);
+char *cblk_get_udid(char *device_name);
+int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int mode, 
+					dev64_t adap_devno,  char *path_dev_name, int fd, int arch_type,
+					int *cleanup_depth, int assign_path);
 int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup_depth);
 int  cblk_chunk_get_mc_device_resources(cflsh_chunk_t *chunk, int *cleanup_depth);
 void  cblk_chunk_free_mc_device_resources(cflsh_chunk_t *chunk);
@@ -54,7 +60,7 @@ void  cblk_chunk_detach (cflsh_chunk_t *chunk,int force);
 void cblk_setup_trace_files(int new_process);
 int cblk_valid_endianess(void);
 
-cflsh_path_t *cblk_get_path(cflsh_chunk_t *chunk, dev64_t adap_devno,cflsh_block_chunk_type_t type,int num_cmds, 
+cflsh_path_t *cblk_get_path(cflsh_chunk_t *chunk, dev64_t adap_devno,char *path_name,cflsh_block_chunk_type_t type,int num_cmds, 
 			    cflsh_afu_in_use_t *in_use, int share);
 int cblk_update_path_type(cflsh_chunk_t *chunk, cflsh_path_t *path, cflsh_block_chunk_type_t type);
 void cblk_release_path(cflsh_chunk_t *chunk, cflsh_path_t *path);
@@ -92,7 +98,8 @@ void  cblk_dump_debug_data(const char *reason, const char *reason_filename,const
 			   int, const char *reason_date);
 int cblk_setup_sigusr1_dump(void);
 int cblk_setup_sigsev_dump(void);
-
+int cblk_query_ue(void *buf, size_t len);
+void cblk_check_cmd_data_buf_for_ue(cflsh_chunk_t *chunk,cflsh_cmd_mgm_t *cmd);
 void cblk_clear_poison_bits(void *buf, size_t len);
 void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_paths);
 
@@ -105,7 +112,7 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 				       size_t *transfer_size, struct pollfd poll_list[]);
 int  cblk_chunk_set_mc_size(cflsh_chunk_t *chunk, size_t nblocks);
 int  cblk_mc_clone(cflsh_chunk_t *chunk, int mode,int flags);
-void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index);
+cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index);
 void cblk_notify_mc_err(cflsh_chunk_t *chunk,  int path_index,int error_num,
 			uint64_t out_rc,cflash_block_notify_reason_t reason, 
 			  cflsh_cmd_mgm_t *cmd);
@@ -115,5 +122,48 @@ int cblk_verify_mc_lun(cflsh_chunk_t *chunk,  cflash_block_notify_reason_t reaso
 
 /* cflash_block_sisl.c protos */
 int cblk_init_sisl_fcn_ptrs(cflsh_path_t *path);
+
+
+
+/* cflash_block_raid0.c protos */
+
+chunk_r0_id_t cblk_r0_open(const char    *pdevs,
+                           int             max_num_requests,
+                           int             mode,
+                           chunk_ext_arg_t ext,
+                           int             flags);
+int cblk_r0_close(chunk_r0_id_t id, int flags);
+int cblk_r0_get_stats(chunk_r0_id_t id, chunk_stats_t *stats, int flags);
+int cblk_r0_get_lun_size(chunk_r0_id_t id, size_t *nblocks);
+int cblk_r0_get_size(chunk_r0_id_t id, size_t *nblocks);
+int cblk_r0_set_size(chunk_r0_id_t id, size_t nblocks);
+int cblk_r0_read(chunk_r0_id_t  id,
+                 void           *buf,
+                 cflash_offset_t lba,
+                 size_t          nblocks,
+                 int             flags);
+int cblk_r0_write(chunk_r0_id_t  id,
+                  void           *buf,
+                  cflash_offset_t lba,
+                  size_t          nblocks,
+                  int             flags);
+int cblk_r0_aread(chunk_r0_id_t     id,
+                  void              *buf,
+                  cflash_offset_t    lba,
+                  size_t             nblocks,
+                  cflsh_cg_tag_t    *tag,
+                  cblk_arw_status_t *status,
+                  int                 flags);
+int cblk_r0_awrite(chunk_r0_id_t     id,
+                   void              *buf,
+                   cflash_offset_t    lba,
+                   size_t             nblocks,
+                   cflsh_cg_tag_t    *tag,
+                   cblk_arw_status_t *status,
+                   int                flags);
+int cblk_r0_aresult(chunk_r0_id_t  id,
+                    cflsh_cg_tag_t *tag,
+                    uint64_t       *status,
+                    int             flags);
 
 #endif /* _H_CFLASH_BLOCK_PROTO */

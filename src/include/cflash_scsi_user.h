@@ -271,6 +271,58 @@ struct  inqry_data {
 };
 
 
+/* 
+ *                    Standard SCSI INQUIRY page 83 data format
+ * +=====-=======-=======-=======-=======-=======-=======-=======-=======+
+ * |  Bit|   7   |   6   |   5   |   4   |   3   |   2   |   1   |   0   |
+ * |Byte |       |       |       |       |       |       |       |       |
+ * |=====+=======================+=======================================|
+ * | 0   | Peripheral qualifier  |           Peripheral device type      |
+ * |-----+---------------------------------------------------------------|
+ * | 1   |                   Page code 0x83                              |
+ * |-----+---------------------------------------------------------------|
+ * | 2   | (MSB)                                                         |
+ * |- - -+---               Page Length (n-3)                         ---|
+ * | 3   |                                                         (LSB) |
+ * |-----+---------------------------------------------------------------|
+ * | 4   | (MSB)                                                         |
+ * |- - -+---                Descriptor List                          ---|
+ * | n   |                                                         (LSB) |
+ * +=====================================================================+
+ */
+struct  inqry_pg83_data {
+        uint8_t   pdevtype;     /* Peripherial device/qualifier     */
+
+        uint8_t   page_code;
+        uint16_t  page_len;     /* Page Length                      */
+};
+
+/* 
+ *                    Standard SCSI INQUIRY page 83 descriptor format
+ * +=====-=======-=======-=======-=======-=======-=======-=======-=======+
+ * |  Bit|   7   |   6   |   5   |   4   |   3   |   2   |   1   |   0   |
+ * |Byte |       |       |       |       |       |       |       |       |
+ * |=====+=======================+=======================================|
+ * | 0   | Protocol Identifier   |           Code Set                    |
+ * |-----+---------------------------------------------------------------|
+ * | 1   | PIV   |Reservd|Assoc  |           Designator Type             |
+ * |-----+---------------------------------------------------------------|
+ * | 2   |                   Reserverd                                   |
+ * |-----+---------------------------------------------------------------|
+ * | 3   |                 Designator Length (n-3)                       |
+ * |-----+---------------------------------------------------------------|
+ * | 4   | (MSB)                                                         |
+ * |- - -+---                Designator List                          ---|
+ * | n   |                                                         (LSB) |
+ * +=====================================================================+
+ */
+struct  inqry_pg83_descriptor_hdr {
+    uint8_t   protocol_id_code_set;       /* Protocol ID and Code set */
+    uint8_t   flags_type;                 /* Flags and designator type*/
+    uint8_t   reserved;                   /* Reserved for future use  */
+    uint8_t  designator_length;          /* Length of designator     */
+};
+
 
 /************************************************************************/
 /* Device ID Code Page defines used for extracting WWID                 */

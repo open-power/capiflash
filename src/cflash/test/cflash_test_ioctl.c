@@ -37,6 +37,11 @@ static int threadRC;
 extern int irPFlag ;
 #endif
 
+#ifndef _AIX
+extern int manEEHonoff;
+extern int quickEEHonoff;
+#endif
+
 char *diskList[MC_PATHLEN];
 int  diskCount = 0 ;
 
@@ -301,7 +306,7 @@ int test_dca_ioctl(int flag)  // func@DK_CAPI_ATTACH
     {
         case 1: //TEST_DCA_VALID_ALL_VALUES   TCN@7.1.10
             p_ctx->flags = p_ctx->work.flags;
-            p_ctx->work.num_interrupts = 4;
+            p_ctx->work.num_interrupts = cflash_interrupt_number();
             rc = ioctl_dk_capi_attach(p_ctx);
             CHECK_RC(rc, "DK_CAPI_ATTACH failed");
             break;
@@ -400,8 +405,23 @@ int test_dca_error_ioctl(int flag)  // func@DK_CAPI_ATTACH error path
     {
         fprintf(stderr,"%d:Attention:System doesn't fullfil test req,Need 2 disks from a same adapter\n",pid);
         TESTCASE_SKIP("Need disk from same adapter");
+#ifndef _AIX
+        if(flag == 4)
+        return 1;
+#endif
         return 0;
     }
+
+#ifndef _AIX
+
+    if (turnOffTestCase("PVM") && ( flag == 10 || flag == 15 || flag == 16 ) && manEEHonoff == 0)
+    {
+        TESTCASE_SKIP("Test case not supported in PowerVM env");
+        return 0;
+    }
+
+#endif
+
     //open CAPI Flash disk device
     strcpy(p_ctx->dev,disks[0].dev);
     strcpy(p_ctx_1->dev,disks[1].dev);
@@ -424,7 +444,7 @@ int test_dca_error_ioctl(int flag)  // func@DK_CAPI_ATTACH error path
 #else
     //TBD for linux
 #endif
-    p_ctx->work.num_interrupts = p_ctx_1->work.num_interrupts = 4;
+    p_ctx->work.num_interrupts = p_ctx_1->work.num_interrupts = cflash_interrupt_number(); 
 
     switch ( flag )
     {
@@ -614,6 +634,25 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
     __u64 stride= 0x1000;
 
     pid = getpid();
+
+#ifndef _AIX
+
+    if (turnOffTestCase("PVM") && manEEHonoff == 0)
+    {
+        if ( flag == 3 || flag == 4 || flag == 7 || flag == 12 || flag == 13 || flag == 8 )
+	{ 
+	  TESTCASE_SKIP("Test case not supported in PowerVM env");
+          return 0;
+        }
+    }
+
+    if (quickEEHonoff == 1 && ( flag == 4 || flag == 7 || flag == 8 || flag == 12 || flag == 13)) 
+    {
+       TESTCASE_SKIP(" Test case will be skipped as user requested LIMITED EEH run");
+       return 0;
+    }
+
+#endif
 
     if ( flag == 4 )
     {
@@ -851,9 +890,17 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 
 #endif
             rc = do_io(p_ctx, stride);
-            if ( rc == 2) rc=0;
-            else CHECK_RC(rc, "1st IO attempt didn't fail");
-
+	    //SW356037: First IO will not get UA for FlashGT
+            if ( is_UA_device( p_ctx->dev ) == TRUE )
+            {
+                if ( rc == 2 ) rc=0;
+                else CHECK_RC(1, "1st IO attempt didn't fail");
+            }
+            else
+            {
+                CHECK_RC(rc, "do_io() failed");
+                p_ctx->dummy_sense_flag = 1;
+            }
 #ifdef _AIX
             p_ctx->flags = DK_VF_HC_TUR;
             p_ctx->hint = DK_HINT_SENSE;
@@ -883,8 +930,17 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #endif
 
             rc=do_io(p_array_ctx[0],stride);
-            if ( rc == 2) rc=0;
-            else CHECK_RC(rc, "1st IO attempt didn't fail");
+
+            if ( is_UA_device( p_array_ctx[0]->dev ) == TRUE )
+            {
+                if ( rc == 2 ) rc=0;
+                else CHECK_RC(1, "1st IO attempt didn't fail");
+            }
+            else
+            {
+                CHECK_RC(rc, "do_io() failed");
+                p_array_ctx[0]->dummy_sense_flag = 1;
+            }
 
 #ifdef _AIX
             p_array_ctx[0]->flags = DK_VF_HC_TUR;
@@ -1101,8 +1157,16 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
             pthread_create(&thread2, NULL, ctx_rrq_rx, p_ctx);
 #endif
             rc=do_io(p_ctx, stride);
-            if ( rc == 2 ) rc=0;
-            else CHECK_RC(1, "1st IO attempt didn't fail");
+            //SW356037: First IO will not get UA for FlashGT 
+            if ( is_UA_device( p_ctx->dev ) == TRUE )
+            {
+                if ( rc == 2 ) rc=0;
+                else CHECK_RC(1, "1st IO attempt didn't fail");
+            }
+            else
+            {
+                CHECK_RC(rc, "do_io() failed");
+            }
 
             rc=do_io(p_ctx, stride);
             CHECK_RC(rc, "do_io() failed");
@@ -1145,8 +1209,16 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
             pthread_create(&thread2, NULL, ctx_rrq_rx, p_ctx);
 #endif
             rc=do_io(p_ctx, stride);
-            if ( rc == 2 ) rc=0;
-            else CHECK_RC(1, "1st IO attempt didn't fail");
+            //SW356037: First IO will not get UA for FlashGT
+            if ( is_UA_device( p_ctx->dev ) == TRUE )
+            {
+                if ( rc == 2 ) rc=0;
+                else CHECK_RC(1, "1st IO attempt didn't fail");
+            }
+            else
+            {
+                CHECK_RC(rc, "do_io() failed");
+            }
 
             rc=do_io(p_ctx, stride);
             CHECK_RC(rc, "do_io() failed");
@@ -1812,7 +1884,7 @@ int test_invalid_version_ioctl(int flag)
     rc = ioctl_dk_capi_query_path(p_ctx);
     CHECK_RC(rc, "DK_CAPI_QUERY_PATHH failed");
 #endif
-    p_ctx->work.num_interrupts = 4;
+    p_ctx->work.num_interrupts = cflash_interrupt_number();
     switch ( flag )
     {
 #ifdef _AIX
@@ -2022,7 +2094,7 @@ int test_dcd_ioctl( int flag )  // func@DK_CAPI_DETACH
     CHECK_RC(rc, "DK_CAPI_QUERY_PATH failed");
     p_ctx->work.num_interrupts = 5;
 #else
-    p_ctx->work.num_interrupts = 4;
+    p_ctx->work.num_interrupts = cflash_interrupt_number();
 #endif /*_AIX*/
 
     p_ctx->flags = DK_AF_ASSIGN_AFU;
@@ -2486,6 +2558,20 @@ int test_dcv_ioctl( int flag )  // func@DK_CAPI_VERIFY
     uint64_t exp_last_lba;
     //__u64 stride= 0x1000;
 
+#ifndef _AIX
+    if (turnOffTestCase("PVM") && ( flag == 12 || flag == 1 || flag == 3 ) && manEEHonoff == 0)
+    {
+        TESTCASE_SKIP("Test case not supported in PowerVM env");    
+        return 0;   
+    }
+
+    if (quickEEHonoff == 1 && ( flag == 1 || flag == 3 ))
+    {
+       TESTCASE_SKIP(" Test case will be skipped as user requested LIMITED EEH run");
+       return 0;
+    }
+
+#endif 
     pid = getpid();
     rc = ctx_init(p_ctx);
     CHECK_RC(rc, "Context init failed");
@@ -2904,10 +2990,18 @@ int test_dcv_ioctl( int flag )  // func@DK_CAPI_VERIFY
 
             CHECK_RC(rc, "ctx_reinit() failed");
 
-            rc = do_io(p_ctx, 0x5);
-            if ( rc == 0 )
+            rc = do_io(p_ctx, 0x100);
+            
+            //SW356037: First IO will not get UA for FlashGT
+            if ( is_UA_device( p_ctx->dev ) == TRUE )
             {
-                CHECK_RC(1, "IO did not fail\n");
+                if ( rc == 2 ) rc=0;
+                else CHECK_RC(1, "1st IO attempt didn't fail");
+            }
+            else
+            {
+                CHECK_RC(rc, "do_io() failed");
+                p_ctx->dummy_sense_flag = 1;
             }
 
             // Sleep for a while before issuing verify ioctl.

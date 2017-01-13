@@ -49,6 +49,8 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   ark_io_list_t    *bl_array = NULL;
   int32_t           rc       = 0;
 
+  scbp->poolstats.ops_cnt+=1;
+
   // Now that we have the hash entry, get the block
   // that holds the control information for the entry.
   tcbp->hblk = HASH_LBA(HASH_GET(_arkp->ht, rcbp->pos));
@@ -93,13 +95,15 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  KV_TRC_IO(pAT, "read hash entry ttag:%d", tcbp->ttag);
+  KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d", tid, tcbp->ttag);
   ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, bl_array,
                    tcbp->blen, 0, tcbp->ttag, ARK_GET_PROCESS);
-  if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
-      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
+
+  if (iocbp->ea->st_type == EA_STORE_TYPE_MEMORY)
   {
-      ark_get_process(_arkp, tid, tcbp);
+      ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
+      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
+      if (iotcbp->state == ARK_GET_PROCESS) {ark_get_process(_arkp, tid, tcbp);}
   }
 
 ark_get_start_err:
@@ -147,7 +151,7 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
           tcbp->state = ARK_CMD_DONE;
           goto ark_get_process_err;
         }
-        
+
         // The realloc succeeded.  Set the new size, original
         // variable buffer, and adjusted variable buffer
         tcbp->vbsize = new_vbsize;
@@ -168,17 +172,20 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
 
       scbp->poolstats.io_cnt += tcbp->blen;
 
-      KV_TRC_IO(pAT, "read key value ttag:%d", tcbp->ttag);
+      KV_TRC(pAT, "RD_VAL  tid:%d ttag:%3d vlen:%5ld",
+             tid, tcbp->ttag, rcbp->vlen);
       // Schedule the READ of the key's value into the
       // variable buffer.
       ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->vb,
                        bl_array, tcbp->blen, 0, tcbp->ttag, ARK_GET_FINISH);
-      if (ea_async_io_schedule(_arkp, tid, iotcbp, iocbp) &&
-          ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp))
+
+      if (iocbp->ea->st_type == EA_STORE_TYPE_MEMORY)
       {
-          ark_get_finish(_arkp, tid, tcbp);
+          ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
+          ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
+          if (iotcbp->state == ARK_GET_FINISH) {ark_get_finish(_arkp,tid,tcbp);}
       }
-    }
+}
     else
     {
         ark_get_finish(_arkp, tid, tcbp);

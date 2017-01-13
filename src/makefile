@@ -29,7 +29,10 @@ ROOTPATH = ..
 
 #common is built first to satisfy dependencies elsewhere. We likely need to support
 #different makefile passes for exported libs vs regular programs, libs, and shared libs.
-SUBDIRS = lib.d common.d block.d build.d kv.d test.d cflash.d provisioning.d
+SUBDIRS = lib.d common.d block.d usfs.d kv.d test.d
+ifneq ($(TARGET_PLATFORM),x86_64)
+SUBDIRS += build.d cflash.d provisioning.d
+endif
 
 BASE_OBJECTS = 
 

@@ -462,8 +462,8 @@ void provGetAFUs()
     //Code
     cxl_for_each_afu(l_afu)
     {
-        TRACEI("AFU found: '%s'\n", cxl_afu_devname(l_afu));
-        l_rc = cxl_afu_sysfs_pci(&l_pci_path, l_afu);
+        TRACEI("AFU found: '%s'\n", cxl_afu_dev_name(l_afu));
+        l_rc = cxl_afu_sysfs_pci(l_afu, &l_pci_path);
         TRACEI("sysfs rc: %d\n", l_rc);
         TRACEI("sysfs path: '%s'\n", l_pci_path);
         free(l_pci_path);
@@ -473,6 +473,7 @@ void provGetAFUs()
 
 
 #define MAX_VPD_SIZE 512
+#define MIN_VPD_SIZE 80
 
 bool provGetAllAdapters(prov_adapter_info_t* o_info, int* io_num_adapters)
 {
@@ -492,14 +493,14 @@ bool provGetAllAdapters(prov_adapter_info_t* o_info, int* io_num_adapters)
             l_rc = false;
             break;
         }
-        TRACEI("AFU found: '%s'\n", cxl_afu_devname(l_afu));
-        l_rc = cxl_afu_sysfs_pci(&l_pci_path, l_afu);
+        TRACEI("AFU found: '%s'\n", cxl_afu_dev_name(l_afu));
+        l_rc = cxl_afu_sysfs_pci(l_afu, &l_pci_path);
         TRACEI("sysfs rc: %d\n", l_rc);
         TRACEI("sysfs path: '%s'\n", l_pci_path);
         l_rc = provGetAdapterInfo(l_pci_path, &o_info[l_num_adapters]);
         if(l_rc == true)
         {
-            strncpy(o_info[l_num_adapters].afu_name, cxl_afu_devname(l_afu), sizeof(o_info[l_num_adapters].afu_name));
+            strncpy(o_info[l_num_adapters].afu_name, cxl_afu_dev_name(l_afu), sizeof(o_info[l_num_adapters].afu_name));
             l_num_adapters++;
         }
         else
@@ -570,12 +571,14 @@ bool provGetAdapterInfo(const char* i_pci_path, prov_adapter_info_t* o_info)
             // error opening file
         }
 
-        if(n < MAX_VPD_SIZE)
+        if(n < MIN_VPD_SIZE)
         {
             l_rc = false;
-            TRACEI("Warning: Buffer underrun. This indicates a potential VPD format problem.\n");
+            TRACEV("Warning: (%ld<%d) Buffer underrun. This indicates a "
+                    "potential VPD format problem.\n", n, MAX_VPD_SIZE);
             break;
         }
+
         TRACEV("Searching for V5 and V6 KW data...\n");
         l_kw_length = 16;
         l_rc = provFindVPDKw("V5", l_vpd_buffer, n, (uint8_t*)o_info->wwpn[0],&l_kw_length);
@@ -632,11 +635,11 @@ uint8_t provGetAllWWPNs(prov_wwpn_info_t* io_wwpn_info, uint16_t *io_num_wwpns)
         {
             bzero(l_afu_path, sizeof(l_afu_path));
             l_pci_path = NULL;
-            TRACEI("AFU found: '%s'\n", cxl_afu_devname(l_afu));
+            TRACEI("AFU found: '%s'\n", cxl_afu_dev_name(l_afu));
             //TODO: why do i have to build this myself? should we be
             //always appending the "master" context on the end here?
-            snprintf(l_afu_path, sizeof(l_afu_path), "/dev/cxl/%sm", cxl_afu_devname(l_afu));
-            l_rc = cxl_afu_sysfs_pci(&l_pci_path, l_afu);
+            snprintf(l_afu_path, sizeof(l_afu_path), "/dev/cxl/%sm", cxl_afu_dev_name(l_afu));
+            l_rc = cxl_afu_sysfs_pci(l_afu, &l_pci_path);
             TRACEI("sysfs rc: %d\n", l_rc);
             TRACEI("sysfs path: '%s'\n", l_pci_path);
             TRACEI("afu path: '%s'\n", l_afu_path);

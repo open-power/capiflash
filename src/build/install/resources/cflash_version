@@ -1,0 +1,277 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/cflash_version $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+# check permissions
+if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
+
+export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/afu
+
+#determine distro
+if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
+if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+
+unset CF_VER
+if [[ -e ver.txt ]]
+then
+  CF_VER=$(cat ver.txt)
+fi
+
+CORSA_VER=0512D1
+GT_VER=1114N1
+err_rc=0
+
+if [[ $ubuntu ]]
+then
+  OS_VER=16.04.1
+  K_VER=4.4.0-36.55
+  K_VER_GRUB=4.4.0-36-generic
+elif [[ $redhat ]]
+then
+  #TODO: Check the Red Hat Versions correct to targetted release
+  OS_VER=7.3; #VERSION_ID from /etc/os-release
+  K_VER=3.10.0
+  K_VER_GRUB=3.10.0
+fi
+
+#TODO: version checks for VM systems
+
+if [[ $ubuntu ]]
+then
+  if [[ -z $CF_VER ]]
+  then
+    CF_VER=$(dpkg -l |grep -v test|grep "cxlflash "|awk '{print $3}')
+  fi
+
+  EXISTS_OS_VER=$(lsb_release -a 2>&1|grep -v LSB|grep Description|awk '{print $3}')
+  if [[ ! $EXISTS_OS_VER =~ $OS_VER ]]
+  then
+    err_rc=1
+    echo "ERROR:     OS:            Installed($EXISTS_OS_VER) != Required($OS_VER)"
+  else
+    echo "INFO:      OS:            $EXISTS_OS_VER"
+  fi
+
+  if [[ ! -z $1 ]]; then K_VER=$1; fi
+
+  EXISTS_CF_TEST_VER=$(dpkg -l|grep cxlflash-test|awk '{print $3}')
+  if [[ -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
+  then
+    err_rc=2
+    echo "ERROR:     cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
+  fi
+
+  EXISTS_CF_VER=$(dpkg -l|egrep -v "image|test"|grep cxlflash|awk '{print $3}')
+  if [[ -z $EXISTS_CF_VER ]]
+  then
+    err_rc=3
+    echo "ERROR:     cxlflash:      missing"
+  elif [[ ! $EXISTS_CF_VER =~ $CF_VER ]]
+  then
+    err_rc=3
+    echo "ERROR:     cxlflash:      Installed($EXISTS_CF_VER) != Required($CF_VER)"
+  else
+    echo "INFO:      cxlflash:      $EXISTS_CF_VER"
+  fi
+
+  EXISTS_CF_IMAGE_VER=$(dpkg -l|grep cxlflashimage|awk '{print $3}')
+  if   [[ -z $EXISTS_CF_IMAGE_VER ]]
+  then
+    err_rc=4
+    echo "ERROR:     cxlflashimage: missing"
+  elif [[ ! $EXISTS_CF_IMAGE_VER =~ $CF_VER ]]
+  then
+    err_rc=4
+    echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) Required($CF_VER)"
+  fi
+
+  EXISTS_K_VER=$(dpkg -l|grep linux-image)
+  if [[ ! $EXISTS_K_VER =~ $K_VER ]]
+  then
+    err_rc=5
+    echo "ERROR:     Kernel:        Booted($(uname -a|awk '{print $3}')) != Required($K_VER)"
+  else
+    echo "INFO:      Kernel:        $K_VER"
+  fi
+
+  EXISTS_GRUB_VER=$(grep initrd /boot/grub/grub.cfg|head -1|awk -Finitrd.img- '{print $2}')
+  if [[ ! $EXISTS_GRUB_VER =~ $K_VER_GRUB ]]
+  then
+    err_rc=6
+    echo "ERROR:     Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
+  fi
+
+ if [[ ! -z $EXISTS_CF_IMAGE_VER ]]
+ then
+    IFS=$'\n'
+    adaps=($(capi_flash.pl -l))
+    unset IFS
+    for line in "${adaps[@]}"
+    do
+      if [[ $VM ]]
+      then
+        type=$(echo $line|awk '{print $5}')
+        adapt=$(echo $line|awk '{print $4}')
+        adap="$adapt      "
+        fw=$(echo $line|awk -F\> '{print $2}' )
+      else
+        type=$(echo $line|awk '{print $4}')
+        adap=$(echo $line|awk '{print $6}')
+        fw=$(echo $line|awk -F\> '{print $2}')
+      fi
+
+      if [[ $line =~ 0601 ]]
+      then
+        if [[ ! $line =~ $GT_VER ]]
+        then
+          err_rc=7
+          echo "ERROR:     $adap   $type Loaded($fw) != Required($GT_VER)"
+        else
+          echo "INFO:      $adap   $type $fw"
+        fi
+      elif [[ $line =~ 04cf ]]
+      then
+        if [[ ! $line =~ $CORSA_VER ]]
+        then
+          err_rc=7
+          echo "ERROR:     $adap   $type Loaded($fw) != Required($CORSA_VER)"
+        else
+          echo "INFO:      $adap   $type $fw"
+        fi
+      fi
+    done
+  fi
+
+elif [[ $redhat ]]
+then
+  if [[ -z $CF_VER ]]
+  then
+    CF_VER=$(rpm -aq | egrep -v "test|image"| grep cxlflash | tail -1 | sed 's,_,-,g'| awk -F'-' '{print $3"-"$4}')
+  fi
+
+  EXISTS_OS_VER=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
+  if [[ ! $EXISTS_OS_VER =~ $OS_VER ]]
+  then
+    err_rc=1
+    echo "ERROR:     OS:            Installed($EXISTS_OS_VER) != Required($OS_VER)"
+  else
+    echo "INFO:      OS:            $EXISTS_OS_VER"
+  fi
+
+  if [[ ! -z $1 ]]; then K_VER=$1; fi
+
+  EXISTS_CF_TEST_VER=$(rpm -qa | grep cxlflash-test| tail -1| sed 's,_,-,g'| awk -F'-' '{print $2"-"$3"-"$4}')
+  if [[ -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
+  then
+    err_rc=2
+    echo "ERROR:     cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
+  fi
+
+  EXISTS_CF_VER=$(rpm -qa |egrep -v "image|test"|grep cxlflash|tail -1| sed 's,_,-,g'| awk -F'-' '{print $2"-"$3"-"$4}')
+  if [[ -z $EXISTS_CF_VER ]]
+  then
+    err_rc=3
+    echo "ERROR:     cxlflash:      missing"
+  elif [[ ! $EXISTS_CF_VER =~ $CF_VER ]]
+  then
+    err_rc=3
+    echo "ERROR:     cxlflash:      Installed($EXISTS_CF_VER) != Required($CF_VER)"
+  else
+    echo "INFO:      cxlflash:      $EXISTS_CF_VER"
+  fi
+
+  EXISTS_CF_IMAGE_VER=$(rpm -qa |grep cxlflashimage|tail -1| sed 's,_,-,g'| awk -F'-' '{print $2"-"$3"-"$4}')
+  if   [[ -z $EXISTS_CF_IMAGE_VER ]]
+  then
+    err_rc=4
+    echo "ERROR:     cxlflashimage: missing"
+  elif [[ ! $EXISTS_CF_IMAGE_VER =~ $CF_VER ]]
+  then
+    err_rc=4
+    echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) Required($CF_VER)"
+  fi
+
+  EXISTS_K_VER=$(rpm -q kernel)
+  if [[ ! $EXISTS_K_VER =~ $K_VER ]]
+  then
+    err_rc=5
+    echo "ERROR:     Kernel:        Booted($(uname -a|awk '{print $3}')) != Required($K_VER)"
+  else
+    echo "INFO:      Kernel:        $K_VER"
+  fi
+
+  EXISTS_GRUB_VER=$(grep initrd /boot/grub2/grub.cfg  | head -1 | awk -Finitramfs- '{print $2}')
+  if [[ ! $EXISTS_GRUB_VER =~ $K_VER_GRUB ]]
+  then
+    err_rc=6
+    echo "ERROR:     Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
+  fi
+
+  if [[ ! -z $EXISTS_CF_IMAGE_VER ]]
+  then
+    IFS=$'\n'
+    adaps=($(capi_flash.pl -l))
+    unset IFS
+    for line in "${adaps[@]}"
+    do
+      if [[ $VM ]]
+      then
+        type=$(echo $line|awk '{print $5}')
+        adapt=$(echo $line|awk '{print $4}')
+        adap="$adapt      "
+        fw=$(echo $line|awk -F\> '{print $2}' )
+      else
+        type=$(echo $line|awk '{print $4}')
+        adap=$(echo $line|awk '{print $6}')
+        fw=$(echo $line|awk -F\> '{print $2}')
+      fi
+
+      if [[ $line =~ 0601 ]]
+      then
+        if [[ ! $line =~ $GT_VER ]]
+        then
+          err_rc=7
+          echo "ERROR:     $adap   $type Loaded($fw) != Required($GT_VER)"
+        else
+          echo "INFO:      $adap   $type $fw"
+        fi
+      elif [[ $line =~ 04cf ]]
+      then
+        if [[ ! $line =~ $CORSA_VER ]]
+        then
+          err_rc=7
+          echo "ERROR:     $adap   $type Loaded($fw) != Required($CORSA_VER)"
+        else
+          echo "INFO:      $adap   $type $fw"
+        fi
+      fi
+    done
+  fi
+fi
+
+#TODO: add version checks for VM
+
+exit $err_rc

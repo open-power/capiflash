@@ -591,11 +591,11 @@ void rw_cmp_buf(struct ctx *p_ctx, __u64 start_lba, __u64 stride) {
 	    send_readm(p_ctx, start_lba, stride); // sends NUM_CMDS reads
 
 	    sprintf(buf, "read.%d", pr_id);
-	    read_fd = open(buf, O_RDWR|O_CREAT);
+	    read_fd = open(buf, O_RDWR|O_CREAT, 0600);
 	    sprintf(buf, "write.%d", pr_id);
-	    write_fd = open(buf, O_RDWR|O_CREAT);
+	    write_fd = open(buf, O_RDWR|O_CREAT, 0600);
 	    sprintf(buf, "readm.%d", pr_id);
-	    readm_fd = open(buf, O_RDWR|O_CREAT);
+	    readm_fd = open(buf, O_RDWR|O_CREAT, 0600);
 
 	    write(read_fd,  &p_ctx->rbuf[i][0], sizeof(p_ctx->rbuf[i]));
 	    write(write_fd, &p_ctx->wbuf[i][0], sizeof(p_ctx->wbuf[i]));
@@ -721,7 +721,7 @@ main(int argc, char *argv[])
 #else
     sprintf(ctx_file, "ctx.%d", pr_id);
     unlink(ctx_file);
-    ctx_fd = open(ctx_file, O_RDWR|O_CREAT);
+    ctx_fd = open(ctx_file, O_RDWR|O_CREAT, 0600);
     if (ctx_fd < 0) {
 	fprintf(stderr, "open failed: file %s, errno %d", ctx_file, errno);
 	exit(-1);

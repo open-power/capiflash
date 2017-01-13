@@ -127,7 +127,7 @@ int ioctl_7_1_196()
 #else
     //TBD for linux
 #endif
-    p_ctx[0]->work.num_interrupts = p_ctx[1]->work.num_interrupts = 4;
+    p_ctx[0]->work.num_interrupts = p_ctx[1]->work.num_interrupts = cflash_interrupt_number();
 
 
     rc=ioctl_dk_capi_attach_reuse(p_ctx[0],p_ctx[1],LUN_DIRECT);

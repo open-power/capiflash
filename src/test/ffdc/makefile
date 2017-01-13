@@ -35,8 +35,16 @@ include ${ROOTPATH}/config.mk
 #this application originates in surelock-afu/bringup/src and must be shipped for FFDC gathering
 ifeq ($(UNAME),AIX) # need to have a valid ffdc mechanism for AIX...
 else #Linux only
-test: ${TESTDIR}/cxl_afu_dump
+test: ${TESTDIR}/cxl_afu_dump ${TESTDIR}/cxl_afu_inject ${TESTDIR}/cxl_afu_status
 ${TESTDIR}/cxl_afu_dump:
 	mkdir -p ${TESTDIR}
-	gcc -m64 -I . -I${ROOTPATH}/src/include -lpthread -o ${TESTDIR}/cxl_afu_dump -O0 afu.c capi_dev_nodes.c cxl_afu_dump2.c
+	gcc -m64 -I . -I${ROOTPATH}/src/include -L${ROOTPATH}/img -lpthread -o ${TESTDIR}/cxl_afu_dump -O0 afu.c capi_dev_nodes.c cxl_afu_dump2.c -lcxl
+
+${TESTDIR}/cxl_afu_inject:
+	mkdir -p ${TESTDIR}
+	gcc -m64 -I . -I${ROOTPATH}/src/include -L${ROOTPATH}/img -lpthread -o ${TESTDIR}/cxl_afu_inject -O0 afu.c capi_dev_nodes.c cxl_afu_inject.c -lcxl
+
+${TESTDIR}/cxl_afu_status:
+	mkdir -p ${TESTDIR}
+	gcc -m64 -I . -I${ROOTPATH}/src/include -L${ROOTPATH}/img -lpthread -o ${TESTDIR}/cxl_afu_status -O0 cxl_afu_status.c -lcxl
 endif

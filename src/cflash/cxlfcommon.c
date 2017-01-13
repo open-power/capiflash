@@ -56,13 +56,13 @@ int set_lun_mode(lun_table_entry_t* lun_entry_ptr, MODE_T mode)
  */
 
 
-bool cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid)
+int cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid)
 {
     /*------------------------------------------------------------------------*/
     /*  Local Variables                                                       */
     /*------------------------------------------------------------------------*/
     int fd = 0;
-    bool rc = false;
+    int rc = false;
     struct dk_cxlflash_manage_lun manage_lun = {{0}};
     int retrycount=0;
     uint8_t empty_wwid[DK_CXLFLASH_MANAGE_LUN_WWID_LEN] = {0};
@@ -97,9 +97,9 @@ bool cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid)
             TRACEV("WWID: ");
             for(i=0; i < DK_CXLFLASH_MANAGE_LUN_WWID_LEN; i++)
             {
-                printf("%02x", wwid[i]);
+                TRACED("%02x", wwid[i]);
             }
-            printf("\n");
+            TRACED("\n");
         }
 
         
@@ -114,11 +114,9 @@ bool cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid)
             fd = open(target_device, (O_EXCL|O_NONBLOCK|O_RDWR));
             retrycount++;
         } while((fd < 0) && (retrycount < MAX_FOPEN_RETRIES));
-        int errsv = errno;
         if (fd < 0)
         {
-            TRACED("Unable to open device / special file.: '%s' (errno %d)\n", target_device, errsv);
-            rc = false;
+            rc = EBUSY;
             break;
         }
         
@@ -140,20 +138,30 @@ bool cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid)
         
         
         memcpy(manage_lun.wwid, wwid, sizeof(manage_lun.wwid));
-        
+        errno=0;
         int rslt = ioctl(fd, DK_CXLFLASH_MANAGE_LUN, &manage_lun);
-        TRACEV("ioctl result: %d\n",rslt);
         if(rslt == 0)
         {
             //only set the "true" return code if we were able to successfully make the call to the DD
             rc=true;
         }
+        else
+        {
+            TRACED("MANAGE_LUN ioctl (");
+            for(i = 0; i<DK_CXLFLASH_MANAGE_LUN_WWID_LEN; i++)
+            {
+                TRACED("%02x", wwid[i]);
+            }
+            TRACED(") failed: %d errno:%d\n",rslt, errno);
+            rc=false;
+        }
+
     } while(0);
     
     TRACEV("Closing fd = %d\n",fd);
     //close on all paths
     close(fd);
-    
+
     return rc;
 }
 
@@ -184,13 +192,14 @@ bool cxlf_parse_wwid(uint8_t* o_buffer, char* i_string, uint8_t i_buffer_sz)
         }
         nextchar+=2;//advance by two characters
     }
+    TRACEV("wwid valid '%s'\n", i_string);
     //if we got this far, the wwid is valid
-    //TRACED("Controlling WWID: 0x");
-    //for(i = 0; i<DK_CXLFLASH_MANAGE_LUN_WWID_LEN; i++)
-    //{
-    //    TRACED("%02x", o_buffer[i]);
-    //}
-    //TRACED("\n");
+    TRACEV("Controlling WWID: 0x");
+    for(i = 0; i<DK_CXLFLASH_MANAGE_LUN_WWID_LEN; i++)
+    {
+        TRACEV("%02x", o_buffer[i]);
+    }
+    TRACEV("\n");
     return true;
 }
 
@@ -237,7 +246,7 @@ int extract_lun_from_vpd(const char* i_sgdevname, uint8_t* o_lun)
             // error opening file
         }
         
-        if(n < MAX_VPD_SIZE)
+        if(n < MIN_VPD_SIZE)
         {
             //l_rc = false;
             TRACEI("Warning: Buffer underrun. This indicates a potential VPD format problem.\n");
@@ -477,6 +486,8 @@ int cxlf_refresh_luns(lun_table_entry_t* i_luntable, int i_luntable_sz, lun_tabl
     int32_t                     curr_sg=0;
     int32_t                     curr_lun=0;
     int                         rslt = 0;
+    int                         sl_rc= true;
+    int                         rc   = 0;
     
     //there are likely more SG devices than LUN table entries
     //assume the list is sorted, and start  comparing the
@@ -484,6 +495,7 @@ int cxlf_refresh_luns(lun_table_entry_t* i_luntable, int i_luntable_sz, lun_tabl
     TRACEI("Max SG Devs: %d, MAX Luns: %d\n", i_sgdevs_sz, i_luntable_sz);
     while((curr_sg < i_sgdevs_sz) && (curr_lun < i_luntable_sz))
     {
+        sl_rc=true;
         TRACEV("curr_sg = %d, curr_lun= %d\n", curr_sg, curr_lun);
         //TRACED("SG:    ");
         //printentry(&i_sgdevs[curr_sg]);
@@ -494,7 +506,7 @@ int cxlf_refresh_luns(lun_table_entry_t* i_luntable, int i_luntable_sz, lun_tabl
         //should try and advance the device table pointer
         if(rslt < 0)
         {
-            set_lun_mode(&i_sgdevs[curr_sg], MODE_LEGACY);
+            sl_rc=set_lun_mode(&i_sgdevs[curr_sg], MODE_LEGACY);
             curr_sg++;
         }
         //positive indicates the current LUN wasn't found, so we should
@@ -506,20 +518,24 @@ int cxlf_refresh_luns(lun_table_entry_t* i_luntable, int i_luntable_sz, lun_tabl
         //indicates we found a match!
         else
         {
-            set_lun_mode(&i_sgdevs[curr_sg], MODE_SIO);
+            sl_rc=set_lun_mode(&i_sgdevs[curr_sg], MODE_SIO);
             curr_sg++;
         }
+        if (sl_rc==false) rc=-1;
     }
     TRACEV("Cleaning up any LUN NOT in the LUN table...\n");
     while(curr_sg<i_sgdevs_sz)
-    {		//clean up stragglers - anyone not in the SIO table will be legacy
+    {
+        sl_rc=true;
+        //clean up stragglers - anyone not in the SIO table will be legacy
         TRACEV("curr_sg = %d, curr_lun= %d\n", curr_sg, curr_lun);
         //TRACEV("SG:    ");
         //printentry(&i_sgdevs[curr_sg]);
-        set_lun_mode(&i_sgdevs[curr_sg], MODE_LEGACY);
+        sl_rc=set_lun_mode(&i_sgdevs[curr_sg], MODE_LEGACY);
         curr_sg++;
+        if (sl_rc==false) rc=-2;
     }
-    TRACEV("Done.\n");
-    return 0;
+    TRACEV("Done, rc=%d\n", rc);
+    return rc;
 
 }

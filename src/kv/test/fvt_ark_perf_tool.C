@@ -123,7 +123,8 @@ int main(int argc, char **argv)
 
     if (mem) penv=NULL;
 
-    if      (vlen < KV_4K)   LEN=200;
+    if      (vlen < 64)      LEN=LEN;
+    else if (vlen < KV_4K)   LEN=200;
     else if (vlen < KV_64K)  LEN=50;
     else if (vlen < KV_250K) LEN=10;
     else                     LEN=1;

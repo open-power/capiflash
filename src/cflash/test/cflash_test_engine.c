@@ -24,6 +24,11 @@
 /* IBM_PROLOG_END_TAG                                                     */
 #include "cflash_test.h"
 
+#ifndef _AIX
+extern int g_error;
+extern int g_errno;
+#endif
+
 int test1()
 {
     return -1;
@@ -39,9 +44,15 @@ int mc_test_engine(mc_test_t test_name)
     if (DEBUG)
         system("ctctrl -c cflashdd -r  -q");
 #else
+    // setting errno,g_error,g_errno to zero ; want to avoid any error set  before test really start
+    errno=0;
+    g_error =0;
+    g_errno=0;
+
     if (DEBUG)
         system("echo \"module cxlflash +p\" > /sys/kernel/debug/dynamic_debug/control");
     displayBuildinfo();
+    setupFVT_ENV();
 #endif
 
     if (DEBUG)

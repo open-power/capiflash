@@ -350,7 +350,12 @@ int main(int argc, char **argv)
     }
 
     if (newark) {printf("load %d k/v\n", KV_WORKERS*LEN);}
-    else        {printf("validate existing %d k/v\n", KV_WORKERS*LEN);}
+    else if (count == 0)
+    {
+        printf("no ark data found, create an ark with \'-new' option\n");
+        goto exit;
+    }
+    else {printf("validate existing %d k/v\n", KV_WORKERS*LEN);}
 
     init_kv_db(MAX_KLEN, MAX_VLEN, LEN);
 
@@ -406,7 +411,8 @@ int main(int argc, char **argv)
     }
     assert(0 == ark_count(ark, &count));
     printf("persist ark with %ld keys\n", count);
-    assert(0 == ark_delete(ark));
 
+exit:
+    assert(0 == ark_delete(ark));
     return 0;
 }

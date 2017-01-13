@@ -30,6 +30,9 @@
 #include <setjmp.h>
 #define KB 1024
 
+extern int manEEHonoff;
+extern int quickEEHonoff;
+
 // do_io() will use this pid.
 extern pid_t pid;
 extern int g_error;
@@ -62,7 +65,21 @@ int test_vSpio_eehRecovery(int cmd)
 
     // pid used to create unique data patterns & logging from util !
     pid = getpid();
+#ifndef _AIX
 
+    if (turnOffTestCase("PVM") &&  cmd == 1  && manEEHonoff == 0)
+    {
+        TESTCASE_SKIP("Test case not supported in PowerVM env");
+        return 0;
+    }
+
+    if ( quickEEHonoff == 1 && cmd == 1 )
+    {
+        TESTCASE_SKIP(" Test case will be skipped as user requested LIMTED EEH run");
+        return 0;
+    }
+
+#endif
     //ctx_init with default flash disk & devno
     rc = ctx_init(p_ctx);
     CHECK_RC(rc, "Context init failed");
@@ -113,9 +130,17 @@ int test_vSpio_eehRecovery(int cmd)
 #endif
 
     rc = do_io(p_ctx, stride);
-    if ( rc == 2) rc=0;
-    else CHECK_RC(rc, "1st IO attempt didn't fail");
-
+    //SW356037: First IO will not get UA for FlashGT
+    if ( is_UA_device( p_ctx->dev ) == TRUE )
+    {
+         if ( rc == 2 ) rc=0;
+         else CHECK_RC(1, "1st IO attempt didn't fail");
+    }
+    else
+    {
+         CHECK_RC(rc, "do_io() failed");
+         p_ctx->dummy_sense_flag = 1;
+    }
 #ifdef _AIX
     last_lba = p_ctx->last_phys_lba;
 #else
@@ -186,6 +211,21 @@ int test_dSpio_eehRecovery(int cmd)
     // pid used to create unique data patterns & logging from util !
     pid = getpid();
 
+#ifndef _AIX
+    if (turnOffTestCase("PVM") &&  cmd == 1  && manEEHonoff == 0)
+    {
+        TESTCASE_SKIP("Test case not supported in PowerVM env");
+        return 0;
+    }
+
+    if ( quickEEHonoff == 1 && cmd == 1 )
+    {
+        TESTCASE_SKIP(" Test case will be skipped as user requested LIMTED EEH run");
+        return 0;
+    }
+
+#endif
+
     // ctx_init with default flash disk & devno
     rc = ctx_init(p_ctx);
     CHECK_RC(rc, "Context init failed");
@@ -234,9 +274,17 @@ int test_dSpio_eehRecovery(int cmd)
 #endif
 
     rc = do_io(p_ctx, stride);
-    if ( rc == 2) rc=0;
-    else CHECK_RC(rc, "1st IO attempt didn't fail");
-
+    //SW356037: First IO will not get UA for FlashGT
+    if ( is_UA_device( p_ctx->dev ) == TRUE )
+    {
+         if ( rc == 2 ) rc=0;
+         else CHECK_RC(1, "1st IO attempt didn't fail");
+    }
+    else
+    {
+          CHECK_RC(rc, "do_io() failed");
+          p_ctx->dummy_sense_flag = 1;
+    }
 #ifdef _AIX
     last_lba = p_ctx->last_phys_lba;
 #else
@@ -327,7 +375,7 @@ int test_ioctl_fcp()
 
     // Prepare for attach ioctl
     p_ctx->flags = DK_AF_ASSIGN_AFU;
-    p_ctx->work.num_interrupts = 4; // use num_interrupts from AFU desc
+    p_ctx->work.num_interrupts = cflash_interrupt_number(); // use num_interrupts from AFU desc
 #ifdef _AIX
     p_ctx->devno = fc_devno;
 #endif /*_AIX */
@@ -750,7 +798,7 @@ int test_ioctl_spio_errcase()
 #ifdef _AIX
     p_ctx->work.num_interrupts = 5; // use num_interrupts from AFU desc
 #else
-    p_ctx->work.num_interrupts = 4; // use num_interrupts from AFU desc
+    p_ctx->work.num_interrupts = cflash_interrupt_number(); // use num_interrupts from AFU desc
 #endif /*_AIX*/
 
     p_ctx->context_id = 0x1;

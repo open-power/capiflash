@@ -30,13 +30,15 @@
 #include <libudev.h>
 #endif
 
+#define CHUNK_SIZE 4096
+#define NBUFS      1000
 
 char test_filename[256];
 pthread_t blk_thread[MAX_NUM_THREADS];
 
-
 pthread_mutex_t  completion_lock;
 
+extern int mode;
 extern int num_opens;
 extern uint32_t thread_count;
 extern uint64_t block_number;
@@ -47,6 +49,7 @@ extern uint64_t  max_xfer;;
 extern int virt_lun_flags;
 extern int share_cntxt_flags;
 extern int  test_max_cntx;
+extern int  host_type;
 extern char* env_filemode;
 extern char* env_max_xfer;
 extern char* env_num_cntx;
@@ -56,7 +59,9 @@ extern int num_listio;
 
 char def_capidev[50] = "/dev/cxl/afu0.0s";
 
-char        *dev_paths[MAX_LUNS];
+char dev_paths[MAX_LUNS][128];
+
+chunk_ext_arg_t ext=1;
 
 char *env_blk_verbosity = NULL;
 
@@ -96,16 +101,32 @@ void teminate_blk_tests()
     }
 }
 
-int blk_fvt_setup(int size)
-
+/**
+ *******************************************************************************
+ * \brief
+ * set device to RAID0 if cflash_devices.pl finds GT luns, else use FVT_DEV
+ ******************************************************************************/
+void blk_fvt_RAID0_setup(void)
 {
+    char  buf[1024] = {0};
+#ifdef _AIX
+    FILE *fp = popen("cflash_devices.pl 2>/dev/null", "r");
+#else
+    FILE *fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl 2>/dev/null", "r");
+#endif
+    if (fp)               {fgets(buf, 1024, fp);}
+    if (strlen(buf) != 0) {strcpy(dev_paths[0],"RAID0");}
+    return;
+}
 
+int blk_fvt_setup(int size)
+{
     char *env_user = getenv("USER");
     int  fd;
-
     char *p;
-
     int i,ret;
+    FILE *fp=NULL;
+    char platform[1024];
 
     paths = getenv("FVT_DEV");
 
@@ -164,6 +185,17 @@ int blk_fvt_setup(int size)
         }
     }
 
+#ifndef _AIX
+    fp = popen("cat /proc/cpuinfo|grep platform", "r");
+    if (fp)
+    {
+        fgets(platform, 1024, fp);
+        pclose(fp);
+        if (strlen(platform)>0 && strstr(platform,"PowerNV")==NULL)
+            {host_type=HOST_TYPE_VM;}
+    }
+#endif
+
     /* strcpy instead */
     strcpy (&tpaths[0], paths);
 
@@ -176,10 +208,9 @@ int blk_fvt_setup(int size)
             parents[i] = find_parent(p);
             DEBUG_2("\nparent of %s p = %s\n", p, parents[i]);
         }
-        dev_paths[i] = p;
+        strcpy(dev_paths[i],p);
         DEBUG_2("\npath %d : %s\n", i, p);
         p = strtok((char *)NULL,",");
-
     } 
     num_devs = i;
     DEBUG_1("blk_fvt_setup: num_devs = %d\n",num_devs);
@@ -190,11 +221,15 @@ int blk_fvt_setup(int size)
     ret = blk_fvt_alloc_bufs(size);
     DEBUG_1("blk_fvt_alloc_bufs: ret = 0x%x\n", ret);
 
+    num_opens = 0;
+    ext       = 0;
+    mode      = O_RDWR;
+
     DEBUG_2("blk_fvt_setupi_exit: dev1 = %s, dev2 = %s\n", 
             dev_paths[0], dev_paths[1]);
     return (ret);
-
 }
+
 /* check parents of all devs, and see if the context is sharable */
 int validate_share_context()
 {
@@ -219,7 +254,6 @@ int validate_share_context()
 void blk_open_tst_inv_path (const char* path, int *id, int max_reqs, int *er_no, int opn_cnt, int flags, int mode)
 {
     chunk_id_t j = NULL_CHUNK_ID;
-    chunk_ext_arg_t ext = 0;
     errno = 0;
 
     j = cblk_open (path, max_reqs, mode, ext, flags);
@@ -230,29 +264,48 @@ void blk_open_tst_inv_path (const char* path, int *id, int max_reqs, int *er_no,
 
 void blk_open_tst (int *id, int max_reqs, int *er_no, int opn_cnt, int flags, int mode)
 {
-
-    // chunk_id_t handle[MAX_OPENS+15];
-
     int             i = 0;
     chunk_id_t j = NULL_CHUNK_ID;
-    chunk_ext_arg_t ext = 0;
     errno = 0;
 
-    DEBUG_2("blk_open_tst : open %s %d times\n",dev_paths[0],opn_cnt);
+    DEBUG_4("blk_open_tst : path:%s cnt:%d max_reqs:%d flags:%x\n",
+            dev_paths[0], opn_cnt, max_reqs, flags);
+    DEBUG_3("               ext:%d num_opens:%d mode:%d\n",
+            (uint32_t)ext, num_opens, mode);
 
-    if (opn_cnt > 0) {
-        for (i = 0; i!= opn_cnt; i++) {
+    if (opn_cnt > 0)
+    {
+        for (i = 0; i!= opn_cnt; i++)
+        {
             DEBUG_1("Opening %s\n",dev_paths[0]);
-            j = cblk_open (dev_paths[0], max_reqs, mode, ext, flags);
-            if (j != NULL_CHUNK_ID) {
+            if (flags & CBLK_GROUP_ID)
+            {
+                DEBUG_1("Opening CG ext:%d\n", (uint32_t)ext);
+                j = cblk_cg_open(dev_paths[0], max_reqs, mode, ext, 0, flags);
+            }
+            else if (flags & CBLK_GROUP_RAID0)
+            {
+                DEBUG_1("Opening RAID0 ext:%d\n", (uint32_t)ext);
+                j = cblk_cg_open(dev_paths[0], max_reqs, mode, 1, ext, flags);
+            }
+            else
+            {
+                DEBUG_0("Opening dev\n");
+                j = cblk_open(dev_paths[0], max_reqs, mode, ext, flags);
+            }
+            if (j != NULL_CHUNK_ID)
+            {
                 // handle[i] = j;
                 chunks[i] = j;
                 num_opens += 1;
-                DEBUG_2("blk_open_tst:  OPENED %d, chunk_id=%d\n", (num_opens), j);
-            } else {
-                *id = j;
+                DEBUG_3("blk_open_tst:  OPENED %d, ext:%ld chunk_id=%d\n",
+                        (num_opens), ext, j);
+            }
+            else
+            {
+                *id    = j;
                 *er_no = errno;
-                DEBUG_2("blk_open_tst: Failed: open i = %d, errno = %d\n", 
+                DEBUG_2("blk_open_tst: Failed: open i = %d, errno = %d\n",
                         i, errno);
                 return;
             }
@@ -267,7 +320,7 @@ void blk_close_tst(int id, int *rc, int *err, int close_flag)
 
     errno = 0;
 
-    *rc = cblk_close (id, close_flag);
+    *rc  = cblk_close (id, close_flag);
     *err = errno;
     // it should be done in cleanup
     if ( !(*rc)  && !(*err))
@@ -275,26 +328,34 @@ void blk_close_tst(int id, int *rc, int *err, int close_flag)
     DEBUG_3("blk_close_tst: id = %d, erno = %d, rc = %d\n", id, errno, *rc);
 }
 
-void blk_open_tst_cleanup ()
+void blk_open_tst_cleanup (int flags, int *p_rc, int *p_err)
 {
-
     int             i  = 0;
     int             rc = 0;
 
-    errno = 0;
+    *p_rc  = 0;
+    *p_err = 0;
+    errno  = 0;
 
-    DEBUG_1("blk_open_tst_cleanup: closing num_opens = %d\n", num_opens);
-    for (i=0; num_opens |= 0; i++) {
-        if (chunks[i] != NULL_CHUNK_ID) {
-            rc =  cblk_close (chunks[i],0);
-            if (!rc) {
-                DEBUG_1("blk_open_tst_cleanup: closed %d\n", num_opens);
+    DEBUG_2("blk_open_tst_cleanup: closing num_opens:%d flags:%x\n",
+            num_opens, flags);
+    for (i=0; i<num_opens; i++)
+    {
+        if (chunks[i] != NULL_CHUNK_ID)
+        {
+            rc = cblk_close(chunks[i], flags);
+            if (!rc)
+            {
+                DEBUG_1("blk_open_tst_cleanup: closed id:%d\n", chunks[i]);
                 chunks[i] = NULL_CHUNK_ID;
-                num_opens--;  
-            } else {
-                DEBUG_3("\nblk_open_tst_cleanup: Close FAILED chunk id = %d , rc = %d, errno %d\n",
-                        chunks[i], rc, errno);
-                break;
+            }
+            else
+            {
+                DEBUG_4("\nblk_open_tst_cleanup: Close FAILED chunk id = %d "
+                        "rc = %d, errno %d num_opens:%d\n",
+                        chunks[i], rc, errno, num_opens);
+                *p_rc  = rc;
+                *p_err = errno;
             }
         }
     }
@@ -305,26 +366,30 @@ void blk_open_tst_cleanup ()
     // test buffers.
 
     if (blk_fvt_data_buf != NULL)
+    {
         free(blk_fvt_data_buf);
+        blk_fvt_data_buf = NULL;
+    }
     if (blk_fvt_comp_data_buf != NULL)
+    {
         free(blk_fvt_comp_data_buf);
-
-
+        blk_fvt_comp_data_buf = NULL;
+    }
 }
 
-
-void blk_fvt_get_set_lun_size(chunk_id_t id, 
-                              size_t *size, 
-                              int sz_flags, 
-                              int get_set_size_flag,
-                              int *ret,
-                              int *err)
+void blk_fvt_get_set_lun_size(chunk_id_t id,
+                              size_t    *size,
+                              int        sz_flags,
+                              int        get_set_size_flag,
+                              int       *ret,
+                              int       *err)
 {
     size_t c_size;
     int rc;
     errno =0;
 
-    if (!get_set_size_flag) {
+    if (!get_set_size_flag)
+    {
         /* get physical lun size */
         rc = cblk_get_lun_size(id, &c_size, sz_flags);
         *err = errno;
@@ -332,64 +397,28 @@ void blk_fvt_get_set_lun_size(chunk_id_t id,
         *ret = rc;
         DEBUG_3("get_lun_size: sz = %d, ret = %d, err = %d\n",
                 (int)c_size, rc, errno);
-    } else if (get_set_size_flag == 1) {
+    }
+    else if (get_set_size_flag == 1)
+    {
         /* get chunk size */
-        rc= cblk_get_size(id, &c_size, sz_flags);
+        rc = cblk_get_size(id, &c_size, sz_flags);
         *err = errno;
         *ret = rc;
         *size = c_size;
         DEBUG_3("get_size: sz = %d, ret = %d, err = %d\n",
                 (int)c_size, rc, errno);
-    } else if (get_set_size_flag == 2) {
+    }
+    else if (get_set_size_flag == 2)
+    {
         /* set chunk size */
         c_size = *size;
-        rc= cblk_set_size(id, c_size, sz_flags);
+        rc = cblk_set_size(id, c_size, sz_flags);
         *err = errno;
         *ret = rc;
-        DEBUG_3("set_size: sz = %d, ret = %d, err = %d\n",
-                (int)c_size, rc, errno);
+        DEBUG_4("set_size: sz = %d, ret = %d, err = %d flags:%x\n",
+                (int)c_size, rc, errno, sz_flags);
     }
-
 }
-
-int blk_fvt_alloc_large_xfer_io_bufs(size_t size)
-{
-
-    int ret = -1;
-
-
-    if (blk_fvt_data_buf != NULL)
-        free(blk_fvt_data_buf);
-    if (blk_fvt_comp_data_buf != NULL)
-        free(blk_fvt_comp_data_buf);
-
-
-
-
-    /*
-     * Align data buffer on page boundary.
-     */	
-    if ( posix_memalign((void *)&blk_fvt_data_buf,4096,BLK_FVT_BUFSIZE*size)) {
-
-        perror("posix_memalign failed for data buffer");
-        return (ret);
-    }
-    bzero(blk_fvt_data_buf,BLK_FVT_BUFSIZE*size);
-
-    /*
-     * Align data buffer on page boundary.
-     */	
-    if ( posix_memalign((void *)&blk_fvt_comp_data_buf,4096,BLK_FVT_BUFSIZE*size)) {
-        perror("posix_memalign failed for comp data buffer");
-        free(blk_fvt_data_buf);
-        return (ret);
-
-    }
-
-    return(0);
-}
-
-
 
 int blk_fvt_alloc_bufs(int size)
 {
@@ -415,8 +444,8 @@ int blk_fvt_alloc_bufs(int size)
     if ( posix_memalign((void *)&blk_fvt_comp_data_buf,4096,BLK_FVT_BUFSIZE*size)) {
         perror("posix_memalign failed for comp data buffer");
         free(blk_fvt_data_buf);
+        blk_fvt_data_buf=NULL;
         return (ret);
-
     }
     bzero(blk_fvt_comp_data_buf,BLK_FVT_BUFSIZE*size);
 
@@ -428,48 +457,6 @@ int blk_fvt_alloc_bufs(int size)
             p++;
         }     
     }
-    return(0);
-}
-
-
-int blk_fvt_alloc_list_io_bufs(int size)
-{
-
-    int ret = -1;
-    int fd;
-
-
-    if (blk_fvt_data_buf != NULL)
-        free(blk_fvt_data_buf);
-    if (blk_fvt_comp_data_buf != NULL)
-        free(blk_fvt_comp_data_buf);
-
-
-    /*
-     * Align data buffer on page boundary.
-     */	
-    if ( posix_memalign((void *)&blk_fvt_data_buf,4096,BLK_FVT_BUFSIZE*size)) {
-
-        perror("posix_memalign failed for data buffer");
-        return (ret);
-    }
-    bzero(blk_fvt_data_buf,BLK_FVT_BUFSIZE*size);
-
-    /*
-     * Align data buffer on page boundary.
-     */	
-    if ( posix_memalign((void *)&blk_fvt_comp_data_buf,4096,BLK_FVT_BUFSIZE*size)) {
-        perror("posix_memalign failed for comp data buffer");
-        free(blk_fvt_data_buf);
-        return (ret);
-
-    }
-
-    bzero(blk_fvt_comp_data_buf,BLK_FVT_BUFSIZE*size);
-    /* fill compare buffer with pattern */
-    fd = open ("/dev/urandom", O_RDONLY);
-    read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*size);
-    close (fd);
     return(0);
 }
 
@@ -487,7 +474,7 @@ void blk_fvt_cmp_buf (int size, int *ret)
         /**
           DEBUG_0("Written data:\n");
           dumppage(blk_fvt_comp_data_buf,BLK_FVT_BUFSIZE);
-          DEBUG_0("*********************************************************\n\n");
+          DEBUG_0("******************************************************\n\n");
           DEBUG_0("read data:\n");
           dumppage(blk_fvt_data_buf,BLK_FVT_BUFSIZE);
          **/
@@ -497,29 +484,32 @@ void blk_fvt_cmp_buf (int size, int *ret)
     *ret = rc;
 }
 
-void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *ret, int *err, int io_flags, int open_flag)
+void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks,
+                 int *ret, int *err, int io_flags, int open_flag)
 {
-    int	rc = 0;
+    int rc = 0;
     errno = 0;
     int tag = 0;
     cblk_arw_status_t ard_status;
     cblk_arw_status_t awrt_status;
     uint64_t ar_status = 0;
-
+    cflsh_cg_tag_t cgtag={-1,-1};
     int align = 0;
-    int arflag = 0;
 
-    align = (io_flags & FV_ALIGN_BUFS) ? 1: 0;
-    arflag = (io_flags & FV_ARESULT_BLOCKING) ? CBLK_ARESULT_BLOCKING : 0;
-    arflag |= (io_flags & FV_ARESULT_NEXT_TAG) ? CBLK_ARESULT_NEXT_TAG : 0;
+    DEBUG_4("blk_fvt_io: id:%d cmd:%d lba_no:%ld nblocks:%ld\n",
+            id, cmd, lba_no, nblocks);
+    DEBUG_2("blk_fvt_io: io_flags:%x open_flag:%x\n", io_flags, open_flag);
 
-    switch  (cmd) {
+    switch  (cmd)
+    {
         case FV_READ:
-            rc = cblk_read(id,(blk_fvt_data_buf+align),lba_no,nblocks,0);
-            DEBUG_3("cblk_read complete for lba = 0x%lx, rc = %d, errno = %d\n",lba_no,rc,errno);
+            rc = cblk_read(id,(blk_fvt_data_buf+align),lba_no,nblocks,io_flags);
+            DEBUG_3("cblk_read complete for lba = 0x%lx, rc = %d, errno = %d\n",
+                    lba_no,rc,errno);
             if (rc <= 0) {
                 if(blk_verbosity == 9) {
-                    fprintf(stderr,"cblk_read failed for  lba = 0x%lx, rc = %d, errno = %d\n",lba_no,rc,errno);
+                    fprintf(stderr,"cblk_read failed for  lba = 0x%lx, rc = %d,"
+                                   "errno = %d\n",lba_no,rc,errno);
                     fprintf(stderr,"Returned data is ...\n");
                     hexdump(blk_fvt_data_buf,100,NULL);
                 }
@@ -527,16 +517,36 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *r
             break;
         case FV_AREAD:
 
-            if ((open_flag & CBLK_OPN_NO_INTRP_THREADS) &&
-                    (io_flags & CBLK_ARW_USER_STATUS_FLAG)) {
-                rc = cblk_aread(id, blk_fvt_data_buf+align, lba_no, nblocks, &tag, &ard_status, io_flags);
-            } else {
-                rc = cblk_aread(id, blk_fvt_data_buf+align, lba_no, nblocks,
-                        &tag, NULL, io_flags);
+            if (io_flags & CBLK_ARW_USER_STATUS_FLAG)
+            {
+                if (io_flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_aread(id, blk_fvt_data_buf+align, lba_no,
+                                       nblocks, &cgtag, &ard_status, io_flags);
+                }
+                else
+                {
+                    rc = cblk_aread(id, blk_fvt_data_buf+align, lba_no,
+                                    nblocks, &tag, &ard_status, io_flags);
+                }
+            }
+            else
+            {
+                if (io_flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_aread(id, blk_fvt_data_buf+align, lba_no,
+                                       nblocks, &cgtag, NULL, io_flags);
+                }
+                else
+                {
+                    rc = cblk_aread(id, blk_fvt_data_buf+align, lba_no,
+                                    nblocks, &tag, NULL, io_flags);
+                }
             }
 
             if (rc < 0) {
-                DEBUG_3("cblk_aread error  lba = 0x%lx, rc = %d, errno = %d\n", lba_no, rc, errno);
+                DEBUG_3("cblk_aread error  lba = 0x%lx, rc = %d, errno = %d\n",
+                        lba_no, rc, errno);
                 *ret = rc;
                 *err = errno;
                 return;
@@ -544,7 +554,14 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *r
                 DEBUG_2("Async read returned rc = %d, tag =%d\n", rc, tag);
                 while (TRUE) {
 
-                    rc = cblk_aresult(id,&tag, &ar_status,arflag);
+                    if (io_flags & CBLK_GROUP_RAID0)
+                    {
+                        rc = cblk_cg_aresult(id,&cgtag, &ar_status,io_flags);
+                    }
+                    else
+                    {
+                        rc = cblk_aresult(id,&tag, &ar_status,io_flags);
+                    }
                     if (rc > 0) {
                         if (blk_verbosity) {
                             DEBUG_0("Async read data completed ...\n");
@@ -554,11 +571,14 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *r
                             }
                         }
                     } else if (rc == 0) {
-                        DEBUG_3("cblk_aresult completed: command still active  for tag = 0x%x, rc = %d, errno = %d\n",tag,rc,errno);
+                        DEBUG_3("cblk_aresult completed: command still active "
+                                "for tag = 0x%x, rc = %d, errno = %d\n",
+                                tag,rc,errno);
                         usleep(1000);
                         continue;
                     } else {
-                        DEBUG_3("cblk_aresult completed for  for tag = 0x%d, rc = %d, errno = %d\n",tag,rc,errno);
+                        DEBUG_3("cblk_aresult completed for  for tag = 0x%d, "
+                                "rc = %d, errno = %d\n",tag,rc,errno);
                     }
 
                     break;
@@ -568,31 +588,64 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *r
             break;
 
         case FV_WRITE:
-            rc = cblk_write(id,blk_fvt_comp_data_buf+align,lba_no,nblocks,0);
-            DEBUG_4("cblk_write complete at lba = 0x%lx, size = %lx, rc = %d, errno = %d\n",lba_no,nblocks,rc,errno);
+            rc = cblk_write(id,blk_fvt_comp_data_buf+align,lba_no,
+                                nblocks,io_flags);
+            DEBUG_4("cblk_write complete at lba = 0x%lx, size = %lx, rc = %d, "
+                    "errno = %d\n",lba_no,nblocks,rc,errno);
             if (rc <= 0) {
-                DEBUG_3("cblk_write failed at lba = 0x%lx, rc = %d, errno = %d\n",lba_no,rc,errno);
+                DEBUG_3("cblk_write failed at lba = 0x%lx, rc = %d, errno=%d\n",
+                        lba_no,rc,errno);
             }
             break;
         case FV_AWRITE:
-            if ((open_flag & FV_NO_INRPT) &&
-                    (io_flags & CBLK_ARW_USER_STATUS_FLAG)) {
-                rc = cblk_awrite(id, blk_fvt_comp_data_buf+align, lba_no, nblocks, &tag, &awrt_status, io_flags);
-            } else {
-                rc = cblk_awrite(id, blk_fvt_comp_data_buf+align, lba_no, nblocks,
-                        &tag, NULL, io_flags);
+            if (io_flags & CBLK_ARW_USER_STATUS_FLAG)
+            {
+                if (io_flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_awrite(id, blk_fvt_comp_data_buf+align, lba_no,
+                                       nblocks, &cgtag, &awrt_status, io_flags);
+                }
+                else
+                {
+                    rc = cblk_awrite(id, blk_fvt_comp_data_buf+align, lba_no,
+                                     nblocks, &tag, &awrt_status, io_flags);
+                }
+            }
+            else
+            {
+                if (io_flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_awrite(id, blk_fvt_comp_data_buf+align, lba_no,
+                                        nblocks, &cgtag, NULL, io_flags);
+                }
+                else
+                {
+                    rc = cblk_awrite(id, blk_fvt_comp_data_buf+align, lba_no,
+                                     nblocks, &tag, NULL, io_flags);
+                }
             }
 
             if (rc < 0) {
-                DEBUG_3("cblk_awrite error  lba = 0x%lx, rc = %d, errno = %d\n", lba_no, rc, errno);
+                DEBUG_3("cblk_awrite error  lba = 0x%lx, rc = %d, errno = %d\n",
+                        lba_no, rc, errno);
                 *ret = rc;
                 *err = errno;
                 return;
-            } else {
-                while (TRUE) {
-
-                    rc = cblk_aresult(id,&tag, &ar_status,arflag);
-                    if (rc > 0) {
+            }
+            else
+            {
+                while (TRUE)
+                {
+                    if (io_flags & CBLK_GROUP_RAID0)
+                    {
+                        rc = cblk_cg_aresult(id,&cgtag, &ar_status,io_flags);
+                    }
+                    else
+                    {
+                        rc = cblk_aresult(id, &tag, &ar_status, io_flags);
+                    }
+                    if (rc > 0)
+                    {
                         if (blk_verbosity) {
                             DEBUG_0("Async write data completed ...\n");
                             if (blk_verbosity == 9) {
@@ -600,14 +653,20 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *r
                                 hexdump(blk_fvt_comp_data_buf,100,NULL);
                             }
                         }
-                    } else if (rc == 0) {
-                        DEBUG_3("cblk_aresult completed: command still active  for tag = 0x%x, rc = %d, errno = %d\n",tag,rc,errno);
+                    }
+                    else if (rc == 0)
+                    {
+                        DEBUG_3("cblk_aresult completed: command still active "
+                                "for tag = 0x%x, rc = %d, errno = %d\n",
+                                tag,rc,errno);
                         usleep(1000);
                         continue;
-                    } else {
-                        DEBUG_3("cblk_aresult completed for  for tag = 0x%d, rc = %d, errno = %d\n",tag,rc,errno);
                     }
-
+                    else
+                    {
+                        DEBUG_3("cblk_aresult completed for  for tag = 0x%d, "
+                                "rc = %d, errno = %d\n",tag,rc,errno);
+                    }
                     break;
 
                 } /* while */
@@ -624,19 +683,18 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks, int *r
 
 }
 
-void
-blk_fvt_intrp_io_tst(chunk_id_t id,
-           int testflag,
-	   int open_flag,
-	   int *ret,
-	   int *err)
+void blk_fvt_intrp_io_tst(chunk_id_t id,
+                          int testflag,
+                          int open_flag,
+                          int *ret,
+                          int *err)
 {
     int             rc = 0;
     int             err_no = 0;
     errno = 0;
     int             tag = 0;
-    uint64_t	lba_no = 1;
-    int		nblocks = 1;
+    uint64_t        lba_no = 1;
+    int             nblocks = 1;
     cblk_arw_status_t arw_status;
     int             fd;
     int             arflag = 0;
@@ -704,14 +762,12 @@ blk_fvt_intrp_io_tst(chunk_id_t id,
 void
 check_astatus(chunk_id_t id, int *tag, int arflag, int open_flag, int io_flags, cblk_arw_status_t *arw_status, int *rc, int *err)
 {
-
     uint64_t ar_status = 0;
     int ret = 0;
 
-
     while (TRUE) {
-        if ((open_flag & ~FV_NO_INRPT) &&
-                (io_flags & CBLK_ARW_USER_STATUS_FLAG)) {
+        if (io_flags & CBLK_ARW_USER_STATUS_FLAG)
+        {
             switch (arw_status->status) {
                 case CBLK_ARW_STATUS_SUCCESS:
                     ret = arw_status->blocks_transferred;
@@ -747,7 +803,10 @@ check_astatus(chunk_id_t id, int *tag, int arflag, int open_flag, int io_flags, 
 
 }
 
-
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 void blk_fvt_dump_stats(chunk_stats_t *stats)
 {
     fprintf(stderr,"chunk_statistics:\n");
@@ -796,6 +855,10 @@ void blk_fvt_dump_stats(chunk_stats_t *stats)
 
 }
 
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 void blk_get_statistics (chunk_id_t id, int flags, int *ret, int *err)
 {
 
@@ -817,370 +880,352 @@ void blk_get_statistics (chunk_id_t id, int flags, int *ret, int *err)
     }
 }
 
-
-
-void *blk_io_loop(void *data)
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+void* blk_io_loop(void *data)
 {
-    int rc = 0;
-    int tag;
-    int i;
-    blk_thread_data_t *blk_data = data;
-    uint32_t local_thread_count = 0;
-    void *data_buf = NULL;
-    void *comp_data_buf = NULL;
-    uint64_t blk_number;
-    uint64_t ar_status;
-    int cmd_type;
-    int fd;
-    int arflag = 0;
-    int x, num_luns;
+    cflsh_cg_tag_t      cgtag           = {0};
+    int                 tag             = 0;
+    blk_thread_data_t  *blk_data        = data;
+    int                 rc              = 0;
+    void               *data_buf        = NULL;
+    void               *comp_data_buf   = NULL;
+    uint64_t            blk_number      = 0;
+    uint64_t            ar_status       = 0;
+    int                 cmd_type        = 0;
+    int                 fd              = 0;
+    int                 arflag          = 0;
+    int                 x               = 0;
+    int                 loop            = 0;
+    int                 lba             = 0;
+    int                 max_lba         = 0;
+    uint8_t             rand            = 0;
 
+    fd = open ("/dev/urandom", O_RDONLY);
+    read (fd, &rand, 1);
+    close(fd);
 
+    /* Each thread is using a different block number range */
+    blk_number = blk_data->tid * CHUNK_SIZE;
+    max_lba    = blk_number    + CHUNK_SIZE;
 
-    pthread_mutex_lock(&completion_lock);
-    local_thread_count = thread_count++;
-
-    /*
-     * Each thread is using a different
-     * block number range.
-     */
-
-
-    blk_number = block_number + (num_loops * thread_count);
-
-    num_luns = num_devs ;
-
-    pthread_mutex_unlock(&completion_lock);
-
-
-    /*
-     * Align data buffer on page boundary.
-     */	
-    if ( posix_memalign((void *)&data_buf,4096,BLK_FVT_BUFSIZE)) {
-
+    if (posix_memalign((void *)&data_buf,4096,BLK_FVT_BUFSIZE))
+    {
         perror("posix_memalign failed for data buffer");
-
-        blk_data->status.ret = -1;
-        blk_data->status.errcode = errno;
-        pthread_exit(&(blk_data->status));
+        blk_data->ret     = -1;
+        blk_data->errcode = errno;
+        goto exit;
     }
-
+    if (posix_memalign((void*)&comp_data_buf,4096,BLK_FVT_BUFSIZE))
+    {
+        perror("posix_memalign failed for data buffer");
+        blk_data->ret     = -1;
+        blk_data->errcode = errno;
+        goto exit;
+    }
 
     errno = 0;
-    if (local_thread_count % 2) {
-        cmd_type = FV_RW_AWAR;
-    } else {
+
+    if (blk_data->tid % 2 && !(blk_data->flags & SYNC_IO_ONLY))
+    {
+        cmd_type=FV_RW_AWAR;
+    }
+    else
+    {
         cmd_type = FV_RW_COMP;
     }
-    for (x =0; x<num_luns; x++)  {
-        for (i =0; i<num_loops; i++) {
-            switch (cmd_type) {
-                case FV_RW_COMP:
 
-                    /* 
-                     * Perform write then read comparision test
-                     */
-                    /*
-                     * Align data buffer on page boundary.
-                     */	
-                    if ( posix_memalign((void *)&comp_data_buf,4096,BLK_FVT_BUFSIZE)) {
+    for (x=0; x<blk_data->num_devs; x++)
+    {
+        lba  = blk_number;
+        loop = 0;
 
-                        perror("posix_memalign failed for data buffer");
-                        blk_data->status.ret = -1;
-                        blk_data->status.errcode = errno;
-                        pthread_exit(&(blk_data->status));
+        while (loop < num_loops)
+        {
+            memset(comp_data_buf, ++rand, BLK_FVT_BUFSIZE);
 
+            if (cmd_type == FV_RW_COMP)
+            {
+                rc = cblk_write(blk_data->chunk_id[x],comp_data_buf,
+                                lba,1,blk_data->flags);
+                if (rc != 1)
+                {
+                    DEBUG_3("write failed tid:%d rc:%d errno:%d\n",
+                            blk_data->tid, rc, errno);
+                    goto exit;
+                }
+
+                rc = cblk_read(blk_data->chunk_id[x],data_buf,
+                               lba,1,blk_data->flags);
+                if (rc != 1)
+                {
+                    DEBUG_3("read failed tid:%d rc:%d errno:%d\n",
+                            blk_data->tid, rc, errno);
+                    goto exit;
+                }
+
+                if ((rc=memcmp(data_buf,comp_data_buf,BLK_FVT_BUFSIZE)) != 0)
+                {
+                    if(blk_verbosity == 9)
+                    {
+                        fprintf(stderr,"Data compare failure\n");
+                        /*
+                           fprintf(stderr,"Written data:\n");
+                           dumppage(data_buf,BLK_FVT_BUFSIZE);
+                           fprintf(stderr,"******************************\n\n");
+                           fprintf(stderr,"read data:\n");
+                           dumppage(comp_data_buf,BLK_FVT_BUFSIZE);
+                           fprintf(stderr,"******************************\n\n");
+                         */
                     }
-
-                    fd = open ("/dev/urandom", O_RDONLY);
-                    read (fd, comp_data_buf, BLK_FVT_BUFSIZE);
-                    close (fd);
-
-                    rc = cblk_write(blk_data->chunk_id[x],comp_data_buf,blk_number,1,0);
-
-                    if (rc != 1) {
-                        blk_data->status.ret = rc;
-                        blk_data->status.errcode = errno;
-                        free(comp_data_buf);
-                        free(data_buf);
-                        pthread_mutex_lock(&completion_lock);
-                        DEBUG_2("Write failed rc = %d, errno = %d\n",rc, errno);
-                        pthread_mutex_unlock(&completion_lock);
-                        pthread_exit(&(blk_data->status));
-                    }
-                    rc = cblk_read(blk_data->chunk_id[x],data_buf,blk_number,1,0);
-
-                    if (rc != 1) {
-
-                        blk_data->status.ret = rc;
-                        blk_data->status.errcode = errno;
-                        free(comp_data_buf);
-                        free(data_buf);
-                        pthread_mutex_lock(&completion_lock);
-                        DEBUG_2("Read failed rc = %d, errno = %d\n",rc, errno);
-                        pthread_mutex_unlock(&completion_lock);
-                        pthread_exit(&(blk_data->status));
-                    }
-
-                    rc = memcmp(data_buf,comp_data_buf,BLK_FVT_BUFSIZE);
-
-                    if (rc) {
-                        blk_data->status.ret = rc;
-                        blk_data->status.errcode = errno;
-                        if(blk_verbosity == 9) {
-                            pthread_mutex_lock(&completion_lock);
-                            fprintf(stderr,"Data compare failure\n");
-                            /*
-                               fprintf(stderr,"Written data:\n");
-                               dumppage(data_buf,BLK_FVT_BUFSIZE);
-                               fprintf(stderr,"**********************************************************\n\n");
-                               fprintf(stderr,"read data:\n");
-                               dumppage(comp_data_buf,BLK_FVT_BUFSIZE);
-                               fprintf(stderr,"**********************************************************\n\n");
-                             */
-                            pthread_mutex_unlock(&completion_lock);
+                    rc = cblk_read(blk_data->chunk_id[x],data_buf,
+                                   lba,1,blk_data->flags);
+                    if (rc == 1)
+                    {
+                        if (blk_verbosity == 9)
+                        {
+                            fprintf(stderr,"Dump of re-read\n");
+                            dumppage(data_buf,BLK_FVT_BUFSIZE);
                         }
-
-                        rc = cblk_read(blk_data->chunk_id[x],data_buf,blk_number,1,0);
-                        if (rc == 1) {
-                            if(blk_verbosity == 9) {
-                                pthread_mutex_lock(&completion_lock);
-                                fprintf(stderr,"Dump of re-read\n");
-
-                                dumppage(data_buf,BLK_FVT_BUFSIZE);
-                                pthread_mutex_unlock(&completion_lock);
-                            }
-                        }
-
                     }
-                    free(comp_data_buf);
-                    break;
-                case FV_RW_AWAR:
+                    goto exit;
+                }
+            }
+            else if (cmd_type == FV_RW_AWAR)
+            {
+                memset(comp_data_buf, ++rand, BLK_FVT_BUFSIZE);
 
-                    /* 
-                     * Perform write then read comparision test
-                     */
+                arflag = blk_data->flags;
 
-                    /*
-                     * Align data buffer on page boundary.
-                     */	
-                    if ( posix_memalign((void *)&comp_data_buf,4096,BLK_FVT_BUFSIZE)) {
-                        perror("posix_memalign failed for data buffer");
-                        perror("posix_memalign failed for data buffer");
-                        blk_data->status.ret = 0;
-                        blk_data->status.errcode = errno;
-                        pthread_exit(&(blk_data->status));
+                if (blk_data->flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_awrite(blk_data->chunk_id[x], comp_data_buf,
+                                        lba, 1, &cgtag, NULL, blk_data->flags);
+                }
+                else
+                {
+                    rc = cblk_awrite(blk_data->chunk_id[x], comp_data_buf,
+                                     lba, 1, &tag, NULL,0);
+                }
+                if (rc < 0)
+                {
+                    DEBUG_3("awrite failed tid:%d rc:%d errno:%d\n",
+                            blk_data->tid, rc, errno);
+                    goto exit;
+                }
+                while (TRUE)
+                {
+                    if (blk_data->flags & CBLK_GROUP_RAID0)
+                    {
+                        rc = cblk_cg_aresult(blk_data->chunk_id[x], &cgtag,
+                                             &ar_status, arflag);
                     }
-
-                    fd = open ("/dev/urandom", O_RDONLY);
-                    read (fd, comp_data_buf, BLK_FVT_BUFSIZE);
-                    close (fd);
-
-                    rc = cblk_awrite(blk_data->chunk_id[x],comp_data_buf,blk_number,1,&tag,NULL,0);
-
-                    if (rc < 0) {
-                        blk_data->status.ret = rc;
-                        blk_data->status.errcode = errno;
-                        free(comp_data_buf);
-                        free(data_buf);
-                        pthread_mutex_lock(&completion_lock);
-                        DEBUG_2("Awrite failed rc = %d, errno = %d\n",rc, errno);
-                        pthread_mutex_unlock(&completion_lock);
-                        pthread_exit(&(blk_data->status));
-                    } 
-                    arflag = CBLK_ARESULT_BLOCKING;
-                    while (TRUE) {
-                        rc = cblk_aresult(blk_data->chunk_id[x],&tag, &ar_status,arflag);
-                        if (rc > 0) {
-                            pthread_mutex_lock(&completion_lock);
-                            DEBUG_2("wrc=%d, tag = %x\n",rc, tag);
-                            DEBUG_0("Async write data completed ...\n");
-                            pthread_mutex_unlock(&completion_lock);
-                        } else if (rc == 0) {
-                            pthread_mutex_lock(&completion_lock);
-                            DEBUG_2("Waiting for command to complete wrc=%d, tag = %x\n",rc, tag);
-                            pthread_mutex_unlock(&completion_lock);
-                            usleep(1000);
-                            continue;
-                        } else {
-                            pthread_mutex_lock(&completion_lock);
-                            DEBUG_3("cblk_aresult completed (failed write) for  for tag = 0x%x, rc = %d, errno = %d\n",tag,rc,errno);
-                            pthread_mutex_unlock(&completion_lock);
-                        }
+                    else
+                    {
+                        rc = cblk_aresult(blk_data->chunk_id[x], &tag,
+                                          &ar_status, arflag);
+                    }
+                    if (rc > 0)
+                    {
+                        DEBUG_3("awrite cmp tid:%3d lba:%6d rc=%d \n",
+                                blk_data->tid, lba, rc);
                         break;
-                    } /* while */
-
-
-                    rc = cblk_aread(blk_data->chunk_id[x],data_buf,blk_number,1,&tag,NULL,0);
-
-                    if (rc < 0) {
-                        blk_data->status.ret = rc;
-                        blk_data->status.errcode = errno;
-                        free(comp_data_buf);
-                        free(data_buf);
-                        pthread_mutex_lock(&completion_lock);
-                        DEBUG_2("Aread failed rc = %d, errno = %d\n",rc, errno);
-                        pthread_mutex_unlock(&completion_lock);
-                        pthread_exit(&(blk_data->status));
-                    } 
-
-                    arflag = CBLK_ARESULT_BLOCKING;
-                    while (TRUE) {
-
-                        rc = cblk_aresult(blk_data->chunk_id[x],&tag, &ar_status,arflag);
-                        if (rc > 0) {
-                            pthread_mutex_lock(&completion_lock);
-                            DEBUG_2("rc=%d, tag = %x\n",rc, tag);
-                            DEBUG_0("Async read data completed ...\n");
-                            pthread_mutex_unlock(&completion_lock);
-                        } else if (rc == 0) {
-                            pthread_mutex_lock(&completion_lock);
-                            DEBUG_2("rc=%d, tag = %x\n",rc, tag);
-                            DEBUG_3("Waiting for command to complete for tag = 0x%x, rc = %d, errno = %d\n",tag,rc,errno);
-                            pthread_mutex_unlock(&completion_lock);
-                            usleep(1000);
-                            continue;
-                        } else {
-                            pthread_mutex_lock(&completion_lock);
-                            DEBUG_3("cblk_aresult completed (failed read) for  for tag = 0x%x, rc = %d, errno = %d\n",tag,rc,errno);
-                            pthread_mutex_unlock(&completion_lock);
-                        }
-
-                        break;
-
-                    } /* while */
-
-                    pthread_mutex_lock(&completion_lock);
-                    DEBUG_2("Read ******** RC = %d tag %x\n",rc, tag);
-
-                    DEBUG_1("Read completed with rc = %d\n",rc);
-                    pthread_mutex_unlock(&completion_lock);
-
-                    rc = memcmp(data_buf,comp_data_buf,BLK_FVT_BUFSIZE);
-
-                    if (rc) {
-                        blk_data->status.ret = rc;
-                        blk_data->status.errcode = errno;
-                        if (blk_verbosity==9) {
-                            pthread_mutex_lock(&completion_lock);
-                            fprintf(stderr,"Data compare failure\n");
-                            /*
-                               fprintf(stderr,"Written data:\n");
-                               dumppage(data_buf,BLK_FVT_BUFSIZE);
-                               fprintf(stderr,"**********************************************************\n\n");
-                               fprintf(stderr,"read data:\n");
-                               dumppage(comp_data_buf,BLK_FVT_BUFSIZE);
-                               fprintf(stderr,"**********************************************************\n\n");
-                             */
-                            pthread_mutex_unlock(&completion_lock);
-                        }	
-                        rc = cblk_read(blk_data->chunk_id[x],data_buf,blk_number,1,0);
-
-                        if (rc == 1) {
-                            if (blk_verbosity==9) {
-                                DEBUG_0("Dump re-read OK\n");
-                                /*
-                                   dumppage(data_buf,BLK_FVT_BUFSIZE);
-                                 */
-                            }
-                        }
-
-                    } else if (!thread_flag) {
-                        DEBUG_0("Memcmp succeeded\n");
                     }
-                    free(comp_data_buf);
-                    break;
-                default:
+                    else if (rc == 0)
+                    {
+                        DEBUG_3("awrite wait tid:%3d lba:%6d rc=%d\n",
+                                blk_data->tid, lba, rc);
+                        usleep(10);
+                    }
+                    else
+                    {
+                        DEBUG_4("awrite err tid:%3d lba:%6d rc:%d errno:%d\n",
+                                blk_data->tid, lba,rc,errno);
+                        goto exit;
+                    }
+                }
 
-                    fprintf(stderr,"Invalid cmd_type = %d\n",cmd_type);
-                    i = num_loops;
-            } /* switch */
+                if (blk_data->flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_aread(blk_data->chunk_id[x],data_buf,lba,1,
+                                       &cgtag,NULL,arflag);
+                }
+                else
+                {
+                    rc = cblk_aread(blk_data->chunk_id[x],data_buf,lba,1,
+                                    &tag,NULL,arflag);
+                }
+                if (rc < 0)
+                {
+                    DEBUG_2("Aread failed rc = %d, errno = %d\n",rc, errno);
+                    goto exit;
+                }
 
+                while (TRUE)
+                {
+                    if (blk_data->flags & CBLK_GROUP_RAID0)
+                    {
+                        rc = cblk_cg_aresult(blk_data->chunk_id[x], &cgtag,
+                                             &ar_status, arflag);
+                    }
+                    else
+                    {
+                        rc = cblk_aresult(blk_data->chunk_id[x], &tag,
+                                          &ar_status, arflag);
+                    }
+                    if (rc > 0)
+                    {
+                        DEBUG_3("aread  cmp tid:%3d lba:%6d rc=%d \n",
+                                blk_data->tid, lba, rc);
+                        break;
+                    }
+                    else if (rc == 0)
+                    {
+                        DEBUG_3("aread  wait tid:%3d lba:%6d rc=%d\n",
+                                blk_data->tid, lba, rc);
+                        usleep(10);
+                    }
+                    else
+                    {
+                        DEBUG_4("aread  err tid:%3d lba:%6d rc:%d errno:%d\n",
+                                blk_data->tid, lba,rc,errno);
+                        goto exit;
+                    }
+                }
 
-            blk_number++;
+                if ((rc=memcmp(data_buf,comp_data_buf,BLK_FVT_BUFSIZE)) != 0)
+                {
+                    if (blk_verbosity==9)
+                    {
+                        fprintf(stderr,"Data compare failure\n");
+                        /*
+                           fprintf(stderr,"Written data:\n");
+                           dumppage(data_buf,BLK_FVT_BUFSIZE);
+                           fprintf(stderr,"******************************\n\n");
+                           fprintf(stderr,"read data:\n");
+                           dumppage(comp_data_buf,BLK_FVT_BUFSIZE);
+                           fprintf(stderr,"******************************\n\n");
+                         */
+                    }
+                    rc = cblk_read(blk_data->chunk_id[x],data_buf,
+                                   lba,1,blk_data->flags);
+                    if (rc == 1)
+                    {
+                        if (blk_verbosity==9)
+                        {
+                            DEBUG_0("Dump re-read OK\n");
+                            /*
+                               dumppage(data_buf,BLK_FVT_BUFSIZE);
+                             */
+                        }
+                    }
+                    goto exit;
+                }
+            }
+            //DEBUG_4("tid:%d dev:%d loop:%d lba:%d\n",
+            //            blk_data->tid, x, loop, lba);
 
-            pthread_mutex_lock(&completion_lock);
-            DEBUG_3("Dev = %d. Loop count = %d of %d\n",x, i,num_loops);
-            pthread_mutex_unlock(&completion_lock);
-        } /* for num_loops */
+            if (++lba == max_lba)
+            {
+                loop += 1;
+                lba   = blk_number;
+                DEBUG_3("tid:%d dev:%d loop:%d \n", blk_data->tid, x, loop);
+            }
+        } /* while num_loops */
     } /* for num_luns */
 
-    free(data_buf);
+exit:
+    blk_data->ret     = rc;
+    blk_data->errcode = errno;
 
-    pthread_exit(&(blk_data->status));
+    if (data_buf)      {free(data_buf);}
+    if (comp_data_buf) {free(comp_data_buf);}
+
+    return NULL;
 }
 
-void blk_thread_tst(int *ret, int *err)
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags)
 {
+    int                 rc          = 0;
+    int                 ret_code    = 0;
+    int                 i           = 0;
+    int                 x           = 0;
+    blk_thread_data_t  *tdata       = NULL;
+    chunk_id_t          id[MAX_LUNS]= {0};
 
+    if (env_filemode && atoi(env_filemode)==1)
+    {
+        num_loops   = 1;
+        num_threads = 4;
+        num_devs    = 1;
+    }
 
-    int rc;           /* Return code                 */
-    int ret_code=0;
-    int i,x;
-    void            *status;
-    blk_thread_status_t thread_stat;
-    chunk_ext_arg_t ext = 0;
-    int flags = 0;
+    tdata = malloc(num_threads*sizeof(blk_thread_data_t));
+    memset(tdata,0,num_threads*sizeof(blk_thread_data_t));
 
+    for (x=0; x<num_devs; x++)
+    {
+        if (open_flags & CBLK_GROUP_RAID0)
+        {
+            id[x] = cblk_cg_open(dev_paths[0], 1024, O_RDWR, 1, ext, open_flags);
+        }
+        else
+        {
+            id[x] = cblk_open(dev_paths[x], 1024, O_RDWR, ext, open_flags);
+        }
 
-    for (x=0; x < num_devs; x++) {
-        blk_data.size = 64;
-        if (virt_lun_flags)
-            flags = CBLK_OPN_VIRT_LUN;
-        if (share_cntxt_flags)
-            flags |= CBLK_OPN_SHARE_CTXT;
-        blk_data.chunk_id[x] = cblk_open(dev_paths[x],64,O_RDWR,ext,flags);
-
-        if (blk_data.chunk_id[x] == NULL_CHUNK_ID) {
-
+        if (id[x] == NULL_CHUNK_ID)
+        {
             DEBUG_2("Open of %s failed with errno = %d\n",dev_paths[x],errno);
             *ret = -1;
             *err = errno;
             return;
         }
 
-        num_opens ++;
+        num_opens++;
         /* Skip for physical luns */
-        if (virt_lun_flags ) {
-
+        if (open_flags & CBLK_OPN_VIRT_LUN)
+        {
             /*
              * On the first pass thru this loop
              * for virtual lun, open the virtual lun
              * and set its size. Subsequent passes.
              * skip this step.
              */
+            rc = cblk_set_size(id[x],CHUNK_SIZE*num_threads,io_flags);
 
-
-            rc = cblk_set_size(blk_data.chunk_id[x],1024,0);
-
-            if (rc) {
+            if (rc)
+            {
                 perror("cblk_set_size failed\n");
                 *ret = -1;
                 *err = errno;
-                for (x=0; x < num_opens; x++) {
-                    cblk_close(blk_data.chunk_id[x], 0);
+                for (x=0; x<num_opens; x++)
+                {
+                    cblk_close(id[x], io_flags);
                 }
                 return;
             }
-
         }
-
     }
-    if (num_threads >= 1) {
-
-        /*
-         * Create all threads here
-         */
-
-        for (i=0; i< num_threads; i++) {
-
-            /*
-               rc = pthread_create(&blk_thread[i].thread,NULL,blk_io_loop,(void *)&blk_data);
-             */
-
-            rc = pthread_create(&blk_thread[i],NULL,blk_io_loop,(void *)&blk_data);
-            if (rc) {
-
+    if (num_threads > 0)
+    {
+        /* Create all threads here */
+        for (i=0; i<num_threads; i++)
+        {
+            memcpy(tdata[i].chunk_id,id,sizeof(id));
+            tdata[i].num_devs = num_devs;
+            tdata[i].flags    = io_flags;
+            tdata[i].tid      = i;
+            rc = pthread_create(&blk_thread[i], NULL, blk_io_loop,
+                                (void*)&tdata[i]);
+            if (rc)
+            {
                 DEBUG_3("pthread_create failed for %d rc 0x%x, errno = 0x%x\n",
                         i, rc,errno);
                 *ret = -1;
@@ -1188,102 +1233,93 @@ void blk_thread_tst(int *ret, int *err)
             }
         }
 
-
-        /* 
-         * Wait for all threads to complete
-         */
-
-
+        /* Wait for all threads to complete */
         errno = 0;
 
-        for (i=0; i< num_threads; i++) {
+        for (i=0; i<num_threads; i++)
+        {
+            rc = pthread_join(blk_thread[i], NULL);
 
-            rc = pthread_join(blk_thread[i],&status);
-
-            thread_stat = *(blk_thread_status_t *)status;
-            if(thread_stat.ret || thread_stat.errcode) {
-                *ret = thread_stat.ret;
-                *err = thread_stat.errcode;
-                DEBUG_3("Thread %d returned fail ret %x, errno = %d\n",i,
-                        thread_stat.ret,
-                        thread_stat.errcode); 
+            if (tdata[i].ret || tdata[i].errcode)
+            {
+                *ret = tdata[i].ret;
+                *err = tdata[i].errcode;
+                DEBUG_3("Thread %d returned fail ret %x, errno = %d\n",
+                        i, tdata[i].ret, tdata[i].errcode);
             }
         }
+    }
 
-    } 
-
-    // fix close
-
-    DEBUG_1("Calling cblk_close num open =%d...\n",num_opens);
-    for (x=0; num_opens!=0; x++) {
-        ret_code = cblk_close(blk_data.chunk_id[x],0);
-        if (ret_code) {
-            DEBUG_2("Close of %s failed with errno = %d\n",dev_paths[x],errno);
+    DEBUG_1("Calling cblk_close num_opens:%d...\n",num_opens);
+    for (x=0; x<num_opens; x++)
+    {
+        ret_code = cblk_close(id[x],io_flags);
+        if (ret_code)
+        {
+            DEBUG_2("Close of id:%d failed with errno = %d\n", id[x],errno);
             *ret = ret_code;
             *err = errno;
         }
-        num_opens --;
     }
-
+    if (tdata) {free(tdata);};
 }
 
-
-
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 void blocking_io_tst (chunk_id_t id, int *ret, int *err)
 {
     int rc = -1;
     errno = 0;
-    int cmdtag[1000];
-    /*
-       int artag[512];
-     */
     int rtag = -1;
     uint64_t ar_status = 0;
-    uint64_t lba;
+    uint64_t lba =1;
     size_t nblocks=1;
     int fd, i;
     int arflg = 0;
     int t = 1;
+    int num_cmds=100;
 
-    lba = 1;
-    for (i=0; i < 1000; i++,lba++) {
+    for (i=0; i<num_cmds; i++,lba++)
+    {
         /* fill compare buffer with pattern */
         fd = open ("/dev/urandom", O_RDONLY);
         read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE);
         close (fd);
-        rc = cblk_awrite(id,blk_fvt_comp_data_buf,lba,nblocks,&cmdtag[i],NULL,arflg);
-        DEBUG_3("\n***** cblk_awrite rc = 0x%d, tag = %d, lba =0x%lx\n",rc, cmdtag[i], lba);
-        if (!rc) {
-            DEBUG_1("Async write returned tag = %d\n", cmdtag[i]);
-        } else if (rc < 0) {
-            DEBUG_3("awrite failed for  lba = 0x%lx, rc = %d, errno = %d\n",lba,rc,errno);
+
+        rc = cblk_awrite(id,blk_fvt_comp_data_buf,lba,nblocks,&rtag,NULL,arflg);
+        DEBUG_3("\n***** cblk_awrite rc = 0x%d, tag = %d, lba =0x%lx\n",
+                rc, rtag, lba);
+        if (!rc)
+        {
+            DEBUG_1("Async write returned tag = %d\n", rtag);
         } 
+        else if (rc < 0)
+        {
+            DEBUG_3("awrite failed for  lba = 0x%lx, rc = %d, errno = %d\n",
+                    lba,rc,errno);
+        }
     }
 
-    /*
-       arflg = CBLK_ARESULT_NEXT_TAG|CBLK_ARESULT_BLOCKING;
-     */
-    arflg = CBLK_ARESULT_NEXT_TAG;
+    arflg = CBLK_ARESULT_NEXT_TAG|CBLK_ARESULT_BLOCKING;
 
-    while (TRUE) {
+    while (TRUE)
+    {
         rc = cblk_aresult(id,&rtag, &ar_status,arflg);
 
-        if (rc > 0) {
+        if (rc > 0)
+        {
             DEBUG_2("aresult rc = %d, tag = %d\n",rc,rtag);
             t++;
-            if (t>1000)
-                break;
+            if (t>num_cmds) {break;}
         }
-        if (rc == 0) {
-            printf("Z");
-            usleep(1000);
-            continue;
-        } else if (rc < 0) {
+        else
+        {
             DEBUG_1("aresult error = %d\n",errno);
             break;
         }
     }
-
 
     *ret = rc;
     *err = errno;
@@ -1291,9 +1327,11 @@ void blocking_io_tst (chunk_id_t id, int *ret, int *err)
     return;
 }
 
-#define NBUFS 10
-
-void user_tag_io_tst (chunk_id_t id, int *ret, int *err)
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+void user_tag_io_tst (chunk_id_t id, int *ret, int *err, int flags)
 {
     int      rc        = -1;
     uint64_t ar_status = 0;
@@ -1301,7 +1339,7 @@ void user_tag_io_tst (chunk_id_t id, int *ret, int *err)
     size_t   nblocks   = 1;
     int      i         = 0;
     int      iter      = 0;
-    int      tag       = 0;
+    int      tag[NBUFS]= {0};
     int      arflg     = 0;
     char    *data_buf[NBUFS];
 
@@ -1330,16 +1368,16 @@ START:
     }
     bzero(blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE);
 
-    arflg = CBLK_ARW_WAIT_CMD_FLAGS | CBLK_ARW_USER_TAG_FLAG;
+    arflg = CBLK_ARW_WAIT_CMD_FLAGS | CBLK_ARW_USER_TAG_FLAG | flags;
 
     /* do writes */
-    lba = 1;
+    lba = 10;
     for (i=0; i<NBUFS; i++,lba++)
     {
-        tag=lba;
-        rc = cblk_awrite(id, *(data_buf+i), lba, nblocks, &tag, NULL, arflg);
+        tag[i]=lba;
+        rc = cblk_awrite(id, *(data_buf+i), lba, nblocks, &tag[i], NULL, arflg);
         DEBUG_3("\n***** cblk_awrite rc = 0x%d, tag = %d, lba =0x%lx\n",
-                rc, tag, lba);
+                rc, tag[i], lba);
         if (rc < 0)
         {
             DEBUG_3("awrite failed for  lba = 0x%lx, rc = %d, errno = %d\n",
@@ -1348,32 +1386,31 @@ START:
         }
     }
 
-    arflg = CBLK_ARESULT_USER_TAG | CBLK_ARESULT_BLOCKING;
+    arflg = CBLK_ARESULT_USER_TAG | CBLK_ARESULT_BLOCKING | flags;
 
     /* do completions in the reverse order that they were sent */
-    for (i=NBUFS; i>0; i--)
+    for (i=NBUFS-1; i>=0; i--)
     {
-        tag = i;
-        rc  = cblk_aresult(id, &tag, &ar_status, arflg);
+        rc  = cblk_aresult(id, &tag[i], &ar_status, arflg);
         if (rc != 1)
         {
             DEBUG_1("aresult error = %d\n",errno);
             rc=-1;
             goto exit;
         }
-        DEBUG_2("\n***** cblk_aresult rc = 0x%d, tag = %d\n", rc, i);
+        DEBUG_2("\n***** cblk_aresult rc = 0x%d, tag = %d\n", rc, tag[i]);
     }
 
     /* do read-compares */
-    lba = 1;
+    lba = 10;
     for (i=0; i<NBUFS; i++,lba++)
     {
-        tag   = 5+i;
-        arflg = CBLK_ARW_WAIT_CMD_FLAGS | CBLK_ARW_USER_TAG_FLAG;
-        rc    = cblk_aread(id, blk_fvt_comp_data_buf, lba, nblocks, &tag,
+        tag[i]= NBUFS+i;
+        arflg = CBLK_ARW_WAIT_CMD_FLAGS | CBLK_ARW_USER_TAG_FLAG | flags;
+        rc    = cblk_aread(id, blk_fvt_comp_data_buf, lba, nblocks, &tag[i],
                         NULL, arflg);
         DEBUG_3("\n***** cblk_aread rc = 0x%d, tag = %d, lba =0x%lx\n",
-                rc, tag, lba);
+                rc, tag[i], lba);
         if (rc < 0)
         {
             DEBUG_3("aread failed for  lba = 0x%lx, rc = %d, errno = %d\n",
@@ -1381,19 +1418,19 @@ START:
             goto exit;
         }
 
-        arflg = CBLK_ARESULT_USER_TAG | CBLK_ARESULT_BLOCKING;
+        arflg = CBLK_ARESULT_USER_TAG | CBLK_ARESULT_BLOCKING | flags;
 
-        rc = cblk_aresult(id, &tag, &ar_status, arflg);
+        rc = cblk_aresult(id, &tag[i], &ar_status, arflg);
         if (rc != 1)
         {
             DEBUG_1("aresult error = %d\n",errno);
             rc=-1;
             goto exit;
         }
-        DEBUG_2("\n***** cblk_aresult rc = 0x%d, tag = %d\n", rc, tag);
+        DEBUG_2("\n***** cblk_aresult rc = 0x%d, tag = %d\n", rc, tag[i]);
         if (memcmp(blk_fvt_comp_data_buf, *(data_buf+i), BLK_FVT_BUFSIZE) != 0)
         {
-            printf("miscompare for tag: %d\n", tag);
+            printf("miscompare for tag: %d\n", tag[i]);
             rc=-1;
             goto exit;
         }
@@ -1416,86 +1453,105 @@ exit:
     return;
 }
 
-
-void io_perf_tst (chunk_id_t id, int *ret, int *err)
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags)
 {
-    int rc = -1;
-    errno = 0;
-    int cmdtag[20000];
-    int rtag = -1;
-    uint64_t ar_status = 0;
-    uint64_t lba;
-    size_t nblocks=1;
-    int fd;
-    int  i=0;
-    int arflg = 0;
-    int ret_code = 0;
-    int t ;
-    int x;
-    int y = 0;
-    char *env_num_cmds = getenv("FVT_NUM_CMDS");
-    char *env_num_loop = getenv("FVT_NUM_LOOPS");
-    char *env_io_comp = getenv("FVT_VALIDATE");
+    int             rc              = -1;
+    int            *ctag            = NULL;
+    cflsh_cg_tag_t *cgtag           = NULL;
+    uint64_t        ar_status       = 0;
+    uint64_t        lba             = 0;
+    size_t          nblocks         = 1;
+    int             fd              = 0;
+    int             i               = 0;
+    int             ret_code        = 0;
+    int             t               = 0;
+    int             x               = 0;
+    int             y               = 0;
+    char           *env_num_cmds    = getenv("FVT_NUM_CMDS");
+    char           *env_num_loop    = getenv("FVT_NUM_LOOPS");
+    char           *env_io_comp     = getenv("FVT_VALIDATE");
+    int             size            = 4096;
+    int             loops           = 100;
+    int             validate        = 1;
+    int             num_cmds        = 4096;
 
-
-    int size = 4096;
-    int loops = 500;
-    int validate = 0;
-
-    lba = 1;
-
-
-    int num_cmds = 4096;
-
-    if (env_num_cmds && atoi(env_num_cmds )) {
+    if (env_num_cmds && atoi(env_num_cmds)>0)
+    {
         num_cmds = atoi(env_num_cmds);
-        /** limit 4K cmds **/
-        if (num_cmds > 4096)
-            num_cmds = 4096;
+        if (num_cmds > 4096) {num_cmds = 4096;}
     }
+    if (env_num_loop && atoi(env_num_loop)>0)  {loops = atoi(env_num_loop);}
+    if (env_io_comp  && atoi(env_io_comp)==1)  {validate = 1;}
+    if (env_filemode && atoi(env_filemode)==1) {loops=2; num_cmds=64;}
 
-    if (env_num_loop && atoi(env_num_loop )) {
-        loops = atoi(env_num_loop);
-    }
-
-    if (env_io_comp && (atoi(env_io_comp)==1)) {
-        validate = atoi(env_io_comp);
-    }
-
+    ctag  = malloc(num_cmds*sizeof(int));
+    cgtag = malloc(num_cmds*sizeof(cflsh_cg_tag_t));
 
     /* fill compare buffer with pattern */
     fd = open ("/dev/urandom", O_RDONLY);
     read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*num_cmds);
     close (fd);
 
-    for (x=0; x<loops ; x++, y++) {
+    errno = 0;
 
-        for (t=1, lba=1, i=0; i < num_cmds; i++,lba++) {
-            rc = cblk_awrite(id,
-                    (char*)(blk_fvt_comp_data_buf + (i*size)),
-                    lba,nblocks,&cmdtag[i],NULL,arflg);
-            if (rc < 0) {
-                fprintf(stderr,"awrite failed for  lba = 0x%lx, rc = %d, errno = %d\n",lba,rc,errno);
+    for (x=0; x<loops; x++, y++)
+    {
+        for (lba=0, i=0; i<num_cmds; i++,lba++)
+        {
+            if (flags & CBLK_GROUP_RAID0)
+            {
+                rc = cblk_cg_awrite(id, (char*)(blk_fvt_comp_data_buf+(i*size)),
+                                    lba,nblocks,&cgtag[i],NULL,
+                                    CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
+            }
+            else
+            {
+                rc = cblk_awrite(id, (char*)(blk_fvt_comp_data_buf + (i*size)),
+                              lba,nblocks,&ctag[i],NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+            }
+            if (rc < 0)
+            {
+                fprintf(stderr,"awrite failed for lba = 0x%lx, rc = %d, "
+                               "errno = %d\n",lba,rc,errno);
                 *ret = rc;
                 *err = errno;
                 return;
-            } 
-        }
-
-        arflg = CBLK_ARESULT_NEXT_TAG;
-
-        while (TRUE) {
-            rc = cblk_aresult(id,&rtag, &ar_status,arflg);
-
-            if (rc > 0) {
-                t++;
-                if (t>num_cmds)
-                    break;
             }
-            if (rc == 0)
-                continue;
-            if (rc < 0) {
-                fprintf(stderr,"aresult cmdno = %d, error = %d, rc = 0x%x, \n",
+        }
+        DEBUG_1("awrite sent num_cmds:%d\n", i);
+
+        i=0;
+        while (TRUE)
+        {
+            errno=0;
+            if (flags & CBLK_GROUP_RAID0)
+            {
+                if (cgtag[i].tag == -1) {++i; continue;}
+                rc = cblk_cg_aresult(id, &cgtag[i], &ar_status, flags);
+            }
+            else
+            {
+                if (ctag[i] == -1) {++i; continue;}
+                rc = cblk_aresult(id, &ctag[i], &ar_status, flags);
+            }
+            if (rc > 0)
+            {
+                cgtag[i++].tag = -1;
+                if (i>=num_cmds)
+                {
+                    DEBUG_3("awrite->aresult DONE rc:%d t:%d num_cmds:%d\n",
+                            rc, t, num_cmds);
+                    break;
+                }
+            }
+            else if (rc == 0) {DEBUG_0("awrite->aresult rc=0\n"); continue;}
+            else
+            {
+                fprintf(stderr,"awrite->aresult cmdno:%d errno:%d rc:%d\n",
                         t, errno,rc);
                 *ret = rc;
                 *err = errno;
@@ -1503,69 +1559,94 @@ void io_perf_tst (chunk_id_t id, int *ret, int *err)
             }
         }
 
-        /* read wrote buffer */
-
-        for (t=1, lba=1, i=0; i < num_cmds; i++,lba++) {
-            rc = cblk_aread(id,
-                    (char*)(blk_fvt_data_buf + (i*size)),
-                    lba,nblocks,&cmdtag[i],NULL,arflg);
-            if (rc < 0) {
-                fprintf(stderr,"awrite failed for  lba = 0x%lx, rc = %d, errno = %d\n",lba,rc,errno);
-                *ret = rc;
-                *err = errno;
-                return;
-            } 
-        }
-
-        arflg = CBLK_ARESULT_NEXT_TAG;
-
-        while (TRUE) {
-            rc = cblk_aresult(id,&rtag, &ar_status,arflg);
-
-            if (rc > 0) {
-                t++;
-                if (t>num_cmds)
-                    break;
+        /* read the buffer we wrote */
+        for (lba=0, i=0; i<num_cmds; i++,lba++)
+        {
+            if (flags & CBLK_GROUP_RAID0)
+            {
+                rc = cblk_cg_aread(id, (char*)(blk_fvt_data_buf + (i*size)),
+                                   lba, nblocks, &cgtag[i], NULL,
+                                   CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
             }
-            if (rc == 0)
-                continue;
-            if (rc < 0) {
-                fprintf(stderr,"aresult error = %d\n",errno);
+            else
+            {
+                rc = cblk_aread(id, (char*)(blk_fvt_data_buf + (i*size)),
+                             lba,nblocks,&ctag[i],NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+            }
+            if (rc < 0)
+            {
+                fprintf(stderr,"awrite failed for lba = 0x%lx, rc = %d, "
+                               "errno = %d\n",lba,rc,errno);
                 *ret = rc;
                 *err = errno;
                 return;
             }
         }
 
-        if (!validate) {
+        i=0;
+        while (TRUE)
+        {
+            if (flags & CBLK_GROUP_RAID0)
+            {
+                if (cgtag[i].tag == -1) {++i; continue;}
+                rc = cblk_cg_aresult(id, &cgtag[i], &ar_status, flags);
+            }
+            else
+            {
+                if (ctag[i] == -1) {++i; continue;}
+                rc = cblk_aresult(id, &ctag[i], &ar_status, flags);
+            }
+            if (rc > 0)
+            {
+                cgtag[i++].tag = -1;
+                if (i>=num_cmds) {break;}
+            }
+            else if (rc == 0) {continue;}
+            else
+            {
+                fprintf(stderr,"aread->aresult error = %d\n",errno);
+                *ret = rc;
+                *err = errno;
+                return;
+            }
+        }
+
+        if (validate)
+        {
             ret_code = memcmp((char*)(blk_fvt_data_buf),
-                    (char*)(blk_fvt_comp_data_buf),
-                    BLK_FVT_BUFSIZE*size);
-
-            if (ret_code) {
+                              (char*)(blk_fvt_comp_data_buf),
+                              num_cmds*size);
+            if (ret_code)
+            {
                 fprintf(stderr,"\n memcmp failed rc = 0x%x\n",ret_code);
                 *ret = ret_code;
                 *err = errno;
                 return;
             }
+            /* clear the read buf for the next pass */
+            memset(blk_fvt_data_buf,0,num_cmds*size);
         }
     }
+    if (ctag)  {free(ctag);}
+    if (cgtag) {free(cgtag);}
     DEBUG_2("Perf Test existing i = %d, x = %d\n", i, x );
     return;
 }
 
-
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
 {
 
     int i               = 0;
     int t               = 0;
     chunk_id_t j        = NULL_CHUNK_ID;
-    chunk_ext_arg_t ext = 0;
     errno               = 0;
     int status ;
 
-    char *path          = dev_paths[0];
+    char *path          = (char*)dev_paths[0];
 
     pid_t	    child_pid [700];
     errno               = 0;
@@ -1630,12 +1711,13 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
                     read(pipefds[i*2], &close_now, sizeof(int));
                     DEBUG_2("\nChild %d, Received %d \n",pid, close_now);
                 }
-                DEBUG_2("\nChild %d, Received Parent's OK =%d \n",pid, close_now);
+                DEBUG_3("\nChild %d, Received Parent's OK =%d close id:%d\n",
+                        pid, close_now, j);
                 cblk_close(j, 0);
                 /* exit success */
                 exit(0);
             } else {
-                fprintf(stderr,"\nmax_context: child  =%d ret = 0x%x,open error = %d\n",i+1, j, errno);	
+                DEBUG_3("\nmax_context: child  =%d ret = 0x%x,open error = %d\n",i+1, j, errno);
                 child_ret = j;
                 child_err = errno;
                 /* Send errcode thru ouput side */
@@ -1693,7 +1775,7 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
         } /* give max 5 sec  */
         /* end test on any error */
         if (ret_code || errcode) {
-            fprintf(stderr,"\nmax_context: Child = %d, ret = 0x%x, err = %d\n",
+            DEBUG_3("\nmax_context: Child = %d, ret = 0x%x, err = %d\n",
                     i+1, ret_code,errcode);
             break;
         }
@@ -1701,6 +1783,7 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
 
     *ret = ret_code;
     *err = errcode;
+    DEBUG_2("ret%d, err:%d\n", *ret, *err);
 
     // Close all pipes fds 
 
@@ -1716,15 +1799,18 @@ int max_context(int *ret, int *err, int reqs, int cntx, int flags, int mode)
     return(0);
 }
 
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 int child_open(int c, int max_reqs, int flags, int mode)
 {
     chunk_id_t j = NULL_CHUNK_ID;
-    chunk_ext_arg_t ext = 0;
     errno = 0;
 
     DEBUG_1 ("\nchild_open: opening for child %d\n", c);
 
-    char *path          = dev_paths[0];
+    char *path          = (char*)dev_paths[0];
 
     j = cblk_open (path, max_reqs, mode, ext, flags);
     if (j != NULL_CHUNK_ID) {
@@ -1740,6 +1826,11 @@ int child_open(int c, int max_reqs, int flags, int mode)
         return (-1);
     }
 }
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode)
 {
     chunk_id_t  id      = 0;
@@ -1866,51 +1957,46 @@ int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode)
     return(0);
 }
 
-int fork_and_clone(int *ret, int *err, int mode)
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags)
 {
     chunk_id_t  id      = 0;
-    int         flags   = CBLK_OPN_VIRT_LUN;
-    int         sz_flags= 0;
     int         max_reqs= 64;
     int         open_cnt= 1;
-    int         get_set_size_flag = 0;  // 0 = get phys lun sz
-    // 1 = get chunk sz
-    // 2 = set chunk sz
-
-    int	    rc;
-    int	    er;
-
+    int         rc;
+    int         er;
     uint64_t    lba;
-    int         io_flags = 0;
-    int	    open_flag = 0;
     size_t      temp_sz,nblks;
     int         cmd;
-    pid_t	    child_pid;
-    int	    child_status;
-    pid_t	    w_ret;
-
+    pid_t       child_pid;
+    int         child_status;
+    pid_t       w_ret;
     int         child_ret;
     int         child_err;
     int         ret_code=0;
     int         ret_err=0;
     int         fd[2];
-
+    int         get_set_size_flag = 0;  // 0 = get phys lun sz
+                                        // 1 = get chunk sz
+                                        // 2 = set chunk sz
 
     // create pipe to be used by child  to pass back status
-
     pipe(fd);
 
     if (blk_fvt_setup(1) < 0)
         return (-1);
 
     // open virtual  lun
-    blk_open_tst( &id, max_reqs, &er, open_cnt, flags, mode);
+    blk_open_tst(&id, max_reqs, &er, open_cnt, open_flags, mode);
 
     if (id == NULL_CHUNK_ID)
         return (-1); 
     temp_sz = 64;
     get_set_size_flag = 2; 
-    blk_fvt_get_set_lun_size(id, &temp_sz, sz_flags, get_set_size_flag, &rc, &er);
+    blk_fvt_get_set_lun_size(id, &temp_sz, io_flags, get_set_size_flag, &rc, &er);
     if (rc | er) {
         DEBUG_0("fork_and_clone: set_size failed\n");
         *ret = rc;
@@ -1921,7 +2007,7 @@ int fork_and_clone(int *ret, int *err, int mode)
     cmd = FV_WRITE;
     lba = 1;
     nblks = 1;
-    blk_fvt_io(id, cmd, lba, nblks, &rc, &er, io_flags, open_flag); 
+    blk_fvt_io(id, cmd, lba, nblks, &rc, &er, io_flags, open_flags);
 
     if (rc != 1) {
         DEBUG_0("fork_and_clone: blk_fvt_io failed\n");
@@ -1962,7 +2048,7 @@ int fork_and_clone(int *ret, int *err, int mode)
         cmd = FV_READ;
         lba = 1;
         nblks = 1;
-        blk_fvt_io(id, cmd, lba, nblks, &rc, &er, io_flags, open_flag); 
+        blk_fvt_io(id, cmd, lba, nblks, &rc, &er, io_flags, open_flags);
         if (rc != 1) {
             // error
             DEBUG_0("fork_and_clone: child I/O failed\n");
@@ -2031,6 +2117,10 @@ int fork_and_clone(int *ret, int *err, int mode)
     return(0);
 }
 
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 void blk_list_io_arg_test(chunk_id_t id, int arg_tst, int *err, int *ret)
 {
     int 	rc = 0;
@@ -2185,6 +2275,10 @@ void blk_list_io_arg_test(chunk_id_t id, int arg_tst, int *err, int *ret)
     return;
 }
 
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 void blk_list_io_test(chunk_id_t id, int cmd, int t_type, int uflags, uint64_t timeout, int *err, int *ret, int num_listio)
 {
     int rc = 0;
@@ -2368,6 +2462,10 @@ void blk_list_io_test(chunk_id_t id, int cmd, int t_type, int uflags, uint64_t t
     return;
 }
 
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 int poll_arw_stat(cblk_io_t *io, int num_listio)
 {
 
@@ -2443,6 +2541,10 @@ int poll_arw_stat(cblk_io_t *io, int num_listio)
 
 }
 
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 int check_completions(cblk_io_t *io, int num_listio )
 {
     int i;
@@ -2500,7 +2602,10 @@ int check_completions(cblk_io_t *io, int num_listio )
 
 }
 
-
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 #ifdef _AIX
 char *find_parent(char *device_name)
 {

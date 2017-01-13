@@ -50,23 +50,33 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <time.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <malloc.h>
-#include <capiblock.h>
 #include <inttypes.h>
-#include <ut.h>
+#include <ticks.h>
+#include <math.h>
 
-#define _8K   8*1024
-#define _4K   4*1024
-#define NBUFS _8K
+#ifdef _OS_INTERNAL
+#include <sys/capiblock.h>
+#else
+#include <capiblock.h>
+#endif
 
-#define TIME_INTERVAL 1024
-#define SET_NBLKS     260*1024
+#include <errno.h>
+
+#define _8K        8*1024
+#define _4K        4*1024
+#define NBUFS      _8K
+#define _1MSEC     1000
+#define _1SEC      1000000
+#define _10SEC     10000000
+#define READ       1
+#define WRITE      0
+#define MAX_SGDEVS 8
 
 /**
 ********************************************************************************
@@ -74,28 +84,139 @@
 *******************************************************************************/
 typedef struct
 {
+    int      id;
     uint64_t start;
-    uint8_t  iss;
+    uint64_t lba;
+    uint32_t cnt;
+    uint32_t miss;
+    uint32_t min_to;
+    uint32_t max_to;
+    uint32_t iss;
+    uint32_t rd;
 } OP_t;
 
 /**
 ********************************************************************************
-** \brief call to begin an op, set issued flag, set start ticks
+** \brief struct for each dev
 *******************************************************************************/
-#define OP_BEG(_tag) op[_tag].iss=1; op[_tag].start=getticks();
+typedef struct
+{
+    int      id;
+    int      htag;
+    OP_t    *op;
+    uint32_t RD;
+    uint32_t WR;
+    size_t   lba;
+    size_t   last_lba;
+    uint32_t nblocks;
+    uint32_t issN;
+    uint8_t *rbuf;
+    uint8_t *wbuf;
+} SGDEV_t;
 
 /**
 ********************************************************************************
-** \brief call to end an op, reset issued flag, save tick delta
+** \brief print debug msg if DEBUG (-D)
 *******************************************************************************/
-#define OP_END(_tag) op[_tag].iss=0; tlat+=getticks() - op[_tag].start;
+#define debug(fmt, ...) \
+   do {if (DEBUG) {fprintf(stdout,fmt,##__VA_ARGS__); fflush(stdout);}} while(0)
 
 /**
 ********************************************************************************
 ** \brief bump lba, reset lba if it wraps
 *******************************************************************************/
-#define BMP_LBA() lba+=nblocks+1; \
-                  if (lba+nblocks >= nblks) {lba=lrand48()%nblks;}
+#define BMP_LBA(_dev)                                                          \
+    if (seq)                                                                   \
+    {                                                                          \
+        _dev->lba += _dev->nblocks;                                            \
+        if (_dev->lba+_dev->nblocks >= _dev->last_lba) {_dev->lba=0;}          \
+    }                                                                          \
+    else {_dev->lba = lrand48() % _dev->last_lba;}
+
+/**
+********************************************************************************
+** \brief call to begin an op, init data for the op
+*******************************************************************************/
+#define OP_BEG(_dev,_op,_rd)   _op->start  = getticks(); ++N;                  \
+                               _op->iss    = 1;                                \
+                               _op->id     = _dev->id;                         \
+                               _op->lba    = _dev->lba;                        \
+                               _op->rd     = _rd;                              \
+                               _op->cnt    = cnt;                              \
+                               _op->miss   = 0;                                \
+                               _op->min_to = 0;                                \
+                               _op->max_to = 0;                                \
+                               _dev->issN   += 1;                              \
+                               if (_rd==READ) {--_dev->RD;} else {--_dev->WR;} \
+      debug("OP_BEG: id:%d rd:%d lba:%9ld len:%d, issN:%4d RD:%d cnt:%d\n",    \
+            _op->id, (_op->rd==READ), _op->lba, _dev->nblocks, _dev->issN,     \
+            _dev->RD,cnt);                                                     \
+                               BMP_LBA(_dev);
+
+/**
+********************************************************************************
+** \brief call to end an op, reset issued flag, save tick delta
+*******************************************************************************/
+#define OP_END(_dev, _op, _cticks)                                             \
+                        lat         = _cticks - _op->start; --N;               \
+                        cnt        += 1;                                       \
+                        _dev->issN -= 1;                                       \
+                        _op->iss    = 0;                                       \
+                        tlat       += lat;                                     \
+                        if (verbose)                                           \
+                        {  if (_op->rd) {++cnt_rd; tlat_rd+=lat;}              \
+                           else         {++cnt_wr; tlat_wr+=lat;}              \
+                        }                                                      \
+    debug("OP_END: id:%d rd:%d lba:%9ld issN:%4d\n",                           \
+          _op->id, (_op->rd==READ), _op->lba, _dev->issN);
+
+/**
+********************************************************************************
+** \brief call to check timeout for an op(cmd), print msg for warning TO & TO
+*******************************************************************************/
+#define OP_CHK_WARN_TO(_op, _cticks, _min, _max)                               \
+        if (verbose)                                                           \
+        {                                                                      \
+          lat = ((_cticks - _op->start) * ns_per_tick) / 1000;                 \
+          if (lat > _min && !_op->min_to++)                                    \
+              {printf("ETO: pid:%d cnt:%7d lba:%16ld rd:%d miss:%d TIME:%d\n", \
+                       getpid(), cnt, _op->lba, _op->rd,                       \
+                       _op->miss, lat);}                                       \
+          else if (lat > _max && !_op->max_to++)                               \
+              {printf("TO:  pid:%d cnt:%7d lba:%16ld rd:%d miss:%d TIME:%d\n", \
+                       getpid(), cnt, _op->lba, _op->rd,                       \
+                       _op->miss, lat);}                                       \
+        }
+
+/**
+********************************************************************************
+** \brief call to check latency for each op, print msg for LONG cmds
+*******************************************************************************/
+#define OP_CHK_LATENCY(_op, _lto, _cticks)                                     \
+        if (verbose)                                                           \
+        {                                                                      \
+          lat = ((_cticks - _op->start) * ns_per_tick) / 1000;                 \
+          if (lat > _lto)                                                      \
+              {printf("LTO: pid:%d cnt:%7d lba:%16ld rd:%d miss:%d TIME:%d\n", \
+                       getpid(), cnt, _op->lba, _op->rd,                       \
+                       _op->miss, lat);}                                       \
+        }
+
+/**
+********************************************************************************
+** \brief print errno and exit
+** \details
+**   An IO has failed, print the errno and exit
+*******************************************************************************/
+#define IO_ISS_ERR(_type)                                                      \
+    fprintf(stderr, "io_iss_error: errno:%d pid:%d cnt:%7d rd:%d\n",           \
+            errno, getpid(), cnt, (READ==_type));                              \
+    goto exit;
+
+#define IO_CMP_ERR(_op)                                                        \
+    fprintf(stderr, "io_cmp_error: errno:%d pid:%d cnt:%7d lba:%16ld rd:%d\n", \
+            errno, getpid(), _op->cnt, _op->lba, (READ==_op->rd));             \
+    goto exit;
 
 /**
 ********************************************************************************
@@ -106,29 +227,21 @@ typedef struct
 **   -q queuedepth *the number of outstanding ops to maintain                 \n
 **   -n nblocks    *the number of 4k blocks in each I/O request               \n
 **   -s secs       *the number of seconds to run the I/O                      \n
+**   -e eto        *early timeout: microseconds, print warning for each op    \n
+**   -l lto        *long timeout, microseconds, print elapse time for each op \n
+**   -S vlunsize   *size in gb for the vlun                                   \n
 **   -p            *run in physical lun mode                                  \n
-**   -i            *run using interrupts, not polling
+**   -i            *run using interrupts, not polling                         \n
+**   -R            *randomize lbas, default is on, use -R0 to run sequential  \n
+**   -v            *print cmd timeout warnings                                \n
 *******************************************************************************/
 void usage(void)
 {
     printf("Usage:\n");
-    printf("   \
-[-d device] [-r %%rd] [-q queuedepth] [-n nblocks] [-s secs] [-p] [-i]\n");
+    printf("  \
+[-d device:device] [-r %%rd] [-q queuedepth] [-n nblocks] [-s secs] [-e eto] \
+[-l lto] [-S vlunsize] [-p] [-i] [-R0] [-v]\n");
     exit(0);
-}
-
-/**
-********************************************************************************
-** \brief print errno and exit
-** \details
-**   An IO has failed, print the errno and exit
-*******************************************************************************/
-void io_error(int id, int err)
-{
-    fprintf(stderr, "io_error: errno:%d\n", err);
-    cblk_close(id,0);
-    cblk_term(NULL,0);
-    exit(err);
 }
 
 /**
@@ -144,84 +257,163 @@ void io_error(int id, int err)
 *******************************************************************************/
 int main(int argc, char **argv)
 {
-    struct timeval  start, delta;
-    long int        mil         = 1000000;
-    float           esecs       = 0;
-    uint8_t        *rbuf        = NULL;
-    uint8_t        *wbuf        = NULL;
+    char            devStrs[MAX_SGDEVS][64];
+    char           *devStr      = NULL;
+    char           *pstr        = NULL;
+    SGDEV_t        *devs        = NULL;
+    SGDEV_t        *dev         = NULL;
+    uint32_t        devN        = 0;
     OP_t           *op          = NULL;
-    char           *dev         = NULL;
     char            FF          = 0xFF;
     char            c           = '\0';
     chunk_ext_arg_t ext         = 0;
     int             flags       = 0;
-    int             i, rc       = 0;
-    int             id          = 0;
+    int             i=0, rc     = 0;
     char           *_secs       = NULL;
     char           *_QD         = NULL;
     char           *_RD         = NULL;
     char           *_nblocks    = NULL;
+    char           *_vlunsize   = NULL;
+    char           *_eto        = NULL;
+    char           *_lto        = NULL;
+    char           *_R          = NULL;
     uint32_t        plun        = 0;
     uint32_t        nsecs       = 4;
-    uint32_t        QD          = 256;
+    uint32_t        QD          = 128;
     uint32_t        nRD         = 100;
-    uint32_t        RD          = 0;
-    uint32_t        WR          = 0;
+    uint32_t        eto         = 1000000;
+    uint32_t        lto         = 10000;
     uint32_t        intrp_thds  = 0;
     int             rtag        = 0;
-    int             htag        = 0;
-    uint32_t        lba         = 0;
-    size_t          nblks       = 0;
+    int             pflag       = 0;
+    size_t          lun_size    = 0;
     uint32_t        nblocks     = 1;
+    uint32_t        vlunsize    = 1;
     uint32_t        cnt         = 0;
+    uint32_t        cnt_rd      = 0;
+    uint32_t        cnt_wr      = 0;
     uint32_t        tmiss       = 0;
+    uint32_t        hits        = 1;
+    uint32_t        hbar        = 0;
     uint64_t        status      = 0;
-    uint32_t        TI          = TIME_INTERVAL;
     uint32_t        N           = 0;
     uint32_t        TIME        = 1;
     uint32_t        COMP        = 0;
-    uint32_t        miss        = 0;
+    uint32_t        lat         = 0;
+    uint32_t        esecs       = 0;
+    uint32_t        seq         = 0;
+    uint32_t        aresN       = 0;
+    uint32_t        verbose     = 0;
+    uint32_t        DEBUG       = 0;
+    uint32_t        MAX_POLL    = 100;
+    uint32_t        issI        = 0;
+    uint32_t        dev_i       = 0;
     uint64_t        tlat        = 0;
+    uint64_t        tlat_rd     = 0;
+    uint64_t        tlat_wr     = 0;
+    uint64_t        sticks      = 0;
+    uint64_t        cticks      = 0;
     double          ns_per_tick = 0;
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:r:q:n:s:phi")))
+    while (FF != (c=getopt(argc, argv, "d:r:q:n:s:e:S:R:l:phivD")))
     {
         switch (c)
         {
-            case 'd': dev        = optarg; break;
+            case 'd': devStr     = optarg; break;
             case 'r': _RD        = optarg; break;
             case 'q': _QD        = optarg; break;
             case 'n': _nblocks   = optarg; break;
+            case 'S': _vlunsize  = optarg; break;
             case 's': _secs      = optarg; break;
+            case 'e': _eto       = optarg; break;
+            case 'l': _lto       = optarg; break;
+            case 'R': _R         = optarg; break;
             case 'p': plun       = 1;      break;
             case 'i': intrp_thds = 1;      break;
+            case 'D': DEBUG      = 1;      break;
+            case 'v': verbose    = 1;      break;
             case 'h':
             case '?': usage();             break;
         }
     }
-    if (_secs)      nsecs   = atoi(_secs);
-    if (_QD)        QD      = atoi(_QD);
-    if (_nblocks)   nblocks = atoi(_nblocks);
-    if (_RD)        nRD     = atoi(_RD);
+    if (_secs)      nsecs    = atoi(_secs);
+    if (_QD)        QD       = atoi(_QD);
+    if (_nblocks)   nblocks  = atoi(_nblocks);
+    if (_vlunsize)  vlunsize = atoi(_vlunsize);
+    if (_RD)        nRD      = atoi(_RD);
+    if (_eto)       eto      = atoi(_eto);
+    if (_lto)       lto      = atoi(_lto);
+    else if (QD>1)  lto      = 20000;
+    if (_R && _R[0]=='0') seq= 1;
 
-    if (QD > _8K)   QD      = _8K;
-    if (nRD > 100)  nRD     = 100;
+    QD  = (QD < _8K)  ? QD  : _8K;
+    nRD = (nRD < 100) ? nRD : 100;
 
+    if (plun && vlunsize > 1)
+    {
+        printf("error: <-S %d> can only be used with a virtual lun\n",vlunsize);
+        usage();
+    }
     if (!plun && nblocks > 1)
     {
         printf("error: <-n %d> can only be used with a physical lun\n",nblocks);
         usage();
     }
-    if (dev == NULL) usage();
+    if (devStr == NULL) usage();
+
+    while ((pstr=strsep(&devStr,":")))
+    {
+        if (devN == MAX_SGDEVS) {debug("too many devs\n"); break;};
+        debug("%s\n",pstr);
+        sprintf(devStrs[devN++],"%s",pstr);
+    }
+
+    vlunsize = vlunsize*256*1024;
 
     srand48(time(0));
     ns_per_tick = time_per_tick(1000, 100);
 
-    N    = QD;
-    COMP = QD < 8 ? 1 : QD/8;
+    hbar = QD<10 ? 1 : QD/10;
+    COMP = QD<6  ? 1 : QD/6;
+
+    /*--------------------------------------------------------------------------
+     * alloc data
+     *------------------------------------------------------------------------*/
+    debug("malloc devs: %d\n", devN);
+    if ((rc=posix_memalign((void**)&devs, 128, devN*sizeof(SGDEV_t))))
+    {
+        fprintf(stderr,"posix_memalign failed, size=%ld, rc=%d\n",
+                devN*sizeof(SGDEV_t), rc);
+        exit(0);
+    }
+    memset(devs,0,devN*sizeof(SGDEV_t));
+    for (i=0; i<devN; i++)
+    {
+        debug("malloc dev[%d]->op QD:%d\n", i, QD);
+        if ((rc=posix_memalign((void**)&devs[i].op, 128, QD*sizeof(OP_t))))
+        {
+            fprintf(stderr,"posix_memalign failed, size=%ld, rc=%d\n",
+                    QD*sizeof(OP_t), rc);
+            exit(0);
+        }
+        memset(devs[i].op,0,QD*sizeof(OP_t));
+        if ((rc=posix_memalign((void**)&devs[i].rbuf, _4K, _4K*nblocks)))
+        {
+            fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
+                    _4K*nblocks, rc);
+            exit(0);
+        }
+        if ((rc=posix_memalign((void**)&devs[i].wbuf, _4K, _4K*nblocks)))
+        {
+            fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
+                    _4K*nblocks, rc);
+            exit(0);
+        }
+        memset(devs[i].wbuf,0x79,_4K*nblocks);
+    }
 
     /*--------------------------------------------------------------------------
      * open device and set lun size
@@ -235,154 +427,167 @@ int main(int argc, char **argv)
     }
     if (!plun)       flags  = CBLK_OPN_VIRT_LUN;
     if (!intrp_thds) flags |= CBLK_OPN_NO_INTRP_THREADS;
-    id = cblk_open(dev, QD, O_RDWR, ext, flags);
-    if (id == NULL_CHUNK_ID)
-    {
-        if      (ENOSPC == errno) fprintf(stderr,"cblk_open: ENOSPC\n");
-        else if (ENODEV == errno) fprintf(stderr,"cblk_open: ENODEV\n");
-        else                      fprintf(stderr,"cblk_open: errno:%d\n",errno);
-        cblk_term(NULL,0);
-        exit(errno);
-    }
 
-    rc = cblk_get_lun_size(id, &nblks, 0);
-    if (rc)
+    for (i=0; i<devN; i++)
     {
-        fprintf(stderr, "cblk_get_lun_size failed: errno: %d\n", errno);
-        exit(errno);
-    }
-    if (!plun)
-    {
-        nblks = nblks > SET_NBLKS ? SET_NBLKS : nblks;
-        rc = cblk_set_size(id, nblks, 0);
-        if (rc)
+        dev=devs+i;
+        dev->id = cblk_open(devStrs[i], QD, O_RDWR, ext, flags);
+
+        if (dev->id == NULL_CHUNK_ID)
         {
-            fprintf(stderr, "cblk_set_size failed, errno: %d\n", errno);
+            if      (ENOSPC == errno) fprintf(stderr,"cblk_open: ENOSPC\n");
+            else if (ENODEV == errno) fprintf(stderr,"cblk_open: ENODEV\n");
+            else                      fprintf(stderr,"cblk_open: errno:%d\n",errno);
+            cblk_term(NULL,0);
             exit(errno);
         }
+
+        rc = cblk_get_lun_size(dev->id, &lun_size, 0);
+        if (rc)
+        {
+            fprintf(stderr, "cblk_get_lun_size failed: errno: %d\n", errno);
+            exit(errno);
+        }
+        if (plun) {dev->last_lba = lun_size-1;}
+        else
+        {
+            dev->last_lba = vlunsize > lun_size ? lun_size-1 : vlunsize-1;
+            rc = cblk_set_size(dev->id, dev->last_lba+1, 0);
+            if (rc)
+            {
+                fprintf(stderr, "cblk_set_size failed, errno: %d\n", errno);
+                exit(errno);
+            }
+        }
+        debug("open: %s id:%d nblks:%ld\n", devStrs[i],dev->id,dev->last_lba+1);
+
+        dev->nblocks = nblocks;
+        BMP_LBA(dev);
     }
-    lba = lrand48() % nblks;
+
+    if (devN <= 4) {MAX_POLL = QD<2 ? 1 : QD/2;}
+    else           {MAX_POLL = QD<4 ? 1 : QD/4;}
+
+    sticks = cticks = getticks();
 
     /*--------------------------------------------------------------------------
-     * alloc data for IO
+     * loop running IO for nsecs
      *------------------------------------------------------------------------*/
-    op = malloc(QD*sizeof(OP_t));
-    if ((rc=posix_memalign((void**)&rbuf, _4K, _4K*nblocks)))
-    {
-        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                _4K*nblocks, rc);
-        cblk_close(id,0);
-        cblk_term(NULL,0);
-        exit(0);
-    }
-    if ((rc=posix_memalign((void**)&wbuf, _4K, _4K*nblocks)))
-    {
-        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                _4K*nblocks, rc);
-        cblk_close(id,0);
-        cblk_term(NULL,0);
-        exit(0);
-    }
-    memset(wbuf,0x79,_4K*nblocks);
-    memset(op,  0,   QD*sizeof(OP_t));
-
-    /*--------------------------------------------------------------------------
-     * loop running IO until secs expire
-     *------------------------------------------------------------------------*/
-    gettimeofday(&start, NULL);
-
     do
     {
-        /* setup #read ops and #write ops to send before completing ops */
-        if (!RD && !WR) {RD=nRD; WR=100-RD;}
+        for (issI=0; issI<devN; issI++)
+        {
+            dev=devs+issI;
 
-        /*----------------------------------------------------------------------
-         * send up to RD reads, as long as the queuedepth N is not max
-         *--------------------------------------------------------------------*/
-        while (TIME && RD && N)
-        {
-            rc = cblk_aread(id, rbuf, lba, nblocks, &rtag, NULL,
-                            CBLK_ARW_WAIT_CMD_FLAGS);
-            if (0 == rc) {OP_BEG(rtag); --RD; --N; BMP_LBA();}
-            else if (EBUSY == errno) {break;}
-            else                     {io_error(id,errno);}
+            /* setup #read ops and #write ops to send */
+            if (!dev->RD && !dev->WR) {dev->RD=nRD; dev->WR=100-nRD;}
+
+            /*------------------------------------------------------------------
+             * send up to RD reads, as long as the queuedepth N is not max
+             *----------------------------------------------------------------*/
+            for (i=0; i<QD && TIME && dev->RD && dev->issN<QD; i++)
+            {
+                rc = cblk_aread(dev->id, dev->rbuf, dev->lba, dev->nblocks,
+                                &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+                if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),READ);}
+                else if (EBUSY == errno) {break;}
+                else                     {IO_ISS_ERR(READ);}
+
+                if (devN==1 && QD==1) {debug("USLEEP_RD\n"); usleep(10);}
+            }
+            /*------------------------------------------------------------------
+             * send up to WR writes, as long as the queuedepth N is not max
+             *----------------------------------------------------------------*/
+            for (i=0; i<QD && TIME && dev->WR && dev->issN<QD; i++)
+            {
+                rc = cblk_awrite(dev->id, dev->wbuf, dev->lba, dev->nblocks,
+                                &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+                if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),WRITE);}
+                else if (EBUSY == errno) {break;}
+                else                     {IO_ISS_ERR(WRITE);}
+            }
         }
-        /*----------------------------------------------------------------------
-         * send up to WR writes, as long as the queuedepth N is not max
-         *--------------------------------------------------------------------*/
-        while (TIME && WR && N)
-        {
-            rc = cblk_awrite(id, wbuf, lba, nblocks, &rtag, NULL,
-                            CBLK_ARW_WAIT_CMD_FLAGS);
-            if (0 == rc) {OP_BEG(rtag); --WR; --N; BMP_LBA();}
-            else if (EBUSY == errno) {break;}
-            else                     {io_error(id,errno);}
-        }
+
+        /* if polling, usleep if #hits are below bar */
+        if (QD>1 && !intrp_thds && hits<=hbar)
+            {debug("USLEEP N:%d\n",N); usleep(10);}
 
         /*----------------------------------------------------------------------
          * complete cmds
          *--------------------------------------------------------------------*/
-        for (i=0; i<QD && N<COMP; i++, htag++)
+        dev=devs+dev_i; pflag=0; hits=0; aresN=0;
+
+        for (i=0; i<QD && dev->issN; i++, dev->htag++)
         {
             if (intrp_thds)
             {
-                rc = cblk_aresult(id, &htag, &status, CBLK_ARESULT_BLOCKING |
-                                                      CBLK_ARESULT_NEXT_TAG);
-                if (rc != nblocks) {io_error(id,errno);}
-                OP_END(htag); ++cnt; ++N;
-                continue;
-            }
+                rc = cblk_aresult(dev->id, &dev->htag, &status,
+                                  CBLK_ARESULT_BLOCKING |
+                                  CBLK_ARESULT_NEXT_TAG);
+                cticks = getticks();
 
-            if (htag>=QD) htag=0;
-            if (!op[htag].iss) {continue;}
-            rc = cblk_aresult(id, &htag, &status, 0);
-            if (rc == 0)
+                op=dev->op+dev->htag;
+                if (rc != dev->nblocks) {IO_CMP_ERR(op);}
+                OP_END(dev,op,cticks);
+                if (++aresN >= COMP) {break;}
+            }
+            else
             {
-                if (QD==1 && ++miss==1) {usleep(80);}
-                ++tmiss; continue;
+                dev->htag %= QD;
+                op         = dev->op + dev->htag;
+                if (!op->iss) {continue;}
+                if (++aresN > MAX_POLL) {break;}
+
+                if (pflag==0) {debug("HARVEST id:%d\n", dev->id);}
+                rc = cblk_aresult(dev->id, &dev->htag, &status, pflag);
+                cticks = getticks();
+
+                OP_CHK_WARN_TO(op, cticks, eto, _10SEC);
+                if      (!pflag)  {pflag=CBLK_ARESULT_NO_HARVEST;}
+                if      (rc == 0) {++op->miss; ++tmiss; continue;}
+                else if (rc < 0)  {IO_CMP_ERR(op);}
+
+                OP_CHK_LATENCY(op,lto,cticks);
+                OP_END(dev,op,cticks); ++hits;
             }
-            else if (rc < 0)
-                {io_error(id,errno);}
-
-            OP_END(htag); ++cnt; ++N; miss=0;
         }
+        dev_i = (dev_i+1) % devN;
 
-        /*----------------------------------------------------------------------
-         * at an interval which does not impact performance, check if secs
-         * have expired, and randomize lba
-         *--------------------------------------------------------------------*/
-        if (cnt > TI)
-        {
-            TI += TIME_INTERVAL;
-            gettimeofday(&delta, NULL);
-            if (delta.tv_sec - start.tv_sec >= nsecs) {TIME=0; COMP=QD;}
-            lba = lrand48() % nblks;
-        }
+        if (TIME && SDELTA(sticks,ns_per_tick) >= nsecs) {TIME=0;}
     }
-    while (TIME || QD-N);
+    while (TIME || N);
+
+    esecs = SDELTA(sticks,ns_per_tick);
 
     /*--------------------------------------------------------------------------
      * print IO stats
      *------------------------------------------------------------------------*/
-    gettimeofday(&delta, NULL);
-    esecs = ((float)((delta.tv_sec*mil + delta.tv_usec) -
-                     (start.tv_sec*mil + start.tv_usec))) / (float)mil;
-    printf("d:%s r:%d q:%d s:%d p:%d n:%d i:%d miss:%d lat:%d mbps:%d iops:%d",
-            dev, nRD, QD, nsecs, plun, nblocks, intrp_thds, tmiss,
+    printf("r:%d q:%d s:%d p:%d n:%d i:%d v:%d eto:%d miss:%d/%d \
+lat:%d mbps:%d iops:%d",
+            nRD, QD, nsecs, plun, nblocks,
+            intrp_thds, verbose, eto, tmiss/cnt, tmiss,
             (uint32_t)((tlat*ns_per_tick)/cnt/1000),
-            (uint32_t)((float)((cnt*nblocks*4)/1024)/esecs),
-            (uint32_t)((float)(cnt/esecs)));
-    if (plun && nblocks > 1)
-        printf(" 4k-iops:%d", (uint32_t)((float)(cnt*nblocks)/esecs));
-    printf("\n");
+            ((cnt*nblocks*4)/1024)/esecs,
+            cnt/esecs);
+    if (plun && nblocks > 1) {printf(" 4k-iops:%d", (cnt*nblocks)/esecs);}
+    if (verbose) {printf(" rlat:%d wlat:%d",
+                         (uint32_t)((tlat_rd*ns_per_tick)/cnt_rd/1000),
+                         (uint32_t)((tlat_wr*ns_per_tick)/cnt_wr/1000));}
+    printf("\n"); fflush(stdout);
 
+exit:
     /*--------------------------------------------------------------------------
      * cleanup
      *------------------------------------------------------------------------*/
-    free(op);
-    free(rbuf);
-    free(wbuf);
-    cblk_close(id,0);
+    for (i=0; i<devN; i++)
+    {
+        free(devs[i].op);
+        free(devs[i].rbuf);
+        free(devs[i].wbuf);
+        debug("cblk_close id:%d\n", devs[i].id);
+        cblk_close(devs[i].id,0);
+    }
+    free(devs);
     cblk_term(NULL,0);
-    return 0;
+    return rc;
 }

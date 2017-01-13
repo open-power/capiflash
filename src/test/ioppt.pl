@@ -1,0 +1,378 @@
+#! /usr/bin/perl
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/test/ioppt.pl $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+##
+# ioppt.pl -c "blockio -d/dev/sgX -q1" -n 100
+
+use strict;
+use warnings;
+use Fcntl;
+use Fcntl ':seek';
+use Getopt::Long;
+use Time::HiRes qw(usleep);
+
+my $cmdin="";
+my $ncmds;
+my $cfile="";
+my @devs;
+my $devstr="";
+my $prthelp="";
+my $verbose="";
+my $vverbose="";
+my $running=1;
+my $outfn;
+my @uticks;
+my @sticks;
+my $STAT;
+my $ut=0;
+my $st=0;
+my $tt=0;
+my $i=0;
+my @pids;
+my $pids_in="";
+my $npid=0;
+my $iops=0;
+my $ioppt=0;
+my $tstart;
+my $tstop;
+my $tdiff;
+my $tps;
+
+#-------------------------------------------------------------------------------
+# print usage
+#-------------------------------------------------------------------------------
+sub usage()
+{
+  print "\n";
+  print "Usage: ioppt.pl [-n num_to_exec] [-c cmd] [-d \"dev1 dev2 ...\"] [-v|-vv]\n";
+  print "    -n             : number of cmds to execute         \n";
+  print "    -c             : cmd string to execute             \n";
+  print "    -d             : list of devices to use            \n";
+  print "    -v             : verbose, Print debug messages     \n";
+  print "    -h or --help   : Help - Print this message         \n";
+  exit 0;
+}
+
+#-------------------------------------------------------------------------------
+# run commands
+#-------------------------------------------------------------------------------
+sub run_cmds
+{
+  my $d=0;
+  my $pdev="";
+  my $jobs=0;
+
+  if ($cmdin =~ /fio/ && defined $ENV{'NUMJOBS'}) {$jobs=$ENV{'NUMJOBS'};}
+  if ($verbose && $jobs) {print "n=$ncmds NUMJOBS=$jobs\n";}
+
+  $SIG{CHLD} = 'IGNORE';
+  unlink $outfn;
+
+  for ($i=0; $i<$ncmds; $i++)
+  {
+    if ($cmdin ne "")
+    {
+      if ($devstr)
+      {
+        $ENV{'DEV'}=$devs[$d];
+        $ENV{'FVT_DEV'}=$devs[$d];
+        $pdev="DEV=$ENV{'DEV'}";
+      }
+      if ($verbose) {print "exec: $pdev $cmdin\n";}
+      if ($devstr && ++$d==@devs) {$d=0;}
+      if (my $pid=fork())
+      {
+        chomp $pid;
+        if ($pid =~ /^\s*$/) {die "fork failed\n";}
+        if ($cmdin =~ /fio/)
+        {
+          for (my $cnt=0; $cnt<100000; $cnt++)
+          {
+            my $pidstr=qx(pgrep -P $pid);
+            if ($pidstr =~ /^\s*$/) {next;}
+            my @cpids=split /\s+/, $pidstr;
+            my @newpids;
+            foreach my $lpid (@cpids)
+            {
+              chomp $lpid; 
+              if ($lpid =~ /^\s*$/) {next;}
+              push @newpids, $lpid;
+            }
+            if (($jobs>=1 && scalar @newpids >= $jobs) ||
+                !$jobs    && scalar @newpids > 0)
+            {
+              push(@pids, @newpids);
+              last;
+            }
+          }
+        }
+        else
+        {
+          push @pids, $pid;
+        }
+      }
+      elsif ($pid==0)
+      {
+        if (! defined $ENV{'FVT_DEV'}) {$ENV{'FVT_DEV'}="";}
+        exec "FVT_DEV=$ENV{'FVT_DEV'} exec $cmdin >> $outfn";
+        exit 0;
+      }
+      else {print "fork failed\n";}
+    }
+  }
+  if ( $cmdin =~ /fio/ && $verbose)
+  {
+    my $rpids=$ncmds;
+    if ($jobs) {$rpids*=$jobs;}
+    if (scalar @pids != $rpids)
+    {
+      print "npids(" . scalar @pids . ") != request($rpids)\n";
+    }
+  }
+}
+
+#-------------------------------------------------------------------------------
+# get linux ticks for list of processes
+#-------------------------------------------------------------------------------
+sub get_linux
+{
+  if ($vverbose) {print "get_linux\n";}
+
+  while ( $running==1 )
+  {
+    $running=0;
+
+    for ($i=0; $i<@pids; $i++)
+    {
+      my $open=0;
+
+      my $file = "/proc/$pids[$i]/stat";
+
+      open(STAT, $file) or next;
+
+      $running=1;
+
+      seek (STAT, SEEK_SET, 0);
+      my $fstring = <STAT>;
+      if (defined $fstring == 0 || length $fstring <= 0) {close(STAT); next;}
+
+      my @stat    = split /\s+/ , $fstring;
+      $uticks[$i] = $stat[13];
+      $sticks[$i] = $stat[14];
+      close(STAT);
+
+      if ($vverbose) {print "$pids[$i]: $uticks[$i] $sticks[$i]\n";}
+    }
+    usleep(100000);
+  }
+}
+
+#-------------------------------------------------------------------------------
+# get aix ticks for list of processes
+#-------------------------------------------------------------------------------
+sub get_aix
+{
+  my $pdata=0;
+  my $nb=0;
+
+  if ($vverbose) {print "get_aix\n";}
+
+  while ( $running==1 )
+  {
+    $running=0;
+
+    for (my $i=0; $i<@pids; $i++)
+    {
+      my $open=0;
+
+      open my $fh, '<:raw', "/proc/$pids[$i]/status" or next;
+
+      seek $fh, 124, 0;
+      $nb  = read $fh, $pdata, 48;
+      close $fh;
+
+      my ($utv_sec, $utv_nsec, undef, undef, $stv_sec, $stv_nsec) = unpack 'N N N N N N', $pdata;
+
+      $uticks[$i] = ($utv_sec*100) + ($utv_nsec/10000000);
+      $sticks[$i] = ($stv_sec*100) + ($stv_nsec/10000000);
+      if ($vverbose) {printf "%d: %.2f %.2f\n", $pids[$i], $uticks[$i], $sticks[$i];}
+
+      $running=1;
+    }
+    usleep(100000);
+  }
+}
+
+#-------------------------------------------------------------------------------
+# Main
+#-------------------------------------------------------------------------------
+if (@ARGV==0) {usage();}
+
+if (! GetOptions ("n=i"        => \$ncmds,
+                  "c=s"        => \$cmdin,
+                  "d=s"        => \$devstr,
+                  "p=s"        => \$pids_in,
+                  "h|help!"    => \$prthelp,
+                  "v"          => \$verbose,
+                  "vv"         => \$vverbose
+                  ))
+{
+  usage();
+}
+if ($ARGV[0])
+{
+  print "\nUnknown Command Line Options:\n";
+  foreach(@ARGV)
+  {
+    print "   $_\n";
+  }
+  print "\n";
+  usage();
+}
+if ($vverbose)
+{
+  $verbose=1;
+  if ($cmdin)   {print "-c $cmdin ";}
+  if ($ncmds)   {print "-n $ncmds ";}
+  if ($devstr)  {print "-d $devstr ";}
+  if ($pids_in) {print "-p $pids_in ";}
+  print "\n";
+}
+if ($cmdin =~ /^\s*$/) {print "-c option required\n"; usage();}
+if ($ncmds =~ /^\s*$/) {print "-n option required\n"; usage();}
+if ($prthelp) {usage();}
+if ($devstr) {@devs=split / /, $devstr;}
+
+
+#-------------------------------------------------------------------------------
+# fork the commands
+#-------------------------------------------------------------------------------
+$outfn="/tmp/out_p.$$";
+$tstart=time();
+usleep(10000);
+run_cmds();
+if ($verbose) {print scalar @pids . " pids: " . join(", ", @pids) . "\n";}
+
+#-------------------------------------------------------------------------------
+# gather ticks for processes, then sum them
+#-------------------------------------------------------------------------------
+if (qx(uname -a) =~ /AIX/) {get_aix();}
+else                       {get_linux();}
+
+$tstop=time();
+$tdiff=$tstop-$tstart;
+
+for ($i=0; $i<@pids; $i++)
+{
+  if (defined($uticks[$i]))
+  {
+    $ut+=$uticks[$i];
+    if ($verbose) {printf "%d: uticks:%.2f\n", $pids[$i], $uticks[$i];}
+  }
+  if (defined($sticks[$i]))
+  {
+    $st+=$sticks[$i];
+    if ($verbose) {printf "%d: sticks:%.2f\n", $pids[$i], $sticks[$i];}
+  }
+}
+$tt=$ut+$st;
+$tps=$tt/$tdiff;
+
+#-------------------------------------------------------------------------------
+# parse and sum iops from the command(s) output file
+#-------------------------------------------------------------------------------
+open FDATA, $outfn;
+foreach my $line (<FDATA>)
+{
+  if ($cmdin =~ /block/)
+  {
+    if ($line =~ /iops/)
+    {
+      foreach my $str (split(/ /,$line))
+      {
+        if ($str =~ /iops/)
+        {
+          my @ss=split(/iops:/,$str);
+          if ($verbose) {print "iops=$ss[1]\n";}
+          $iops+=$ss[1];
+          last;
+        }
+      }
+    }
+  }
+  elsif ($cmdin =~ /fio/)
+  {
+    if ($line =~ /iops/)
+    {
+      foreach my $str (split(/ /,$line))
+      {
+        if ($str =~ /iops/)
+        {
+          my @ss=split(/iops=/,$str);
+          my $n=$ss[1];
+          $n=~ tr/,/ /;
+          if ($verbose) {print "iops=$n\n";}
+          $iops+=$n;
+        }
+      }
+    }
+  }
+  elsif ($cmdin =~ /run_kv_benchmark/ || $cmdin =~ /ark_perf_tool/)
+  {
+    if ($line =~ /io\/s/)
+    {
+      foreach my $str (split(/ /,$line))
+      {
+        if ($str =~ /io\/s/)
+        {
+          my @ss=split(/io\/s:/,$str);
+          if ($verbose) {print "iops=$ss[1]\n";}
+          $iops+=$ss[1];
+        }
+      }
+    }
+  }
+  elsif ($cmdin =~ /asyncstress/)
+  {
+    if ($line =~ /thru/)
+    {
+      my @str = split(/,/,$line);
+      if ($verbose) {print "iops=$str[28]\n";}
+      $iops+=$str[28];
+    }
+  }
+}
+close FDATA;
+unlink $outfn;
+
+#-------------------------------------------------------------------------------
+# print results
+#-------------------------------------------------------------------------------
+if ($iops > 0) {$ioppt=$iops/$tps;}
+
+printf "usr:%4.1f%%  ptps:%5d  iops:%7d  ioppt:%5d\n",
+       ($ut/$tt)*100, $tps, $iops, $ioppt;
+exit 0;
+

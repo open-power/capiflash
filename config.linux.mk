@@ -34,7 +34,6 @@ docs: src/build/doxygen/doxygen.conf
 	rm -rf obj/doxygen/*
 	doxygen src/build/doxygen/doxygen.conf
 
-
 tests:
 	${MAKE} ship
 	${MAKE} test
@@ -65,6 +64,9 @@ TESTDIR = ${ROOTPATH}/obj/tests
 GENDIR  = ${ROOTPATH}/obj/genfiles
 IMGDIR  = ${ROOTPATH}/img
 PKGDIR  = ${ROOTPATH}/pkg
+
+GTESTDIR = src/test/framework/googletest/googletest
+GTESTINC = ${GTESTDIR}/include
 
 ifdef MODULE
 OBJDIR  = ${ROOTPATH}/obj/modules/${MODULE}
@@ -110,17 +112,25 @@ ifeq ($(USE_ADVANCED_TOOLCHAIN),yes)
 	VPATH_DIRS:= ${ADV_TOOLCHAIN_PATH}/lib64 ${VPATH_DIRS}
 	#see the ld flags below (search for rpath). This puts the atx.x stuff on the front
 	#which is REQUIRED by the toolchain.
-        RPATH_PREPEND = -rpath,${ADV_TOOLCHAIN_PATH}/lib64
-
+	RPATH_PREPEND = -rpath,${ADV_TOOLCHAIN_PATH}/lib64
+	CFLAGS += ${COMMONFLAGS} \
+	 -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} \
+	-R '$$ADV_TOOLCHAIN_PATH/lib64:$$ORIGIN/../lib:$$ORIGIN:/lib:/usr/lib:/opt/ibm/capikv/lib' \
+	${INCFLAGS}
+	LDFLAGS = ${COMMONFLAGS} -Wl,${RPATH_PREPEND},-rpath,$$ORIGIN/../lib,-rpath,$$ORIGIN,-rpath,$(DEFAULT_LIB_INSTALL_PATH)
 else
 	CC_RAW = gcc 
 	CXX_RAW = g++ 
 	CC = ${CC_RAW}
 	CXX = ${CXX_RAW}
-	LD = ld
+	LD = gcc
 	OBJDUMP = objdump
 	#if we are NOT using the atx.x stuff, prepend nothing.
-        RPATH_PREPEND =
+	RPATH_PREPEND =
+	CFLAGS += ${COMMONFLAGS} \
+	 -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} \
+	${INCFLAGS}
+	LDFLAGS = ${COMMONFLAGS}
 endif
 
 #TODO: Find correct flags for surelock
@@ -135,10 +145,6 @@ endif
 GITREVISION:=$(shell git rev-list HEAD | wc -l)-$(shell git rev-parse --short HEAD)
 CUSTOMFLAGS += -DGITREVISION='"${GITREVISION}"'
 
-CFLAGS += ${COMMONFLAGS} \
-	 -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} \
-	-R '$$ADV_TOOLCHAIN_PATH/lib64:$$ORIGIN/../lib:$$ORIGIN:/lib:/usr/lib:/opt/ibm/capikv/lib' \
-	${INCFLAGS}
 #if ALLOW_WARNINGS is NOT defined, we assume we are compiling production code
 #as such, we adhere to strict compile flags. If this is defined then we warn
 #but allow the compile to continue.
@@ -156,7 +162,6 @@ endif
 ASMFLAGS = ${COMMONFLAGS}
 CXXFLAGS += ${CFLAGS} -fno-rtti -fno-exceptions -Wall
 #RPATH order is important here. the prepend var lets us throw the ATxx stuff in first if needed.
-LDFLAGS = ${COMMONFLAGS} -Wl,${RPATH_PREPEND},-rpath,$$ORIGIN/../lib,-rpath,$$ORIGIN,-rpath,$(DEFAULT_LIB_INSTALL_PATH)
 
 
 INCDIR = ${ROOTPATH}/src/include/

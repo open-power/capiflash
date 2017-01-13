@@ -1,36 +1,31 @@
-/*
-* %Z%%M%       %I%  %W% %G% %U%
-*/
-/* IBM_PROLOG_BEGIN_TAG                                                   */
-/* This is an automatically generated prolog.                             */
-/*                                                                        */
-/* $Source: src/block/exportfile $                                    */
-/*                                                                        */
-/* IBM Data Engine for NoSQL - Power Systems Edition User Library Project */
-/*                                                                        */
-/* Contributors Listed Below - COPYRIGHT 2014,2015                        */
-/* [+] International Business Machines Corp.                              */
-/*                                                                        */
-/*                                                                        */
-/* Licensed under the Apache License, Version 2.0 (the "License");        */
-/* you may not use this file except in compliance with the License.       */
-/* You may obtain a copy of the License at                                */
-/*                                                                        */
-/*     http://www.apache.org/licenses/LICENSE-2.0                         */
-/*                                                                        */
-/* Unless required by applicable law or agreed to in writing, software    */
-/* distributed under the License is distributed on an "AS IS" BASIS,      */
-/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
-/* implied. See the License for the specific language governing           */
-/* permissions and limitations under the License.                         */
-/*                                                                        */
-/* IBM_PROLOG_END_TAG                                                     */
-
-/*
+* IBM_PROLOG_BEGIN_TAG
+* This is an automatically generated prolog.
+*
+* $Source: src/block/exportfile $
+*
+* IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+*
+* Contributors Listed Below - COPYRIGHT 2014,2015
+* [+] International Business Machines Corp.
+*
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+* implied. See the License for the specific language governing
+* permissions and limitations under the License.
+*
+* IBM_PROLOG_END_TAG
+*
 * shared library export symbols
 * data
 * text
-*/
 
 cblk_init
 cblk_term
@@ -47,3 +42,15 @@ cblk_awrite
 cblk_aresult
 cblk_listio
 cblk_clone_after_fork
+cblk_cg_open
+cblk_cg_close
+cblk_cg_get_lun_size
+cblk_cg_get_size
+cblk_cg_set_size
+cblk_cg_read
+cblk_cg_write
+cblk_cg_aread
+cblk_cg_awrite
+cblk_cg_aresult
+cblk_cg_clone_after_fork
+cblk_cg_get_num_chunks

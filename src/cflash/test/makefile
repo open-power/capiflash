@@ -67,10 +67,9 @@ endif
 
 DEPS=$(addprefix $(TESTDIR)/, $(run_cflash_fvt_OFILES:.o=.dep))
 
-CFLAGS += \
-	-g \
-   -D__FVT__\
-   -I$(ROOTPATH)/src/test/framework/googletest/googletest/include
+CFLAGS += -g -Wno-unused-result\
+          -D__FVT__\
+          -I$(ROOTPATH)/${GTESTINC}
 CXXFLAGS+=$(CFLAGS)
 
 include ${ROOTPATH}/config.mk

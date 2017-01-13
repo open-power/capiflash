@@ -32,6 +32,8 @@
     #define CFLASH_LITTLE_ENDIAN_HOST 1
 #elif defined TARGET_ARCH_PPC64BE
     #define CFLASH_BIG_ENDIAN_HOST 1
+#elif defined TARGET_ARCH_x86_64
+    #define CFLASH_x86_64_HOST 1
 #else
     #error "Unknown Architecture. This typically indicates a makefile or environment variable error. Check the TARGET_ARCH env var."
 #endif

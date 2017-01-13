@@ -49,7 +49,7 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_CREATE_DELETE_LOOP)
     for (i=0; i<loops; i++)
     {
         ARK_CREATE;
-        printf("."); fflush(stdout); usleep(30000);
+        printf("."); fflush(stdout); usleep(10000);
         ARK_DELETE;
     }
     printf("\n");

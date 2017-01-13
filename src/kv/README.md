@@ -11,9 +11,9 @@ Syntax
 
 int ark\_create(file, ark, flags)
 
-**char \*** file;
+char * file;
 
-**ARK \*\*** handle;
+ARK ** handle;
 
 uint64\_t flags;
 
@@ -74,7 +74,7 @@ Syntax
 
 int ark\_delete(ark)
 
-**ARK \*** <span style="font-weight: normal">ark;</span>
+ARK * ark;
 
 Description
 -----------
@@ -117,19 +117,19 @@ int ark\_set(ark, klen, key, vlen, val, res)
 
 int ark\_set\_async\_cb(ark, klen, key, vlen, val, callback, dt)
 
-**ARK \***<span style="font-weight: normal"> ark;</span>
+ARK * ark;
 
-**uint64\_t**<span style="font-weight: normal"> klen;</span>
+uint64\_t klen;
 
-**void \***<span style="font-weight: normal"> key;</span>
+void * key;
 
-**uint64\_t**<span style="font-weight: normal"> vlen;</span>
+uint64\_t vlen;
 
-**void \***<span style="font-weight: normal"> val;</span>
+void * val;
 
-**void \***(\*callback)(int errcode, uint64\_t dt, uint64\_t res);
+void *(*callback)(int errcode, uint64\_t dt, uint64\_t res);
 
-**uint64\_t** dt;
+uint64\_t dt;
 
 Description
 -----------
@@ -182,21 +182,21 @@ int ark\_get(ark, klen, key, vbuflen, vbuf, voff, res)
 
 int ark\_get\_async\_cb(ark, klen, key, vbuflen, vbuf, voff, callback, dt)
 
-**ARK \*** <span style="font-weight: normal">ark;</span>
+ARK * ark;
 
-**uint64\_t**<span style="font-weight: normal"> klen;</span>
+uint64\_t klen;
 
-**void \***<span style="font-weight: normal"> key;</span>
+void * key;
 
-**uint64\_t**<span style="font-weight: normal"> vbuflen;</span>
+uint64\_t vbuflen;
 
-**void \***<span style="font-weight: normal"> vbuf;</span>
+void * vbuf;
 
-**uint64\_t**<span style="font-weight: normal"> voff;</span>
+uint64\_t voff;
 
-**void \***(\*callback)(int errcode, uint64\_t dt, uint64\_t res);
+void *(\*callback)(int errcode, uint64\_t dt, uint64\_t res);
 
-**uint64\_t** dt;
+uint64\_t dt;
 
 Description
 -----------
@@ -248,15 +248,15 @@ int ark\_del(ark, klen, key, res)
 
 int ark\_del\_async\_cb(ark, klen, key, callback, dt)
 
-**ARK \***<span style="font-weight: normal"> ark</span>
+ARK * ark;
 
-**uint64\_t**<span style="font-weight: normal"> klen;</span>
+uint64\_t klen;
 
-**void \***<span style="font-weight: normal"> key;</span>
+void * key;
 
-**void \***(\*callback)(int errcode, uint64\_t dt, uint64\_t res);
+void *(\*callback)(int errcode, uint64\_t dt, uint64\_t res);
 
-**uint64\_t** dt;
+uint64\_t dt;
 
 Description
 -----------
@@ -305,15 +305,16 @@ int ark\_exists(ark, klen, key, res)
 
 int ark\_exists\_async\_cb(ark, klen, key, callback, dt)
 
-**ARK \*** ark;
+ARK * ark;
 
-**uint64\_t**<span style="font-weight: normal"> klen;</span>
+uint64\_t klen;
 
-**void \***<span style="font-weight: normal"> key;</span>
+void * key;
 
-**void \***(\*callback)(int errcode, uint64\_t dt, uint64\_t res);
+void *(\*callback)(int errcode, uint64\_t dt, uint64\_t res);
 
-**uint64\_t** dt;
+uint64\_t dt;
+
 
 Description
 -----------
@@ -358,13 +359,14 @@ Syntax
 
 ARI \* ark\_first(ark, kbuflen, klen, kbuf)
 
-**ARK \* ark**<span style="font-weight: normal">;</span>
+ARK * ark;
 
-**uint64\_t**<span style="font-weight: normal"> kbuflen</span>
+uint64\_t kbuflen
 
-**int64\_t**<span style="font-weight: normal"> \*klen;</span>
+int64\_t klen;
 
-**void \***<span style="font-weight: normal"> kbuf;</span>
+void * kbuf;
+
 
 Description
 -----------
@@ -409,13 +411,14 @@ Syntax
 
 ARI \* ark\_next(iter, kbuflen, klen, kbuf)
 
-**ARI \*** <span style="font-weight: normal">iter;</span>
+ARI * iter;
 
-**uint64\_t**<span style="font-weight: normal"> kbuflen</span>
+uint64\_t kbuflen
 
-**int64\_t**<span style="font-weight: normal"> \*klen;</span>
+int64\_t klen;
 
-**void \***<span style="font-weight: normal"> kbuf;</span>
+void * kbuf;
+
 
 Description
 -----------
@@ -462,9 +465,9 @@ Syntax
 
 int ark\_allocated(ark, size)
 
-**ARK \*** <span style="font-weight: normal">ark;</span>
+ARK * ark;
 
-**uint64\_t \***<span style="font-weight: normal">size;</span>
+uint64\_t *size;
 
 Description
 -----------
@@ -503,9 +506,9 @@ Syntax
 
 int ark\_inuse(ark, size)
 
-**ARK \*** <span style="font-weight: normal">ark;</span>
+ARK *ark;
 
-**uint64\_t \***<span style="font-weight: normal">size;</span>
+uint64\_t *size;
 
 Description
 -----------
@@ -544,9 +547,10 @@ Syntax
 
 int ark\_actual(ark, size)
 
-**ARK \*** <span style="font-weight: normal">ark;</span>
+ARK *ark;
 
-**uint64 \***<span style="font-weight: normal"> size;</span>
+uint64\_t *size;
+
 
 Description
 -----------
@@ -585,11 +589,11 @@ Syntax
 
 int ark\_error(ark)
 
-**ARK \* ark**<span style="font-weight: normal">;</span>
+ARK * ark;
 
-char \* ark\_errorstring(ark)
+char * ark\_errorstring(ark)
 
-**ARK \* ark**<span style="font-weight: normal">;</span>
+ARK * ark;
 
 Description
 -----------
@@ -631,7 +635,7 @@ int ark\_fork(ark)
 
 int ark\_fork\_done(ark)
 
-**ARK \*** <span style="font-weight: normal">handle;</span>
+ARK * handle;
 
 Description
 -----------
@@ -675,13 +679,13 @@ Syntax
 
 int ark\_random(ark, kbuflen, klen, kbuf)
 
-**ARK \*** <span style="font-weight: normal">ark;</span>
+ARK * <span style="font-weight: normal">ark;</span>
 
-**uint64\_t**<span style="font-weight: normal"> kbuflen</span>
+uint64\_t kbuflen;
 
-**int64\_t**<span style="font-weight: normal"> \*klen;</span>
+int64\_t * klen;
 
-**void \***<span style="font-weight: normal"> kbuf;</span>
+void * kbuf;
 
 Description
 -----------
@@ -722,9 +726,9 @@ Syntax
 
 int ark\_count(ark, int \*count)
 
-**ARK \*** <span style="font-weight: normal">ark;</span>
+ARK * ark;
 
-**int \***<span style="font-weight: normal"> count;</span>
+int * count;
 
 Description
 -----------

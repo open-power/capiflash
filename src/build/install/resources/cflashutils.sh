@@ -1,8 +1,8 @@
-#!/bin/bash -e
+#!/bin/bash
 #  IBM_PROLOG_BEGIN_TAG
 #  This is an automatically generated prolog.
 #
-#  $Source: src/build/install/resources/capikvutils.sh $
+#  $Source: src/build/install/resources/cflashutils.sh $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -38,6 +38,7 @@ EIO=5;
 EACCES=13;
 EINVAL=22;
 
+_VM=$(cat /proc/cpuinfo|grep platform|grep pSeries)
 
 die()
 {
@@ -188,26 +189,59 @@ ctrlblockdevmap()
     fi
 }
     
-
 #@desc print out a status table of the current LUN modes / mappings
 #@returns sets rc to 0 on success, OR sets return code to non-zero value on error
 printstatus()
 {
-    #list of all known SG devices - local to prevent this from causing side effects / problems in udev handler
-    local _SGDEVS=`ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/host*/target*:*:*/*:*:*:*/scsi_generic | grep sg`
-    local lunid=0;
-    local lunmode=0;
-    local blockdev=0;
-    local scsitopo=0;
     echo   "CXL Flash Device Status"
-    printf "%10s: %10s  %5s  %9s  %32s\n" "Device" "SCSI" "Block" "Mode" "LUN WWID";
-    for dev in $_SGDEVS; do
-        getlunid lunid $dev;
-        getmode lunmode $dev;
-        getblockdev blockdev $dev || blockdev="n/a";
-        getscsitopo scsitopo $dev;
-        printf "%10s: %10s, %5s, %9s, %32s\n" "$dev" "$scsitopo" "$blockdev" "$lunmode" "$lunid";
+    if [[ -z $_VM ]]
+    then
+      _capis=$(lspci|egrep "0601|04cf" 2>/dev/null|awk '{print $1}')
+    else
+      _capis=$(ls -d /sys/bus/pci/drivers/cxlflash/*:* 2>/dev/null|awk -F/ '{print $7}')
+    fi
+
+    for capi in $_capis
+    do
+      if [[ -z $_VM ]]
+      then
+        devid=$(lspci|grep $capi |awk -F" " '{print $6}')
+      else
+        grep_id=$(echo $capi|cut -c6-)
+        devid=$(lspci|grep $grep_id |awk -F" " '{print $7}')
+      fi
+      local devspec=$(cat /sys/bus/pci/devices/$capi/devspec)
+      local loccode=$(cat /proc/device-tree$devspec/ibm,loc-code 2>/dev/null)
+
+      printf "\nFound $devid $capi $loccode\n"
+
+      #list of all known SG devices - local to prevent this from causing side effects / problems in udev handler
+      if [[ -z $_VM ]]
+      then
+        _SGDEVS=$(ls -d /sys/devices/pci*/*/$capi/pci*/*/host*/target*/*/scsi_generic/sg* 2>/dev/null|awk -F/ '{print $13}')
+      else
+         _SGDEVS=$(ls -d /sys/devices/platform/*ibm,coherent-platform-facility/*/$capi/*/*/*/scsi_generic/sg* 2>/dev/null |awk -F/ '{print $12}')
+      fi
+
+      local lunid=0;
+      local lunmode=0;
+      local blockdev=0;
+      local scsitopo=0;
+      if [[ -z $_SGDEVS ]]
+      then
+        continue
+      fi
+      printf "%10s: %10s  %5s  %9s  %32s\n" "Device" "SCSI" "Block" "Mode" "LUN WWID";
+      for dev in $_SGDEVS
+      do
+          getlunid lunid $dev;
+          getmode lunmode $dev;
+          getblockdev blockdev $dev || blockdev="n/a";
+          getscsitopo scsitopo $dev;
+          printf "%10s: %10s, %5s, %9s, %32s\n" "$dev" "$scsitopo" "$blockdev" "$lunmode" "$lunid";
+      done
     done
+    printf "\n"
 }
 
 #@desc set the mode for a given block device
@@ -253,8 +287,19 @@ getluntablestate()
 #@returns rc to 0 on success, OR sets return code to non-zero value on error
 dotableupdate()
 {
+    #check sudo permissions
+    SUDO=$(id -u)
+    if [[ $SUDO != 0 ]]; then echo "run with sudo permissions to refresh"; return; fi
+
+    #attempt to rescan for cxl scsi devices
+    local host;
+    for host in $(ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/ 2>/dev/null| grep host)
+    do
+       echo "- - -" > /sys/class/scsi_host/$host/scan
+    done
+
     #list of all known SG devices - local to prevent this from causing side effects / problems in udev handler
-    local _SGDEVS=`ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/host*/target*:*:*/*:*:*:*/scsi_generic | grep sg`
+    local _SGDEVS=`ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/host*/target*:*:*/*:*:*:*/scsi_generic 2>/dev/null| grep sg`
     date >> $LOGFILE;
     if [[ ! -f $SIOTABLE ]]; then
         echo "Unable to access '$SIOTABLE'";

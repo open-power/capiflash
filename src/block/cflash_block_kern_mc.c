@@ -57,6 +57,9 @@ typedef struct dk_capi_recover_context dk_capi_recover_context_t;
 #include <libudev.h>
 
 #include <scsi/cxlflash_ioctl.h>
+#ifdef DK_CXLFLASH_CONTEXT_SQ_CMD_MODE
+#ident "$Debug: SQ_CMD_MODE $"
+#endif
 #ifndef DK_CAPI_ATTACH 
 /*
  * Create common set of defines/types across
@@ -199,11 +202,29 @@ cflsh_block_chunk_type_t   cblk_get_os_chunk_type(const char *path, int arch_typ
 	 * evaluate it.
 	 */
 
-	if (arch_type != DK_ARCH_SISLITE) {
+	switch (arch_type) {
+	  case DK_ARCH_SISLITE:
+	      /*
+	       * Original SISLITE (default) type
+	       */
+	    chunk_type = CFLASH_BLK_CHUNK_SIS_LITE;
+	    break;
+#ifdef DK_ARCH_SISLITE_SQ
+	  case DK_ARCH_SISLITE_SQ:
+	      /*
+	       * Sislite type that uses submission
+	       * queue (SQ).
+	       */
+	    chunk_type = CFLASH_BLK_CHUNK_SIS_LITE_SQ;
+	    break;
+#endif /*  DK_ARCH_SISLITE_SQ */
 
+	  default:
 	    return CFLASH_BLK_CHUNK_NONE;
 	}
+	
 
+	return chunk_type;
     }
 #endif
     
@@ -217,12 +238,14 @@ cflsh_block_chunk_type_t   cblk_get_os_chunk_type(const char *path, int arch_typ
     return chunk_type;
 }
 
+#ifndef _AIX
 
 /* ----------------------------------------------------------------------------
  *
- * NAME: cblk_find_parent_dev
+ * NAME: cblk_extract_udid_from_vpd83_file
  *                  
- * FUNCTION:  Find parent string of lun.
+ * FUNCTION:  Parse the inquiry page 83 file in sysfs
+ *            
  *          
  *
  *
@@ -241,19 +264,319 @@ cflsh_block_chunk_type_t   cblk_get_os_chunk_type(const char *path, int arch_typ
  *     
  * ----------------------------------------------------------------------------
  */ 
-
-#ifdef _AIX
-char *cblk_find_parent_dev(char *device_name)
+char *cblk_extract_udid_from_vpd83_file(char *vpd_pg83_filename)
 {
 
-    return NULL;
+
+#define CFLASH_BLOCK_BUF_SIZE   256
+#define CFLASH_WWID_SIZE   256
+
+    FILE *fp;
+    char buf[CFLASH_BLOCK_BUF_SIZE];
+    char *udid = NULL;
+    char wwid[CFLASH_WWID_SIZE];
+    int length;
+    int rc;
+
+
+    CBLK_TRACE_LOG_FILE(9,"vpd_pg83 name = %s",vpd_pg83_filename);
+
+
+
+    /* 
+     * The data read out of the vpd_pg83 file is the
+     * inquiry data of page 0x83, which is the
+     * Device Identification VPD page.
+     */
+
+    if ((fp = fopen(vpd_pg83_filename,"r")) == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"failed to open = %s",
+			    vpd_pg83_filename);
+	return udid;
+    }
+
+
+    length = fread(buf,1,CFLASH_BLOCK_BUF_SIZE,fp);
+
+    if (length < sizeof(struct inqry_pg83_data)) {
+
+
+
+	CBLK_TRACE_LOG_FILE(1,"failed to read page 0x83 header, read %d bytes, but expected *%d bytes, errno = %d",
+			    length,sizeof(struct inqry_pg83_data),errno);
+
+	fclose(fp);
+
+	return udid;
+    }
+
+    bzero(wwid,CFLASH_WWID_SIZE);
+
+
+    rc = cflash_process_scsi_inquiry_dev_id_page(buf,length,wwid);
+
+    if (rc) {
+
+	CBLK_TRACE_LOG_FILE(1,"failed to parse page 0x83 with rc = %d, and errno = %d",
+			    rc,errno);
+    } else {
+
+
+	udid = strdup(wwid);
+    }
+
+    fclose (fp);
+    return udid;
+
+
 }
-#else
 
-char *cblk_find_parent_dev(char *device_name)
+/* ----------------------------------------------------------------------------
+ *
+ * NAME: cblk_find_other_paths_to_device
+ *                  
+ * FUNCTION:  Walk all cflash disks in the same and looks for those
+ *            that have the same udid (universal device ID).
+ *            
+ *          
+ *
+ *
+ * CALLED BY:
+ *    
+ *
+ * INTERNAL PROCEDURES CALLED:
+ *      
+ *     
+ *                              
+ * EXTERNAL PROCEDURES CALLED:
+ *     
+ *      
+ *
+ * RETURNS:     
+ *     
+ * ----------------------------------------------------------------------------
+ */ 
+int cblk_find_other_paths_to_device(char *subsystem_name, char *orig_udid, 
+				    char *cur_devname, char *dev_name_list[],
+				    int size_devname_list)
 {
+
+    struct udev *udev_lib;
+    struct udev_device *device, *parent;
+    struct udev_enumerate *device_enumerate;
+    struct udev_list_entry *device_list, *device_entry;
+    const char *device_mode = NULL;
     char *parent_name = NULL;
-    char *child_part = NULL;
+    const char *path = NULL;
+    char vpd_pg83_filename[PATH_MAX];
+    char *udid = NULL;
+    char *devname = NULL;
+    int num_matches_found = 0;
+
+
+    CBLK_TRACE_LOG_FILE(9,"subsystem_path = %s, cur_devname = %s",subsystem_name,cur_devname);
+	
+	
+    /*
+     * Extract cur_devname with absolute path removed
+     */
+
+    cur_devname = rindex(cur_devname,'/');
+
+    cur_devname++;
+
+
+    udev_lib = udev_new();
+
+    if (udev_lib == NULL) {
+	CBLK_TRACE_LOG_FILE(1,"udev_new failed with errno = %d",errno);
+
+
+	return 0;
+	
+    }
+
+
+    device_enumerate = udev_enumerate_new(udev_lib);
+
+    if (device_enumerate == NULL)  {
+
+	CBLK_TRACE_LOG_FILE(1,"udev_enumerate_new failed with errno = %d",errno);
+
+
+	return 0;
+	
+    }
+
+
+    udev_enumerate_add_match_subsystem(device_enumerate,subsystem_name);
+
+    udev_enumerate_scan_devices(device_enumerate);
+
+    device_list = udev_enumerate_get_list_entry(device_enumerate);
+
+
+    for (device_entry = device_list; device_entry != NULL; device_entry = udev_list_entry_get_next(device_entry)) {
+
+	path = udev_list_entry_get_name(device_entry);
+
+	if (path == NULL) {
+
+	    CBLK_TRACE_LOG_FILE(1,"udev_list_entry_get_name failed with errno = %d",errno);
+	    continue;
+	}
+	
+
+	CBLK_TRACE_LOG_FILE(9,"path = %s",path);
+	
+	
+	/*
+	 * Extract filename with absolute path removed
+	 */
+
+	devname = rindex(path,'/');
+	devname++;
+
+	if (!(strcmp(devname,cur_devname))) {
+
+	    /*
+	     * Skip over our device name
+	     */
+
+	    continue;
+	}
+
+	device = udev_device_new_from_syspath(udev_lib,path);
+
+	if (device == NULL) {
+
+	    CBLK_TRACE_LOG_FILE(1,"udev_device_new_from_subsystem_syspath failed with errno = %d",errno);
+
+	    continue;
+
+	}
+
+	device_mode = udev_device_get_sysattr_value(device,"device/mode");
+
+
+	if (device_mode == NULL) {
+
+	    CBLK_TRACE_LOG_FILE(1,"no mode for this device ");
+
+
+	    continue;
+
+	} else {
+
+
+	    if (strcmp(device_mode,"superpipe")) {
+
+		CBLK_TRACE_LOG_FILE(1,"Device is not in superpipe mode = %s",device_mode);
+
+		continue;
+	    }
+
+	    CBLK_TRACE_LOG_FILE(9,"disk in superpipe mode found");
+
+	    parent =  udev_device_get_parent(device);
+
+	    if (parent == NULL) {
+
+		CBLK_TRACE_LOG_FILE(1,"udev_device_get_parent failed with errno = %d",errno);
+
+		continue;;
+
+	    }
+
+	    parent_name = (char *)udev_device_get_devpath(parent);
+    
+	    CBLK_TRACE_LOG_FILE(9,"parent name = %s",parent_name);
+
+	    sprintf(vpd_pg83_filename,"/sys%s/vpd_pg83",parent_name);
+
+	    udid = cblk_extract_udid_from_vpd83_file(vpd_pg83_filename);
+
+	    if (!(strcmp(udid,orig_udid))) {
+
+
+		devname = rindex(path,'/');
+		devname++;
+
+		CBLK_TRACE_LOG_FILE(9,"found device %s with same udid = %s",devname,vpd_pg83_filename);
+
+
+		if (num_matches_found < size_devname_list) {
+
+		    dev_name_list[num_matches_found] = malloc(PATH_MAX);
+
+		    if (dev_name_list[num_matches_found] == NULL) {
+			CBLK_TRACE_LOG_FILE(1,"malloc for dev_name = %s on %d entry failed with errno = %d",
+					    devname,num_matches_found,errno);
+			break;
+		    }
+
+		    bzero(dev_name_list[num_matches_found],PATH_MAX);
+
+		    sprintf(dev_name_list[num_matches_found],"/dev/%s",devname);
+
+		    
+		} else {
+
+		    /*
+		     * We have exceeded the size of
+		     * this list
+		     */
+
+		    break;
+		}
+
+		num_matches_found++;
+
+		
+	       
+	    }
+
+	    
+	}
+	
+	
+    }
+
+    CBLK_TRACE_LOG_FILE(9,"num_matches_found = %d",num_matches_found);
+
+    return num_matches_found;
+}
+
+
+/* ----------------------------------------------------------------------------
+ *
+ * NAME: cblk_find_full_parent_name
+ *                  
+ * FUNCTION:  Find parent name, that also includes child name portion
+ *            for this device.
+ *          
+ *
+ *
+ * CALLED BY:
+ *    
+ *
+ * INTERNAL PROCEDURES CALLED:
+ *      
+ *     
+ *                              
+ * EXTERNAL PROCEDURES CALLED:
+ *     
+ *      
+ *
+ * RETURNS:     
+ *     
+ * ----------------------------------------------------------------------------
+ */ 
+char *cblk_find_full_parent_name(char *device_name)
+{
+
+    char *parent_name = NULL;
     const char *device_mode = NULL;
     char *subsystem_name = NULL;
     char *devname = NULL;
@@ -330,6 +653,8 @@ char *cblk_find_parent_dev(char *device_name)
 
     }
 
+    CBLK_TRACE_LOG_FILE(9,"device found for subsystem name = %s",subsystem_name);
+
     device_mode = udev_device_get_sysattr_value(device,"device/mode");
 
 
@@ -351,6 +676,8 @@ char *cblk_find_parent_dev(char *device_name)
 	}
     }
 
+    CBLK_TRACE_LOG_FILE(9,"device_mode found for subsystem name = %s",subsystem_name);
+
     parent =  udev_device_get_parent(device);
 
     if (parent == NULL) {
@@ -361,10 +688,70 @@ char *cblk_find_parent_dev(char *device_name)
 
     }
 
+
+    CBLK_TRACE_LOG_FILE(9,"parent found for subsystem name = %s",subsystem_name);
+
     parent_name = (char *)udev_device_get_devpath(parent);
 
 
     CBLK_TRACE_LOG_FILE(9,"parent name = %s",parent_name);
+
+    /* udev is setting errno to non-zero, but there is no real error */
+    errno=0;
+    return (parent_name);
+
+}
+#endif /* !_AIX */
+
+
+/* ----------------------------------------------------------------------------
+ *
+ * NAME: cblk_find_parent_dev
+ *                  
+ * FUNCTION:  Find parent string of lun.
+ *          
+ *
+ *
+ * CALLED BY:
+ *    
+ *
+ * INTERNAL PROCEDURES CALLED:
+ *      
+ *     
+ *                              
+ * EXTERNAL PROCEDURES CALLED:
+ *     
+ *      
+ *
+ * RETURNS:     
+ *     
+ * ----------------------------------------------------------------------------
+ */ 
+
+#ifdef _AIX
+char *cblk_find_parent_dev(char *device_name)
+{
+
+    return NULL;
+}
+#else
+
+char *cblk_find_parent_dev(char *device_name)
+{
+    char *parent_name = NULL;
+    char *child_part = NULL;
+
+
+
+
+    parent_name = cblk_find_full_parent_name(device_name);
+
+    if (parent_name == NULL) {
+
+	return parent_name;
+    }
+
+
 
     /*
      * This parent name string will actually have sysfs directories
@@ -387,6 +774,64 @@ char *cblk_find_parent_dev(char *device_name)
 }
 
 #endif /* !AIX */
+
+
+
+
+/* ----------------------------------------------------------------------------
+ *
+ * NAME: cblk_get_udid
+ *                  
+ * FUNCTION:  Get device's unique identifier
+ *          
+ *
+ *
+ * CALLED BY:
+ *    
+ *
+ * INTERNAL PROCEDURES CALLED:
+ *      
+ *     
+ *                              
+ * EXTERNAL PROCEDURES CALLED:
+ *     
+ *      
+ *
+ * RETURNS:     
+ *     
+ * ----------------------------------------------------------------------------
+ */ 
+
+#ifdef _AIX
+char *cblk_get_udid(char *device_name)
+{
+
+    return NULL;
+}
+#else
+
+char *cblk_get_udid(char *device_name)
+{
+    char vpd_pg83_filename[PATH_MAX];
+    char *udid = NULL;
+    char *parent_name = NULL;
+
+
+    parent_name = cblk_find_full_parent_name(device_name);
+
+
+    sprintf(vpd_pg83_filename,"/sys%s/vpd_pg83",parent_name);
+
+    udid = cblk_extract_udid_from_vpd83_file(vpd_pg83_filename);
+
+
+    return udid;
+}
+
+#endif /* !AIX */
+
+
+
 /* ----------------------------------------------------------------------------
  *
  * NAME: cblk_chunk_attach_path
@@ -481,14 +926,14 @@ int  cblk_chunk_attach_path(cflsh_chunk_t *chunk, int path_index,int mode,
 
 
     // TODO:?? Is this needed disk_attach.flags = CXL_START_WORK_NUM_IRQS;
-    rc = ioctl(chunk->fd,DK_CAPI_ATTACH,&disk_attach);
+    rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_ATTACH,&disk_attach);
     
     if (rc) {
 
 
 	
-	CBLK_TRACE_LOG_FILE(1,"Unable to attach errno = %d, return_flags = 0x%llx",
-			    errno,disk_attach.return_flags);
+	CBLK_TRACE_LOG_FILE(1,"Unable to attach errno = %d, return_flags = 0x%llx, num_active_chunks = 0x%x",
+			    errno,disk_attach.return_flags,cflsh_blk.num_active_chunks);
 
 
 
@@ -628,6 +1073,48 @@ int  cblk_chunk_attach_path(cflsh_chunk_t *chunk, int path_index,int mode,
 #else
     chunk->path[path_index]->afu->contxt_id = disk_attach.context_id;
     chunk->path[path_index]->afu->contxt_handle = 0xffffffff & disk_attach.context_id;
+
+#ifdef DK_CXLFLASH_CONTEXT_SQ_CMD_MODE
+    if (disk_attach.return_flags & DK_CXLFLASH_CONTEXT_SQ_CMD_MODE) {
+
+
+	/*
+	 * driver is indicating this AFU supports SQ. So switch
+	 * the chunk/afu type to CFLASH_BLK_CHUNK_SIS_LITE_SQ)
+	 */
+
+	CBLK_TRACE_LOG_FILE(9,"set,DK_CXLFLASH_CONTEXT_SQ_CMD_MODE contxt_id = 0x%llx",chunk->path[path_index]->afu->contxt_id);
+
+       
+	
+	if (cblk_update_path_type(chunk,chunk->path[path_index],CFLASH_BLK_CHUNK_SIS_LITE_SQ)) {
+
+
+	    CBLK_TRACE_LOG_FILE(1,"failed to update chunk path type for SQ for contxt_id = 0x%llx",
+				chunk->path[path_index]->afu->contxt_id);
+
+       
+	
+	    cblk_release_path(chunk,(chunk->path[path_index]));
+
+	    chunk->path[path_index] = NULL;
+
+	    return -1;
+	}
+
+    }
+#endif /*DK_CXLFLASH_CONTEXT_SQ_CMD_MODE  */
+
+
+#ifdef DK_CXLFLASH_APP_CLOSE_ADAP_FD
+    if (disk_attach.return_flags & DK_CXLFLASH_APP_CLOSE_ADAP_FD) {
+
+	CBLK_TRACE_LOG_FILE(9,"DK_CXLFLASH_APP_CLOSE_ADAP_FD set, contxt_id = 0x%llx",chunk->path[path_index]->afu->contxt_id);
+	chunk->path[path_index]->flags |= CFLSH_PATH_CLOSE_POLL_FD;
+
+    }
+#endif /* DK_CXLFLASH_APP_CLOSE_ADAP_FD */
+
 #endif /* !AIX */
 
 
@@ -641,7 +1128,7 @@ int  cblk_chunk_attach_path(cflsh_chunk_t *chunk, int path_index,int mode,
 
     chunk->path[path_index]->afu->mmio_mmap = disk_attach.mmio_start;
 
-    chunk->path[path_index]->afu->mmio = chunk->path[chunk->cur_path]->afu->mmio_mmap;
+    chunk->path[path_index]->afu->mmio = chunk->path[path_index]->afu->mmio_mmap;
 
     chunk->path[path_index]->afu->mmap_size = disk_attach.mmio_size;
 #else 
@@ -667,7 +1154,8 @@ int  cblk_chunk_attach_path(cflsh_chunk_t *chunk, int path_index,int mode,
 
     
 #endif   
-
+    
+    chunk->path[path_index]->flags |= CFLSH_PATH_ATTACH;
 
     return rc;
 }
@@ -701,7 +1189,7 @@ int  cblk_chunk_attach_path(cflsh_chunk_t *chunk, int path_index,int mode,
  * ----------------------------------------------------------------------------
  */ 
 int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int mode, 
-					dev64_t adap_devno,  int arch_type,
+					dev64_t adap_devno,  char *path_dev_name, int fd, int arch_type,
 					int *cleanup_depth, int assign_path)
 {
 
@@ -743,7 +1231,7 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
 	    share = TRUE;
 	}
 
-	path = cblk_get_path(chunk,adap_devno,chunk_type,chunk->num_cmds,&in_use,share); 
+	path = cblk_get_path(chunk,adap_devno,path_dev_name,chunk_type,chunk->num_cmds,&in_use,share); 
 
 
 	if (path == NULL) {
@@ -756,7 +1244,10 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
 	    return (-1);
 	}
 
+
 	chunk->path[path_index] = path;
+
+	chunk->path[path_index]->fd = fd;
 
 	path->path_index = path_index;
 		
@@ -789,7 +1280,26 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
 	}
 
 
+    } else if (!(chunk->flags & CFLSH_CHNK_VLUN) &&
+	       (chunk->path[path_index]->afu_share_type == CFLASH_AFU_SHARE_INUSE)) {
+	
+	/*
+	 * If this after a fork, and a physical lun
+	 * that is using shared AFU. then do 
+	 * a shared attach.
+	 */
+
+	rc = cblk_chunk_attach_path(chunk,path_index,mode,adap_devno,cleanup_depth,assign_path,CFLASH_AFU_SHARE_INUSE);
+
+	if (!rc) {
+
+	    chunk->path[path_index]->flags |= CFLSH_PATH_ACT;
+	}
+
+	return rc;
+
     }
+
 
 
     rc = cblk_chunk_attach_path(chunk,path_index,mode,adap_devno,cleanup_depth,assign_path,in_use);
@@ -837,12 +1347,45 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
 
     *cleanup_depth = 40;  
 
-    CBLK_TRACE_LOG_FILE(6,"mmio = 0x%llx",(uint64_t)chunk->path[path_index]->afu->mmio_mmap);
+    CBLK_TRACE_LOG_FILE(6,"mmio = 0x%llx, path_index = %d, afu = %p",
+			(uint64_t)chunk->path[path_index]->afu->mmio_mmap,path_index,chunk->path[path_index]->afu);
 
     /*
      * Set up response queue
      */
     
+
+    bzero((void *)chunk->path[path_index]->afu->p_hrrq_start ,chunk->path[path_index]->afu->size_rrq);
+
+    chunk->path[path_index]->afu->p_hrrq_curr = chunk->path[path_index]->afu->p_hrrq_start;
+
+    /*
+     * Since the host RRQ is
+     * bzeroed. The toggle bit in the host
+     * RRQ that initially indicates we
+     * have a new RRQ will need to be 1.
+     */
+
+
+    chunk->path[path_index]->afu->toggle = 1;
+        
+    chunk->path[path_index]->afu->num_issued_cmds = 0;
+
+    chunk->cmd_curr = chunk->cmd_start;
+
+    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
+
+	/*
+	 * If this AFU is using a Submission Queue (SQ)
+	 * then, reinitialize the SQ.
+	 */ 
+	bzero((void *)chunk->path[path_index]->afu->p_sq_start ,chunk->path[path_index]->afu->size_sq);
+
+	chunk->path[path_index]->afu->p_sq_curr = chunk->path[path_index]->afu->p_sq_start;
+
+
+    }
+
     if (CBLK_ADAP_SETUP(chunk,path_index)) {
 
 	
@@ -859,7 +1402,7 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
     return rc;
 }
 
-#ifdef _AIX
+
 /* ----------------------------------------------------------------------------
  *
  * NAME: cblk_chunk_reuse_attach_mpio
@@ -886,7 +1429,8 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
  *     
  * ----------------------------------------------------------------------------
  */ 
-int  cblk_chunk_reuse_attach_mpio(cflsh_chunk_t *chunk,int mode, dev64_t adap_devno,int arch_type,
+int  cblk_chunk_reuse_attach_mpio(cflsh_chunk_t *chunk,int mode, dev64_t adap_devno,
+				  char *path_dev_name, int fd, int arch_type,
 				  int matching_path_index,int path_index, int *cleanup_depth)
 {
     int rc = 0;
@@ -905,7 +1449,7 @@ int  cblk_chunk_reuse_attach_mpio(cflsh_chunk_t *chunk,int mode, dev64_t adap_de
 	share = TRUE;
     }
 
-    path = cblk_get_path(chunk,adap_devno,chunk_type,chunk->num_cmds,&in_use,share); 
+    path = cblk_get_path(chunk,adap_devno,path_dev_name,chunk_type,chunk->num_cmds,&in_use,share); 
 
     if (path == NULL) {
 			    
@@ -918,6 +1462,8 @@ int  cblk_chunk_reuse_attach_mpio(cflsh_chunk_t *chunk,int mode, dev64_t adap_de
     }
 			
     chunk->path[path_index] = path;
+
+    chunk->path[path_index]->fd = fd;
 			
     path->path_index = path_index;
 			
@@ -967,7 +1513,7 @@ int  cblk_chunk_reuse_attach_mpio(cflsh_chunk_t *chunk,int mode, dev64_t adap_de
     return rc;
 }
 
-#endif /* AIX */
+
 
 /* ----------------------------------------------------------------------------
  *
@@ -997,9 +1543,10 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 {
     int path_index = 0;
     dev64_t adap_devno = 0;
+    int i,j;                                /* general counter */
+    int previous_path_found;
 #ifdef _AIX
     struct devinfo iocinfo;
-    int i,j;                                  /* general counter */
     int first_reserve_path = -1;
     int first_good_path = -1;
     int second_good_path = -1;
@@ -1013,8 +1560,13 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
     uint32_t block_size = 0;
     dev64_t  prim_path_devno;
     int  prim_path_id = -1;
-    int previous_path_found;
     cflsh_block_chunk_type_t chunk_type;
+#else
+    char *path_dev_list[CFLSH_BLK_MAX_NUM_PATHS];
+    int num_paths = 0;
+    char *afu_name = NULL;
+    int open_flags;
+    int fd;
 
 #endif /* _AIX */
 
@@ -1035,6 +1587,11 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 
 #endif /* AIX */
 
+    if (chunk->udid == NULL) {
+	chunk->udid = cblk_get_udid(chunk->dev_name);
+    }
+
+    CBLK_TRACE_LOG_FILE(9,"chunk->udid = %s",chunk->udid);
 
 
     // Set cur_path to path 0 in the chunk;
@@ -1272,9 +1829,13 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 	     * paths. First let the disk driver assign the primary path (with
 	     * the hope it will load balance these assignments) which will have
 	     * path_index of 0. Then attach to the remaining paths.
+	     * 
+	     * NOTE: For AIX which uses MPIO, the path's file descriptor
+	     *       is identical to the chunk file descriptor, since the
+	     *       the disk driver (and device) are multi-path aware.
 	     */
 
-	    if (cblk_chunk_attach_process_map_path(chunk,0,mode,0,0,cleanup_depth,TRUE)) {
+	    if (cblk_chunk_attach_process_map_path(chunk,0,mode,0,chunk->dev_name,chunk->fd,0,cleanup_depth,TRUE)) {
 
 		return -1;
 	    }
@@ -1289,7 +1850,10 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 	    /*
 	     * Find primary AFU selected for us. It
 	     * may be associated with multiple paths.
-	     * Thus we need to find all of them for this AFU
+	     * Thus we need to find all of them for this AFU.
+	     * In the loop below, path_index indicates the current
+	     * chunk->path[path_index] that is being processed/created.
+	     * The primary path will will be path_index of 0.
 	     */
 
 	    for (i = 0;i<disk_paths.path.returned_path_count;i++) {
@@ -1307,7 +1871,8 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 
 			/*
 			 * If path_index is greater than 0, then we
-			 * have already chosen the primary path for this AFU.
+			 * have already chosen the primary path for this AFU 
+			 * (path_index of 0 will always be primary path).
 			 * However if this AFU has multiple ports (paths), then
 			 * we would like to use those as the non-primary paths for
 			 * MPIO.  
@@ -1321,8 +1886,16 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 			    continue;
 			}
 
+			/*
+			 * 
+			 * NOTE: For AIX which uses MPIO, the path's file descriptor
+			 *       is identical to the chunk file descriptor, since the
+			 *       the disk driver (and device) are multi-path aware.
+			 */
 
-			if (cblk_chunk_reuse_attach_mpio(chunk,mode,path_info[i].devno,path_info[i].architecture,
+			if (cblk_chunk_reuse_attach_mpio(chunk,mode,path_info[i].devno,NULL,
+							 chunk->fd,
+							 path_info[i].architecture,
 							 0,path_index,cleanup_depth)) {
 
 
@@ -1332,7 +1905,7 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 		    } else {
 
 			/*
-			 * Trace primary path_id for debug purposes
+			 * Trace tentative primary path_id for debug purposes
 			 */
 
 			CBLK_TRACE_LOG_FILE(5,"Tentative Primary path_id  = %d and path_index = %d",
@@ -1363,12 +1936,13 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 
 		    chunk->path[path_index]->num_ports = 1;
 
+		    CBLK_TRACE_LOG_FILE(9,"For same (primary) AFU, assigned path_id  = %d and path_index = %d",
+					chunk->path[path_index]->path_id, path_index);
+
 		    path_index++;
 		    
 
 
-		    CBLK_TRACE_LOG_FILE(9,"Assigned path_id  = %d and path_index = %d",
-					chunk->path[path_index]->path_id, path_index);
 
 
 		}
@@ -1376,7 +1950,7 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 
 	    if (path_index == 0) {
 
-		CBLK_TRACE_LOG_FILE(1,"Could not find select path, num_paths = %d",
+		CBLK_TRACE_LOG_FILE(1,"Could not find selected path, num_paths = %d",
 				    disk_paths.path.returned_path_count);
 		return -1;
 	    }
@@ -1400,8 +1974,17 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 			if (chunk->path[j]->afu->adap_devno == path_info[i].devno) {
 
 
+
+			    /*
+			     * 
+			     * NOTE: For AIX which uses MPIO, the path's file descriptor
+			     *       is identical to the chunk file descriptor, since the
+			     *       the disk driver (and device) are multi-path aware.
+			     */
 			    
-			    if (cblk_chunk_reuse_attach_mpio(chunk,mode,path_info[i].devno,path_info[i].architecture,
+			    if (cblk_chunk_reuse_attach_mpio(chunk,mode,path_info[i].devno,NULL,
+							     chunk->fd,
+							     path_info[i].architecture,
 							 j,path_index,cleanup_depth)) {
 
 
@@ -1419,8 +2002,15 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 		    if (!previous_path_found) {
 
 
-			if (cblk_chunk_attach_process_map_path(chunk,path_index,mode,path_info[i].devno,
-							       path_info[i].architecture,
+
+			/*
+			 * 
+			 * NOTE: For AIX which uses MPIO, the path's file descriptor
+			 *       is identical to the chunk file descriptor, since the
+			 *       the disk driver (and device) are multi-path aware.
+			 */
+			if (cblk_chunk_attach_process_map_path(chunk,path_index,mode,path_info[i].devno,NULL,
+							       chunk->fd,path_info[i].architecture,
 							       cleanup_depth,FALSE)) {
 
 			    break;
@@ -1551,6 +2141,158 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 
     }
 
+#else
+
+    if ((chunk->flags & CFLSH_CHNK_MPIO_FO) &&
+	!(chunk->flags & CFLSH_CHNK_VLUN) &&
+	(chunk->udid)) {
+
+
+	/*
+	 * If we are using MPIO for physical luns, and we have a 
+	 * unique device ID (UDID), then attach and map all
+	 * paths. First attach for the primary path.
+	 * Then attach to the remaining paths.
+	 *
+	 * NOTE: For linux the primary path will have the same
+	 *       file descriptor as the chunk. All other paths will
+	 *       have different file descriptors.
+	 */
+
+	if (cblk_chunk_attach_process_map_path(chunk,0,mode,0,
+					       chunk->dev_name,chunk->fd,0,
+					       cleanup_depth,TRUE)) {
+
+
+	    return -1;
+	}
+
+	/*
+	 * Now find all remaining paths (special files) for this
+	 * same lun.
+	 */
+
+	bzero(path_dev_list,CFLSH_BLK_MAX_NUM_PATHS);
+
+	num_paths = cblk_find_other_paths_to_device("scsi_generic",chunk->udid,chunk->dev_name,
+						  path_dev_list,CFLSH_BLK_MAX_NUM_PATHS);
+
+	/*
+	 * Advance to the next potential path index
+	 */
+
+	path_index = 1;
+	for (i = 0; i < num_paths; i++) {
+
+	    CBLK_TRACE_LOG_FILE(9,"path found %d = %s",i,path_dev_list[i]);
+
+
+	    /* ?? Need support for other architectures */
+
+	    /*
+	     * ?? path file descriptor needs to be passed
+	     * to the leaf routines to do the attach ioctls.
+	     */
+
+	    /*
+	     * Attach to this path. First we need to see if
+	     * we are already attached to this AFU before attempting 
+	     * an attach. 
+	     */
+
+	    previous_path_found = FALSE;
+	    for (j=0;j< path_index; j++) {
+
+		afu_name = cblk_find_parent_dev(path_dev_list[i]);
+
+
+		if (!strcmp(chunk->path[j]->afu->master_name,afu_name)) {
+
+
+		    CBLK_TRACE_LOG_FILE(9,"reusing attach for  %s for path_index = %d",
+					    path_dev_list[i],path_index);
+			    
+		    // ?? Need way to use same flags as original open
+
+		    open_flags = O_RDWR | O_NONBLOCK;   
+
+		    fd = open(path_dev_list[i],open_flags);
+
+		    if (fd  < 0) {
+
+			CBLK_TRACE_LOG_FILE(1,"Unable to open device %s for path_index = %d errno = %d",
+					    path_dev_list[i],path_index,errno);
+
+			continue;
+		    }
+
+		    if (cblk_chunk_reuse_attach_mpio(chunk,mode,0,path_dev_list[i],fd,CFLASH_BLK_CHUNK_SIS_LITE,
+						     j,path_index,cleanup_depth)) {
+
+
+			break;
+		    }
+
+
+
+		    previous_path_found = TRUE;
+
+		    break;
+		}
+	    }
+
+	    if (!previous_path_found) {
+
+		/* 
+		 * If no paths are using this same AFU, then attach now
+		 */
+
+		
+
+		CBLK_TRACE_LOG_FILE(9,"opening/attaching for new AFU  %s for path_index = %d",
+				    path_dev_list[i],path_index);
+
+		// ?? Need way to use same flags as original open
+
+		open_flags = O_RDWR | O_NONBLOCK;   
+
+		fd = open(path_dev_list[i],open_flags);
+
+		if (fd  < 0) {
+
+		    CBLK_TRACE_LOG_FILE(1,"Unable to open device %s for path_index = %d errno = %d",
+					path_dev_list[i],path_index,errno);
+
+		    continue;
+		}
+
+		if (cblk_chunk_attach_process_map_path(chunk,path_index,mode,0,path_dev_list[i],
+						       fd,0,
+						       cleanup_depth,FALSE)) {
+
+		    break;
+		}
+	    }
+
+
+	    /*
+	     * Only one port is associated with this path
+	     */
+
+	    chunk->path[path_index]->num_ports = 1;
+
+	    CBLK_TRACE_LOG_FILE(9,"Attached path dev_name  = %s, path_index = %d",
+				chunk->path[path_index]->dev_name,path_index);
+	    path_index++;
+
+	}
+
+
+	
+	CBLK_TRACE_LOG_FILE(5,"rc = %d num_paths = %d",
+				rc, chunk->num_paths);
+	return rc;
+    }
 
 
 
@@ -1562,7 +2304,7 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
     
 #endif /* BLOCK_FILEMODE_ENABLED */
     
-    if (cblk_chunk_attach_process_map_path(chunk,path_index,mode,adap_devno,0,cleanup_depth,assign_afu)) {
+    if (cblk_chunk_attach_process_map_path(chunk,path_index,mode,adap_devno,chunk->dev_name,chunk->fd,0,cleanup_depth,assign_afu)) {
 
 	return -1;
     }
@@ -1752,55 +2494,98 @@ void  cblk_chunk_detach_path (cflsh_chunk_t *chunk, int path_index,int force)
     
     CFLASH_BLOCK_AFU_SHARE_LOCK(chunk->path[path_index]->afu);
     
-    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_HALTED) {
-	
+    if ((chunk->path[path_index]->flags & CFLSH_PATH_ATTACH) ||
+	(force)) {
+
+
 	/*
-	 * If path is in a halted state then fail 
-	 * from this routine
+	 * Only detach on the paths, for which we did an attach
 	 */
 	
-	CBLK_TRACE_LOG_FILE(5,"afu halted, failing detach path afu->flags = 0x%x",
-			    chunk->path[path_index]->afu->flags);
+	if (chunk->path[path_index]->afu->flags & CFLSH_AFU_HALTED) {
+	
+	    /*
+	     * If path is in a halted state then fail 
+	     * from this routine
+	     */
+	
+	    CBLK_TRACE_LOG_FILE(5,"afu halted, failing detach path afu->flags = 0x%x",
+				chunk->path[path_index]->afu->flags);
 	    
-	CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
-	return;
+	    CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
+	    return;
 
 	
 	
-    }
+	}
 
 
-    /*
-     * Since we are reusing contexts, it is fine to detach 
-     * even if this is not last path to uses this AFU.
-     */
+	/*
+	 * Since we are reusing contexts, it is fine to detach 
+	 * even if this is not last path to uses this AFU.
+	 */
 
 
-    bzero(&disk_detach,sizeof(disk_detach));
+	bzero(&disk_detach,sizeof(disk_detach));
 
 #ifdef _AIX
-    disk_detach.devno = chunk->path[path_index]->afu->adap_devno;
+	disk_detach.devno = chunk->path[path_index]->afu->adap_devno;
 #endif /* AIX */
 
 #ifdef _AIX
-    disk_detach.ctx_token = chunk->path[path_index]->afu->contxt_id;
+	disk_detach.ctx_token = chunk->path[path_index]->afu->contxt_id;
 #else
-    disk_detach.context_id = chunk->path[path_index]->afu->contxt_id;
+	disk_detach.context_id = chunk->path[path_index]->afu->contxt_id;
 #endif /* !AIX */
 
-    rc = ioctl(chunk->fd,DK_CAPI_DETACH,&disk_detach);
+	rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_DETACH,&disk_detach);
     
 
-    if (rc) {
+	if (rc) {
 	
-	CBLK_TRACE_LOG_FILE(1,"DK_CAPI_DETACH e failed with rc = %d, errno = %d, return_flags = 0x%llx",
-			    rc,errno,disk_detach.return_flags);
+	    CBLK_TRACE_LOG_FILE(1,"DK_CAPI_DETACH failed with rc = %d, errno = %d, return_flags = 0x%llx, chunk_id = %d",
+				rc,errno,disk_detach.return_flags,chunk->index, chunk->flags);
+
+	    CBLK_TRACE_LOG_FILE(1,"DK_CAPI_DETACH failed (cont) chunk->in_use = %d, chunk->dev_name = %s, path_index = %d",
+				chunk->in_use, chunk->dev_name,path_index);
+	
+	
+	}
+
+	if (chunk->path[path_index]->flags & CFLSH_PATH_CLOSE_POLL_FD) {
+
+	    close(chunk->path[path_index]->afu->poll_fd);
+	}
+
 
     }
 
-
-
     CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
+
+
+#ifndef _AIX
+
+
+    if ((path_index) &&
+	(chunk->path[path_index]->fd >= 0)) {
+
+	/*
+	 * The primary path index's (0),
+	 * file descriptor is same as
+	 * the chunk's file descriptor,
+	 * Thus we do not close the primary
+	 * path index's file descriptor 
+	 * here.
+	 */
+
+	CBLK_TRACE_LOG_FILE(9,"closing = %s, path_index = %d",
+			    chunk->path[path_index]->dev_name,path_index);
+	
+	close(chunk->path[path_index]->fd);
+
+	chunk->path[path_index]->fd = -1;
+    }
+#endif /* !_AIX */
 
 
     chunk->path[path_index]->flags &= ~CFLSH_PATH_ACT;
@@ -2065,7 +2850,7 @@ int  cblk_chunk_get_mc_phys_disk_resources_path(cflsh_chunk_t *chunk,
      */
 
     if ((path_index == 0) &&
-	(!(chunk->flags & CFLSH_CHNK_NO_RESRV))){
+	(chunk->flags & CFLSH_CHNK_NO_RESRV)) {
 
 
 	/*
@@ -2093,7 +2878,7 @@ int  cblk_chunk_get_mc_phys_disk_resources_path(cflsh_chunk_t *chunk,
 
 
 
-    rc = ioctl(chunk->fd,DK_CAPI_USER_DIRECT,&disk_physical);
+    rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_USER_DIRECT,&disk_physical);
 
     if (rc) {
 
@@ -2288,6 +3073,11 @@ int  cblk_chunk_get_mc_device_resources(cflsh_chunk_t *chunk,
 	disk_virtual.lun_size = 0; 
 #endif /* !_AIX */
 
+	/*
+	 * Note: For virtual luns, we do not support multi-pathing.
+	 *       Thus we only use the chunk file descriptor for this ioctl.
+	 */
+
 	rc = ioctl(chunk->fd,DK_CAPI_USER_VIRTUAL,&disk_virtual);
 
 	if (rc) {
@@ -2442,6 +3232,10 @@ int  cblk_chunk_set_mc_size(cflsh_chunk_t *chunk, size_t nblocks)
 
 
 
+    /*
+     * Note: For virtual luns, we do not support multi-pathing.
+     *       Thus we only use the chunk file descriptor for this ioctl.
+     */
 
     rc = ioctl(chunk->fd,DK_CAPI_VLUN_RESIZE,&disk_resize);
     
@@ -2780,6 +3574,11 @@ int  cblk_mc_clone(cflsh_chunk_t *chunk,int mode, int flags)
 
 #endif 
 
+   /*
+    * Note: For virtual luns, we do not support multi-pathing.
+    *       Thus we only use the chunk file descriptor for this ioctl.
+    */
+
     rc = ioctl(chunk->fd,DK_CAPI_VLUN_CLONE,&disk_clone);
 
     if (rc) {
@@ -2815,6 +3614,13 @@ int  cblk_mc_clone(cflsh_chunk_t *chunk,int mode, int flags)
 	CBLK_TRACE_LOG_FILE(1,"close failed with rc = %d errno = %d",
 			    rc,errno);
 
+    }
+
+
+    
+    if (chunk->path[chunk->cur_path]->flags & CFLSH_PATH_CLOSE_POLL_FD) {
+	
+	close(old_adap_fd);
     }
 
 
@@ -2945,7 +3751,7 @@ void  cblk_chunk_free_mc_device_resources_path(cflsh_chunk_t *chunk, int path_in
 
 
 
-    rc = ioctl(chunk->fd,DK_CAPI_RELEASE,&disk_release);
+    rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_RELEASE,&disk_release);
     
 
     if (rc) {
@@ -3205,7 +4011,7 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 	    dk_exceptions.rsrc_handle = chunk->path[path_index]->sisl.resrc_handle;
 	    dk_exceptions.flags = DK_QEF_ADAPTER;
 	    
-	    rc = ioctl(chunk->fd,DK_CAPI_QUERY_EXCEPTIONS,&dk_exceptions);
+	    rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_QUERY_EXCEPTIONS,&dk_exceptions);
 	    
 	    
 	    if (rc) {
@@ -3303,7 +4109,7 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 	dk_exceptions.rsrc_handle = chunk->path[path_index]->sisl.resrc_handle;
 
 	    
-	rc = ioctl(chunk->fd,DK_CAPI_QUERY_EXCEPTIONS,&dk_exceptions);
+	rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_QUERY_EXCEPTIONS,&dk_exceptions);
 
 	
 	if (rc) {
@@ -3778,7 +4584,7 @@ void cblk_check_os_adap_err_failure_cleanup(cflsh_chunk_t *chunk, cflsh_afu_t *a
 
 
 
-    afu->flags &= ~CFLSH_AFU_HALTED;
+    afu->flags &= ~(CFLSH_AFU_HALTED|CFLSH_AFU_RECOV);
 	
 	
     pthread_rc = pthread_cond_broadcast(&(afu->resume_event));
@@ -3873,26 +4679,30 @@ void cblk_check_os_adap_err_failure_cleanup(cflsh_chunk_t *chunk, cflsh_afu_t *a
  *              chunk - Chunk the cmd is associated.
  *
  * RETURNS:
- *              None
+ *              status on Recovery
  *              
  *              
  */
-void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
+cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 {
     int rc = 0;
+    cflash_block_check_os_status_t status = CFLSH_BLK_CHK_OS_NO_RESET;
     cflsh_afu_t *afu;
     cflsh_path_t *path;
     int tmp_path_index;
     cflsh_chunk_t *tmp_chunk;
     dk_capi_recover_context_t disk_recover;
     int pthread_rc = 0;
+#ifndef _AIX
+    int old_adap_fd;
+#endif
     void *old_mmio;
     size_t old_mmio_size;
     
 
     if (CBLK_INVALID_CHUNK_PATH_AFU(chunk,path_index,__FUNCTION__)) {
 
-	return;
+	return status;
     }
 
     afu = chunk->path[path_index]->afu;
@@ -3914,7 +4724,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 
 	CBLK_TRACE_LOG_FILE(9,"AFU recovery is already active, for chunk->index = %d, chunk->dev_name = %s, path_index = %d,chunk->flags = 0x%x",
 			chunk->index,chunk->dev_name,path_index,chunk->flags);
-	return;
+	return CFLSH_BLK_CHK_OS_RESET_PEND;
 
     } else {
 
@@ -3987,7 +4797,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 	}
 	
 
-	return;
+	return CFLSH_BLK_CHK_OS_RESET;
     }
 
 
@@ -3998,7 +4808,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
      */
 
 
-    afu->flags |= CFLSH_AFU_HALTED;
+    afu->flags |= CFLSH_AFU_HALTED|CFLSH_AFU_RECOV;
 
     path = afu->head_path;
     
@@ -4056,7 +4866,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
     CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER initiated, for chunk->index = %d, chunk->dev_name = %s, path_index = %d,chunk->flags = 0x%x",
 			chunk->index,chunk->dev_name,path_index,chunk->flags);
 
-    CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER reattached new old afu->contxt_id = 0x%llx, old_adap_fd = %d",
+    CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER old afu->contxt_id = 0x%llx, old_adap_fd = %d",
 			chunk->path[path_index]->afu->contxt_id,chunk->path[path_index]->afu->poll_fd);
 
 
@@ -4064,7 +4874,8 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 			chunk->path[path_index]->afu->mmio,chunk->path[path_index]->afu->mmap_size);
 
 
-    CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER num_active_cmds = %d",chunk->num_active_cmds);
+    CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER num_active_cmds = %d, pid = 0x%llx",
+			chunk->num_active_cmds,(uint64_t)cflsh_blk.caller_pid);
 
 
 
@@ -4079,7 +4890,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 
 
 
-    rc = ioctl(chunk->fd,DK_CAPI_RECOVER_CTX,&disk_recover);
+    rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_RECOVER_CTX,&disk_recover);
 
     if (rc) {
 	
@@ -4107,7 +4918,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 	cblk_check_os_adap_err_failure_cleanup(chunk,afu);
 
 	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
-	return;
+	return status; 
 
     } else {
 
@@ -4118,6 +4929,9 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 	     * The ioctl succeeded and an AFU reset has been done.
 	     * We need to process the updated information from this
 	     */
+
+
+	    status = CFLSH_BLK_CHK_OS_RESET_SUCC;
 
 	    path = afu->head_path;
 	
@@ -4191,11 +5005,16 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 
 
 
+	    CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER reattached pid = 0x%llx",
+				(uint64_t)cflsh_blk.caller_pid);
+
 
 
 #else
 
 	    old_mmio = chunk->path[path_index]->afu->mmio_mmap;
+
+	    old_adap_fd = chunk->path[path_index]->afu->poll_fd;
 
 	    old_mmio_size = chunk->path[path_index]->afu->mmap_size;
 
@@ -4212,6 +5031,33 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 	    
 	    CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER reattached new afu->contxt_id = 0x%llx, new_adap_fd = %d",
 				chunk->path[path_index]->afu->contxt_id,chunk->path[path_index]->afu->poll_fd);
+
+#ifdef DK_CXLFLASH_CONTEXT_SQ_CMD_MODE
+	    if (disk_recover.return_flags & DK_CXLFLASH_CONTEXT_SQ_CMD_MODE) {
+
+
+		/*
+		 * driver is indicating this AFU supports SQ. See if this matches
+		 * our original setting.
+		 */
+
+		if (!(chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ)) {
+
+		    /*
+		     * The driver is now indicating the AFU supports SQ, but
+		     * we were not set up for that. So fail this.
+		     */
+
+
+		    cblk_check_os_adap_err_failure_cleanup(chunk,afu);
+
+		    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
+		    return CFLSH_BLK_CHK_OS_RESET_FAIL;
+		}
+
+	    }
+#endif /*DK_CXLFLASH_CONTEXT_SQ_CMD_MODE  */
+
 
 
 	    /*
@@ -4240,7 +5086,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 		cblk_check_os_adap_err_failure_cleanup(chunk,afu);
 
 		CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
-		return;
+		return CFLSH_BLK_CHK_OS_RESET_FAIL;
 
 	    } 
 
@@ -4273,9 +5119,13 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 
 	    CBLK_TRACE_LOG_FILE(5,"DK_CAPI_RECOVER mmio = 0x%llx, mmio_size = 0x%llx",
 				chunk->path[path_index]->afu->mmio,chunk->path[path_index]->afu->mmap_size);
-
-
-
+	    
+	    
+	    if (chunk->path[path_index]->flags & CFLSH_PATH_CLOSE_POLL_FD) {
+		
+		close(old_adap_fd);
+	    }
+	    
 
 #endif /* !AIX */
 
@@ -4313,7 +5163,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 		cblk_check_os_adap_err_failure_cleanup(chunk,afu);
 
 		CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
-		return;
+		return CFLSH_BLK_CHK_OS_RESET_FAIL;
 	    }
 
 
@@ -4333,8 +5183,23 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
 	    chunk->path[path_index]->afu->toggle = 1;
 
 
-	    bzero((void *)chunk->path[path_index]->afu->p_hrrq_start ,
-		  (sizeof(*(chunk->path[path_index]->afu->p_hrrq_start)) * chunk->path[path_index]->afu->num_rrqs));
+
+	    bzero((void *)chunk->path[path_index]->afu->p_hrrq_start ,chunk->path[path_index]->afu->size_rrq);
+
+
+	    if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
+
+		/*
+		 * If this AFU is using a Submission Queue (SQ)
+		 * then reinitialize the SQ.
+		 */ 
+		bzero((void *)chunk->path[path_index]->afu->p_sq_start ,chunk->path[path_index]->afu->size_sq);
+
+		chunk->path[path_index]->afu->p_sq_curr = chunk->path[path_index]->afu->p_sq_start;
+
+
+	    }
+
 
 
 	}
@@ -4346,7 +5211,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
      * Ensure the CFLSH_AFU_HALTED is cleared
      */
 
-    afu->flags &= ~CFLSH_AFU_HALTED;
+    afu->flags &= ~(CFLSH_AFU_HALTED|CFLSH_AFU_RECOV);
 
     pthread_rc = pthread_cond_broadcast(&(afu->resume_event));
 	
@@ -4429,7 +5294,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk, int path_index)
     chunk->flags &= ~CFLSH_CHNK_RECOV_AFU;
 
 
-    return;
+    return status;
 }
 
 #ifdef _AIX
@@ -4810,7 +5675,7 @@ void cblk_notify_mc_err(cflsh_chunk_t *chunk,  int path_index,int error_num,
 			chunk->dev_name,reason,cflsh_blk.process_name);
 
 
-    rc = ioctl(chunk->fd,DK_CAPI_LOG_EVENT,&disk_log);
+    rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_LOG_EVENT,&disk_log);
 
     if (rc) {
 	
@@ -4897,7 +5762,15 @@ int cblk_verify_mc_lun(cflsh_chunk_t *chunk,  cflash_block_notify_reason_t reaso
     CBLK_TRACE_LOG_FILE(5,"Issuing DK_CAPI_VERIFY for chunk index = %d\n",
 			chunk->index);
 
-    rc = ioctl(chunk->fd,DK_CAPI_VERIFY,&disk_verify);
+    /*
+     *  NOTE: For linux we only do the verify on the path
+     *        that saw the error. It is assumed the other paths
+     *        would either see the same error (such as Unit Attention)
+     *        and a do a verify for that path at that time or the other paths
+     *        would get an event notification.
+     */
+
+    rc = ioctl(chunk->path[chunk->cur_path]->fd,DK_CAPI_VERIFY,&disk_verify);
 
     if (rc) {
 	

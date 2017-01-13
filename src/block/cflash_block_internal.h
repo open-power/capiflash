@@ -49,6 +49,14 @@
 #include <pthread.h>
 #endif
 #include <errno.h>
+#ifdef _AIX
+#ifndef ENOTRECOVERABLE
+#define ENOTRECOVERABLE 94  /* If we are compiling on an old AIX level */
+			    /* that does not have this errno, then     */
+			    /* define it here to value used by recent  */
+			    /* levels of AIX.                          */
+#endif
+#endif /* _AIX */
 #include <memory.h>
 #ifndef _MACOSX
 #include <malloc.h>
@@ -95,7 +103,6 @@ typedef uint64_t dev64_t;
 //#define _SKIP_POLL_CALL 1
 //#define _SKIP_READ_CALL 1
 //#define _MASTER_CONTXT 1
-//#define _PERF_TEST 1
 #define _ERROR_INTR_MODE 1    /* Only rely on interrupts for errors.   */
 				/* Normal command completions are polled */
 				/* from RRQ.                             */
@@ -179,6 +186,10 @@ typedef uint64_t dev64_t;
 
 #define CAPI_FLASH_BLOCK_SIZE   4096
 
+#define CBLK_CACHE_LINE_SIZE        128   /* Size of OS cachine   */
+
+#define CBLK_DCBZ_CACHE_LINE_SZ       128   /* Size of cacheline assumed by dcbz */
+
 #define CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES 5000 /* Number of times to check for   */
 					      /* command room before giving up   */
 #define CFLASH_BLOCK_DELAY_ROOM   1000        /* Number of microseconds to delay */
@@ -225,6 +236,23 @@ typedef uint64_t dev64_t;
 
 
 
+/************************************************************************/
+/* Unrecoverable Error (UE) macros                                      */
+/************************************************************************/
+
+/* 
+ * Read (dereference) memory address,but 
+ * verify there is no UE here. Currently
+ * this macro is a no op, since the new AIX
+ * interface is not yet ready.
+ */
+
+
+#if defined(_CBLK_UE_SAFE) && defined(_AIX)
+#define CBLK_READ_ADDR_CHK_UE(_address_)    (ue_load((void *)_address_))
+#else
+#define CBLK_READ_ADDR_CHK_UE(_address_)    (*(_address_))
+#endif /* Linux or old AIX level */
 
 /************************************************************************/
 /* Miscellaneous                                                        */
@@ -389,7 +417,11 @@ do {                                                                    \
 #elif _MACOSX
 #define CBLK_LWSYNC()        asm volatile ("mfence")
 #else
+#ifndef TARGET_ARCH_x86_64
 #define CBLK_LWSYNC()        __asm__ __volatile__ ("lwsync")
+#else
+#define CBLK_LWSYNC()
+#endif
 #endif 
 
 
@@ -857,21 +889,9 @@ do {                                                            \
 
 #endif /* !_ERROR_INTR_MODE */
 
-#ifndef _PERF_TEST
- #ifdef _AIX
- #define CFLASH_MAX_WAIT_LOOP_CNT 100000
- #else
- #define CFLASH_MAX_WAIT_LOOP_CNT 500000
- #endif
-#else
-#define CFLASH_MAX_WAIT_LOOP_CNT 1
-#endif 
+#define CFLASH_DELAY_LOOP_CNT 50000000
 
-#ifdef _AIX
-#define CFLASH_DELAY_NO_CMD_INTRPT  500/* Time in microseconds to delay */
-#else
-#define CFLASH_DELAY_NO_CMD_INTRPT  100/* Time in microseconds to delay */
-#endif
+#define CFLASH_DELAY_NO_CMD_INTRPT  1  /* Time in microseconds to delay */
 					/* between checking RRQ when     */
 					/* running without command       */
 					/* completion interrupts.        */
@@ -884,13 +904,7 @@ do {                                                            \
 					/* to reach 50 seconds           */
 
 
-#define CFLASH_MIN_POLL_RETRIES     100 /* Minimum number of poll retries*/
-					/* before we start delaying.     */
-#ifdef _AIX
-#define CFLASH_MAX_POLL_RETRIES 20000
-#else
-#define CFLASH_MAX_POLL_RETRIES 100000
-#endif
+#define CFLASH_MAX_POLL_RETRIES 200000
 
 #define CFLASH_MAX_POLL_FAIL_RETRIES 10
 
@@ -1039,6 +1053,7 @@ typedef struct cflsh_cmd_mgm_s {
     };
     struct cflsh_cmd_info_s *cmdi; /* Associated command info   */
     int    index;                  /* index of command          */
+    uint64_t stime;                /* ticks of cmd start        */
 #if !defined(__64BIT__) && defined(_AIX)
     int reserved2[10];            /* Reserved for future use    */
 #else
@@ -1120,10 +1135,12 @@ typedef struct cflsh_cmd_info_s {
 
 typedef
 enum {
-    CFLASH_BLK_CHUNK_NONE      = 0x0, /* No command type          */
-    CFLASH_BLK_CHUNK_SIS_LITE  = 0x1, /* Chunk for SIS Lite device*/
-    CFLASH_BLK_CHUNK_SIS_SAS64 = 0x2, /* Future SISSAS64 chunk    */
-				      /* type.                    */
+    CFLASH_BLK_CHUNK_NONE        = 0x0, /* No command type          */
+    CFLASH_BLK_CHUNK_SIS_LITE    = 0x1, /* Chunk for SIS Lite device*/
+    CFLASH_BLK_CHUNK_SIS_LITE_SQ = 0x2, /* Chunk for SIS Lite device*/
+					/* using SQ.                */
+    CFLASH_BLK_CHUNK_SIS_SAS64   = 0x3, /* Future SISSAS64 chunk    */
+				        /* type.                    */
 } cflsh_block_chunk_type_t;
 
 
@@ -1136,8 +1153,10 @@ typedef struct cflsh_chunk_fcn_ptrs {
     int      (*get_num_interrupts)(struct cflsh_chunk_s *chunk, int path_index);
     uint64_t (*get_cmd_room)(struct cflsh_chunk_s *chunk, int path_index);
     int      (*adap_setup)(struct cflsh_chunk_s *chunk, int path_index);
+    int      (*adap_sq_setup)(struct cflsh_chunk_s *chunk, int path_index);
     uint64_t (*get_intrpt_status)(struct cflsh_chunk_s *chunk, int path_index);
     void     (*inc_rrq)(struct cflsh_chunk_s *chunk, int path_index);
+    void     (*inc_sq)(struct cflsh_chunk_s *chunk, int path_index);
     uint32_t (*get_cmd_data_length)(struct cflsh_chunk_s *chunk, cflsh_cmd_mgm_t *cmd);
     scsi_cdb_t *(*get_cmd_cdb)(struct cflsh_chunk_s *chunk, cflsh_cmd_mgm_t *cmd);
     cflsh_cmd_mgm_t *(*get_cmd_rsp)(struct cflsh_chunk_s *chunk, int path_index);
@@ -1194,6 +1213,10 @@ typedef struct cflsh_afu_s {
     int flags;                  /* Flags for this path         */
 #define CFLSH_AFU_SHARED  0x1   /* This AFU can be shared      */
 #define CFLSH_AFU_HALTED  0x2   /* AFU is in a halted state    */
+#define CFLSH_AFU_RECOV   0x4   /* AFU is in a recovery state  */
+#define CFLSH_AFU_SQ      0x8   /* This AFU is using an sub-   */
+				/* mission quue (SQ).          */
+
     int ref_count;              /* Reference count for this    */
 				/* path                        */
     int poll_fd;                /* File descriptor for poll or */
@@ -1209,16 +1232,33 @@ typedef struct cflsh_afu_s {
 				/* with the AFU.               */
     uint64_t toggle;            /* Toggle bit for RRQ          */
     cflsh_block_chunk_type_t type;/* CAPI block AFU type       */
-#ifdef _AIX
     dev64_t  adap_devno;        /* Devno of adapter.           */
-#endif /* _AIX */
     uint64_t *p_hrrq_start;     /* Start of Host               */
                                 /* Request/Response Queue      */
     uint64_t *p_hrrq_end;       /* End of Host                 */
                                 /* Request/Response Queue      */
     volatile uint64_t *p_hrrq_curr;/* Current Host             */
                                 /* Request/Response Queue Entry*/
+    int64_t  hrrq_to_ioarcb_off;/* This is the value that      */
+				/* needs to be subtraced from  */
+				/* a given RRQ returned value  */
+				/* to get the offset for the   */
+				/* associated IOARCB. This is  */
+                                /* based on the fact this      */
+                                /* library always places the   */
+                                /* IOARCB before the IOASA in  */
+                                /* the command.                */
+
+
+    sisl_ioarcb_t *p_sq_start;  /* Start of host submission    */
+                                /* queue (SQ).                 */
+    sisl_ioarcb_t *p_sq_end;    /* End of host submission      */
+                                /* queue (SQ).                 */
+    volatile sisl_ioarcb_t *p_sq_curr; /* Current submission   */
+                                /* queue (SQ) Queue Entry      */
     int      num_rrqs;          /* Number of RRQ elements      */
+    int      size_rrq;          /* Size in bytes of RRQ        */
+    int      size_sq;           /* Size in bytes of SQ         */
     int32_t num_issued_cmds;    /* Number of issued commands   */
     void *mmio_mmap;            /* MMIO address returned by    */
 				/* MMAP. The value returned    */
@@ -1275,7 +1315,12 @@ typedef struct cflsh_path_s {
 #define CFLSH_CHNK_SIGH  0x0002 /* MMIO signal handler is setup*/
 #define CFLSH_PATH_RST   0x0004 /* Unprocessed context reset   */
 #define CFLSH_PATH_A_RST 0x0008 /* Unprocessed adap reset      */
- 
+#define CFLSH_PATH_ATTACH 0x0010 /* Did an attach for this path */
+#define CFLSH_PATH_CLOSE_POLL_FD 0x0020 /* For certain error recovery */
+ 				/* actions (detach, recover    */
+				/* clone we need to close this */
+				/* path's file descriptor.     */
+    cflsh_afu_in_use_t afu_share_type; 
     int    path_index;          /* Path to issue command      */
     uint16_t path_id;           /* Path id of selected path    */
     uint32_t path_id_mask;      /* paths to use to access this */
@@ -1309,6 +1354,17 @@ typedef struct cflsh_path_s {
     jmp_buf      jmp_read;      /* Used to long jump around    */
 				/* read hangs                  */
 #endif /* REMOVE */
+#ifndef _AIX
+    char dev_name[PATH_MAX];     /* Device special filename    */
+				 /* for this path.             */
+    
+#endif /* !_AIX */
+    int fd;                      /* File descriptor. For linux */
+				 /* each path will have a      */
+				 /* separate fd. For AIX each  */
+				 /* path uses the same fd as   */
+				 /* as the chunk, because of   */
+				 /* MPIO.                      */
     eye_catch4b_t  eyec;         /* Eye catcher                */
 
 } cflsh_path_t;
@@ -1324,7 +1380,7 @@ typedef struct cflsh_path_s {
 
 #define MAX_NUM_CHUNKS_HASH  64
 
-#define CHUNK_HASH_MASK      0x0000003f
+#define CHUNK_HASH_MASK      (MAX_NUM_CHUNKS_HASH-1)
 
 
 /************************************************************************/
@@ -1430,9 +1486,44 @@ typedef struct cflsh_chunk_s {
     uint64_t num_blocks_lun;     /* Maximum size in blocks of  */
 				 /* this lpysical lun          */
     cflsh_path_t *path[CFLSH_BLK_MAX_NUM_PATHS]; /* Adapter paths for this chunk */
+    char         *udid;          /* Unique Device Identifier   */
+
+    uint64_t ptime;              /* track when to trace lat    */
+    uint64_t rcmd;               /* #cmds in read lat calc     */
+    uint64_t wcmd;               /* #cmds in write lat calc    */
+    uint64_t rlat;               /* total rd latency in ticks  */
+    uint64_t wlat;               /* total wr latency in ticks  */
+
     eye_catch4b_t  eyec;         /* Eye catcher                */
 
 } cflsh_chunk_t;
+
+/************************************************************************/
+/* Anchor block for each Hash list of chunks                            */
+/************************************************************************/
+typedef struct cflsh_chunk_hash_s
+{
+    cflsh_blk_lock_t lock;
+    cflsh_chunk_t   *head;
+    cflsh_chunk_t   *tail;
+} cflsh_chunk_hash_t;
+
+
+#ifndef _AIX
+#define CFLASH_BLOCK_HOST_TYPE_FILE  "/proc/cpuinfo"
+
+
+
+#endif  /* ! _AIX */
+
+typedef
+enum {
+    CFLASH_HOST_UNKNOWN   = 0,  /* Unknown host type                */
+    CFLASH_HOST_NV        = 1,  /* Bare Metal (or No virtualization */
+				/* host type.                       */
+    CFLASH_HOST_PHYP      = 2,  /* pHyp host type                   */
+    CFLASH_HOST_KVM       = 3,  /* KVM host type                    */
+} cflash_host_type_t;
 
 
 
@@ -1451,6 +1542,7 @@ typedef struct cflsh_block_s {
 #define CFLSH_G_SYSLOG       0x0008   /* Use syslog for all tracing  */
     int next_chunk_id;                /* Chunk id of next allocated  */
 				      /* chunk.                      */
+    cflash_host_type_t     host_type; /* Host type                   */
     pid_t  caller_pid;                /* Process ID of caller of     */
 				      /* this library.               */
 
@@ -1471,7 +1563,7 @@ typedef struct cflsh_block_s {
     cflsh_afu_t *head_afu;            /* Head of list of AFUs        */
     cflsh_afu_t *tail_afu;            /* Tail of list of AFUs        */
 
-    cflsh_chunk_t *hash[MAX_NUM_CHUNKS_HASH];
+    cflsh_chunk_hash_t hash[MAX_NUM_CHUNKS_HASH];
 
 
     uint64_t next_chunk_starting_lba; /* This is the starting LBA    */
@@ -1498,7 +1590,8 @@ typedef struct cflsh_block_s {
     uint32_t thread_log_mask;         /* Mask used to hash thread    */
 				      /* logs into specific files.    */
     cflsh_thread_log_t *thread_logs;  /* Array of log files per thread*/  
-            
+    double             nspt;          /* nanoseconds per tick         */
+
 #ifdef _SKIP_READ_CALL
     int         adap_poll_delay;/* Adapter poll delay time in  */
 				/* microseconds                */
@@ -1551,5 +1644,23 @@ enum {
 
 
 } cflash_block_notify_reason_t;
+
+/************************************************************************/
+/* check os status codes                                                */
+/************************************************************************/
+
+typedef 
+enum {
+    CFLSH_BLK_CHK_OS_NO_RESET    = 0, /* No adapter reset done  */
+    CFLSH_BLK_CHK_OS_RESET_SUCC  = 1, /* Adapter reset was      */
+				      /* successful             */
+    CFLSH_BLK_CHK_OS_RESET_FAIL  = 2, /* Adapter reset failed   */
+    CFLSH_BLK_CHK_OS_RESET_PEND  = 3, /* Adapter reset pending  */
+    CFLSH_BLK_CHK_OS_RESET       = 4, /* Adapter reset done,    */
+				      /* but no information on  */
+				      /* whether it succeeded   */
+				      /* or failed.             */
+
+} cflash_block_check_os_status_t;
 
 #endif /* _H_CFLASH_BLOCK_INT */

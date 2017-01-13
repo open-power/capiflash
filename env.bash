@@ -23,7 +23,11 @@
 #
 # IBM_PROLOG_END_TAG
 
-
+export CUSTOMFLAGS=
+export BLOCK_FILEMODE_ENABLED=
+export BLOCK_MC_ENABLED=
+export TARGET_PLATFORM=
+export BLOCK_KERNEL_MC_ENABLED=
 
 #allow a user to specify a custom RC file if needed
 #e.g. disable the advanced toolchain with "export USE_ADVANCED_TOOLCHAIN=no"
@@ -49,6 +53,7 @@ export MCP_PATH=/opt/mcp/toolchains/fr_SL1_2014-05-12-194021
 #configure advanced toolchain for linux
 AT71PATH=/opt/at7.1
 AT90PATH=/opt/at9.0-2-rc2
+ATPATH=/opt/at10.0
 
 if [ -d $MCP_PATH ]; then
     echo "INFO: Found MCP: $MCP_PATH ."
@@ -60,10 +65,8 @@ fi
 
 
 
-if [ -d $AT71PATH ]; then
-    export ADV_TOOLCHAIN_PATH=$AT71PATH
-elif [ -d $AT90PATH ]; then
-    export ADV_TOOLCHAIN_PATH=$AT90PATH
+if [ -d $ATPATH ]; then
+    export ADV_TOOLCHAIN_PATH=$ATPATH
 else
     echo "WARNING: no toolchain was found. Will fall back to system defaults. YMMV."
 fi

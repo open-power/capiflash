@@ -26,60 +26,90 @@ UNAME=$(shell uname)
 
 ROOTPATH = ../../..
 ifeq ($(UNAME),AIX)
-all: aixcapikv aixcapikv-test aixafuimage 
+all: aixcxlflash aixcxlflash-test aixcxlflashimage
 else
-all: ibmcapikv ibmcapikv-test afuimage
+
+#only add tarpkgs if we are in the DISABLED dir path
+DISABLED=$(shell pwd|grep DISABLED)
+ifeq "$(DISABLED)" ""
+all: cxlflash cxlflash-test cxlflashimage
+else
+all: cxlflash cxlflash-test cxlflashimage tarpkgs
 endif
 
-VERSIONMAJOR=2
-VERSIONMINOR=0
+endif
+
+VERSIONMAJOR=4
+VERSIONMINOR=1
+SHORT_VERSION=${VERSIONMAJOR}.${VERSIONMINOR}
 VERSION=${VERSIONMAJOR}.${VERSIONMINOR}-${GITREVISION}
 
-ibmcapikv:
+cxlflash:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	fpm -f -s dir -t rpm -n $@ -v ${VERSION} \
-		--depends 'advance-toolchain-at7.1-runtime' \
-		--depends 'libudev1' \
+	fpm -f -s dir -t rpm -n $@ -v ${VERSION} --iteration=1 \
+		--depends 'advance-toolchain-at10.0-runtime' \
+		--depends 'systemd-devel' \
 		-C ./install_root \
-		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall .; \
+		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall \
+		--after-remove ${SURELOCKROOT}/src/build/install/resources/postremove \
+		--conflicts ibmcapikv --replaces ibmcapikv .; \
 	fpm -f -s dir -t deb -n $@ -v ${VERSION} \
-		--depends 'advance-toolchain-at7.1-runtime' \
+		--depends 'advance-toolchain-at10.0-runtime' \
 		--depends 'libudev1' \
 		-C ./install_root \
-		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall .; \
+		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall \
+		--after-remove ${SURELOCKROOT}/src/build/install/resources/postremove \
+		--conflicts ibmcapikv --replaces ibmcapikv .; \
 	tar -cvzf $@-${GITREVISION}.tar.gz -C ./install_root .
 
-ibmcapikv-test:
+cxlflash-test:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	fpm -f -s dir -t rpm -n $@ -v ${VERSION} -C ./test_root \
-		--depends 'ibmcapikv = ${VERSION}' \
-		--depends 'libudev-dev' .; \
+	fpm -f -s dir -t rpm -n $@ -v ${VERSION} -C ./test_root --iteration=1 \
+		--depends 'cxlflash = ${VERSION}-1' \
+		--depends 'systemd-devel' \
+		--conflicts ibmcapikv-test --replaces ibmcapikv-test .; \
 	fpm -f -s dir -t deb -n $@ -v ${VERSION} -C ./test_root \
-		--depends 'ibmcapikv = ${VERSION}' \
-		--depends 'libudev-dev' .; \
+		--depends 'cxlflash = ${VERSION}' \
+		--depends 'libudev-dev' \
+		--conflicts ibmcapikv-test --replaces ibmcapikv-test .; \
 	tar -cvzf $@-${GITREVISION}.tar.gz -C ./test_root .
 
-afuimage:
+cxlflashimage:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
+	fpm -f -s dir -t rpm -a all -n $@ -v ${VERSION} -C ./afu_root --iteration=1 \
+		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
+		--conflicts afuimage --replaces afuimage .; \
 	fpm -f -s dir -t deb -a all -n $@ -v ${VERSION} -C ./afu_root \
-		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall .
+		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
+		--conflicts afuimage --replaces afuimage .; \
 
-aixcapikv:
+tarpkgs:
+	cd ${PKGDIR}; \
+	echo ${VERSION} > ver.txt; \
+	tar -cvzf pkg.${VERSION}.rpm.tar.gz *${SHORT_VERSION}*.rpm cflash_configure ver.txt; \
+	tar -cvzf pkg.${VERSION}.deb.tar.gz *${SHORT_VERSION}*.deb cflash_configure ver.txt; \
+	cp pkg.${VERSION}*deb.tar.gz /gsa/ausgsa/projects/s/surelock/surelock-sw/releases/GA4/latest_jenkins/pkg.deb.tar.gz; \
+	cp pkg.${VERSION}*rpm.tar.gz /gsa/ausgsa/projects/s/surelock/surelock-sw/releases/GA4/latest_jenkins/pkg.rpm.tar.gz
+
+aixcxlflash:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	tar -cvf ibmcapikv_${VERSION}.ppc64be.tar -C ./install_root .
+	tar -cvf cxlflash_${VERSION}.ppc64be.tar -C ./install_root .; \
+	gzip -f cxlflash_${VERSION}.ppc64be.tar
 
-aixcapikv-test:
+aixcxlflash-test:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	tar -cvf ibmcapikv-test_${VERSION}.ppc64be.tar -C ./test_root .
+	tar -cvf cxlflash-test_${VERSION}.ppc64be.tar -C ./test_root .; \
+	gzip -f cxlflash-test_${VERSION}.ppc64be.tar
 
-aixafuimage:
+aixcxlflashimage:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	tar -cvf afuimage_${VERSION}.ppc64be.tar -C ./afu_root .
+	tar -cvf cxlflashimage_${VERSION}.ppc64be.tar -C ./afu_root .; \
+	gzip -f cxlflashimage_${VERSION}.ppc64be.tar
 
 include ${ROOTPATH}/config.mk

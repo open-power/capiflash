@@ -24,11 +24,9 @@
 
 if [[ $1 = "-h" ]]
 then
-    echo "Usage: multi_process_perf [-csv] [libpath] [binpath]"
+    echo "Usage: multi_process_perf [libpath] [binpath]"
     echo " ex:   multi_process_perf"
-    echo " ex:   multi_process_perf -csv"
     echo " ex:   multi_process_perf /.../surelock-sw/img /.../surelock-sw/obj/tests"
-    echo " ex:   multi_process_perf -csv /.../surelock-sw/img /.../surelock-sw/obj/tests"
     exit
 fi
 
@@ -49,18 +47,11 @@ fi
 DEVS=4
 if [[ $_uname = "AIX" ]]
 then
-    DEV1=/dev/hdisk0
-    DEV2=/dev/hdisk1
-    DEV3=/dev/hdisk2
-    DEV4=/dev/hdisk4
+    DEV1=/dev/hdisk18
+    DEV2=/dev/hdisk18
+    DEV3=/dev/hdisk19
+    DEV4=/dev/hdisk19
     _64=64
-    for d in 0 1 2 3
-    do
-      if [[ $(lsmpio -l hdisk$d|grep hdisk$d|wc -l) -ne 2 ]];
-      then
-        echo "running to only one port for hdisk$d"
-      fi
-    done
 else
     # use only /dev/sg* devices
     if [[ $(hostname) == cougar* ]]
@@ -90,13 +81,7 @@ else
     _64=
 fi
 
-csv=0
-if [[ $1 = "-csv" ]]
-then
-   csv=1
-fi
-
-if [[ ! -z $1 && $csv -ne 1 ]]
+if [[ ! -z $1 ]]
 then
    if [[ $_uname = "AIX" ]]
    then
@@ -112,45 +97,67 @@ fi
 
 function ark
 {
-echo "ARK Performance, using fvt_ark_perf_tool"
+echo "ARK Performance, using run_kv_benchmark"
 
 for len in 100; do                             #len, 4096 131072
-        for q in 1 8 16; do                    #QD, nasync, ops per ark
-                for j in 1; do                 #npool, ark threads
-                        for ctx in 1 25 50; do #ctxts/processes (x's 4)
-                                rm -f /tmp/out_p
-                                c=0
-                                while [ $c -lt $ctx ]; do
-                                        cmd="FVT_DEV=$DEV1 $cmd_dir/fvt_ark_perf_tool$_64 -A -c 1 -j $q -n $j -k $len -v $len -s 15 >> /tmp/out_p"
-                                        eval $cmd&
-                                        cmd="FVT_DEV=$DEV2 $cmd_dir/fvt_ark_perf_tool$_64 -A -c 1 -j $q -n $j -k $len -v $len -s 15 >> /tmp/out_p"
-                                        eval $cmd&
-                                        cmd="FVT_DEV=$DEV3 $cmd_dir/fvt_ark_perf_tool$_64 -A -c 1 -j $q -n $j -k $len -v $len -s 15 >> /tmp/out_p"
-                                        eval $cmd&
-                                        cmd="FVT_DEV=$DEV4 $cmd_dir/fvt_ark_perf_tool$_64 -A -c 1 -j $q -n $j -k $len -v $len -s 15 >> /tmp/out_p"
-                                        eval $cmd&
-                                        let c=c+1
-                                        PID=$!
-                                done
-                                wait
-                                iops=0
-                                for d in $(cat /tmp/out_p|awk -F "io/s:" '{print $2}'|grep sec|awk -F " secs" '{print $1}'); do ((iops+=$d)); done
-                                if [[ $iops -gt 800000 ]]; then iops=800000; fi
-                                if [[ $csv -eq 1 ]]
-                                then
-                                    echo "2Devs,KV,$len,contexts,$(($ctx*$DEVS)),arkthPerContext,$j,queue,$q,iops,$iops"
-                                else
-                                    printf "Processes:%-3d npool:%-2d QD:%-3d klen:%-2d vlen:%-4d  IOPS:%-6d\n" $(($ctx*$DEVS)) $j $q $len $len $iops
-                                fi
-                                if [[ $iops -gt 700000 ]]; then break; fi
-                        done
-                done
+  for q in 1 8 16; do                    #QD, nasync, ops per ark
+     for ctx in 1 25 50; do #ctxts/processes (x's 4)
+        rm -f /tmp/out_p
+        c=0
+        while [ $c -lt $ctx ]; do
+          cmd="$cmd_dir/run_kv_benchmark$_64 -d $DEV1 -q $q -s 25 >> /tmp/out_p"
+          eval $cmd&
+          cmd="$cmd_dir/run_kv_benchmark$_64 -d $DEV2 -q $q -s 25 >> /tmp/out_p"
+          eval $cmd&
+          cmd="$cmd_dir/run_kv_benchmark$_64 -d $DEV3 -q $q -s 25 >> /tmp/out_p"
+          eval $cmd&
+          cmd="$cmd_dir/run_kv_benchmark$_64 -d $DEV4 -q $q -s 25 >> /tmp/out_p"
+          eval $cmd&
+          let c=c+1
+          PID=$!
         done
+        wait
+        iops=0
+        for d in $(cat /tmp/out_p|awk -F "io/s:" '{print $2}'|grep sec|awk -F " secs" '{print $1}'); do ((iops+=$d)); done
+        if [[ $iops -gt 800000 ]]; then iops=800000; fi
+        printf "Processes:%-3d QD:%-3d IOPS:%-6d\n" $(($ctx*$DEVS)) $q $iops
+        if [[ $iops -gt 700000 ]]; then break; fi
+     done
+  done
 done
 }
 
 function block
 {
+echo "BLOCK Performance, using blockio"
+for rd in 100; do         #%reads
+     for q in 1 8 16; do     #QD
+        for j in 1 25 50     #Processes
+         do
+                rm -f /tmp/out_p
+                c=0
+                while [ $c -lt $j ]; do
+                        cmd="$cmd_dir/blockio$_64 -d $DEV1 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
+                        eval $cmd&
+                        cmd="$cmd_dir/blockio$_64 -d $DEV2 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
+                        eval $cmd&
+                        cmd="$cmd_dir/blockio$_64 -d $DEV3 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
+                        eval $cmd&
+                        cmd="$cmd_dir/blockio$_64 -d $DEV4 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
+                        eval $cmd&
+                        let c=c+1
+                        PID=$!
+                done
+                wait
+                iops=0
+                for d in $(cat /tmp/out_p|grep iops|awk -F"iops:" '{print $2}'); do ((iops+=$d)); done;
+                if [[ $iops -gt 800000 ]]; then iops=800000; fi
+                printf "Processes:%-3d QD:%-4d Rd:%-3d Wt:%-3d iops:%-6d\n" $(($j*$DEVS)) $q $rd $((100-$rd)) $iops
+                if [[ $iops -gt 700000 ]]; then break; fi
+        done
+     done
+done
+echo ""
 echo "BLOCK Performance, using blockplistio"
 for rd in 100; do         #%reads
      for q in 1 8 16; do     #QD
@@ -174,46 +181,7 @@ for rd in 100; do         #%reads
                 iops=0
                 for d in $(cat /tmp/out_p|grep iops|awk  '{print $9}'|awk -F : '{print $2}'); do ((iops+=$d)); done;
                 if [[ $iops -gt 800000 ]]; then iops=800000; fi
-                if [[ $csv -eq 1 ]]
-                then
-                    echo "2Devs,QdPerJob,$q,JobPerDev,$j,Rd,$rd,Wt,$((100-$rd)),iops,$iops"
-                else
-                    printf "Processes:%-3d QD:%-4d Rd:%-3d Wt:%-3d iops:%-6d\n" $(($j*$DEVS)) $q $rd $((100-$rd)) $iops
-                fi
-                if [[ $iops -gt 700000 ]]; then break; fi
-        done
-     done
-done
-echo ""
-echo "BLOCK Performance, using blockio"
-for rd in 100; do         #%reads
-     for q in 1 8 16; do     #QD
-        for j in 1 25 50     #Processes
-         do
-                rm -f /tmp/out_p
-                c=0
-                while [ $c -lt $j ]; do
-                        cmd="$cmd_dir/blockio$_64 -d $DEV1 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
-                        eval $cmd&
-                        cmd="$cmd_dir/blockio$_64 -d $DEV2 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
-                        eval $cmd&
-                        cmd="$cmd_dir/blockio$_64 -d $DEV3 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
-                        eval $cmd&
-                        cmd="$cmd_dir/blockio$_64 -d $DEV4 -q $q -r $rd -s 10 $_intrps >> /tmp/out_p"
-                        eval $cmd&
-                        let c=c+1
-                        PID=$!
-                done
-                wait
-                iops=0
-                for d in $(cat /tmp/out_p|grep iops|awk  '{print $11}'|awk -F : '{print $2}'); do ((iops+=$d)); done;
-                if [[ $iops -gt 800000 ]]; then iops=800000; fi
-                if [[ $csv -eq 1 ]]
-                then
-                    echo "2Devs,QdPerJob,$q,JobPerDev,$j,Rd,$rd,Wt,$((100-$rd)),iops,$iops"
-                else
-                    printf "Processes:%-3d QD:%-4d Rd:%-3d Wt:%-3d iops:%-6d\n" $(($j*$DEVS)) $q $rd $((100-$rd)) $iops
-                fi
+                printf "Processes:%-3d QD:%-4d Rd:%-3d Wt:%-3d iops:%-6d\n" $(($j*$DEVS)) $q $rd $((100-$rd)) $iops
                 if [[ $iops -gt 700000 ]]; then break; fi
         done
      done

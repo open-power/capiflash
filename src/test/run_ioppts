@@ -1,0 +1,116 @@
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/test/run_ioppts $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+# run_ioppts [2]
+#  *use 2 as a parm to run a second time to the separate list of devices
+#   (which could include more adapters)
+
+if [[ $1 -eq -2 ]]
+then
+  DO_2ADAP=1
+fi
+
+_AIX=$(uname -a|awk '{print $1}')
+
+SECS=20
+DEVS_LEG_1ADAP="/dev/sdk /dev/sdl /dev/sdq /dev/sdr /dev/sdm /dev/sds /dev/sdo /dev/sdp /dev/sdv /dev/sdu"
+DEVS_LEG_2ADAP="/dev/sdk /dev/sdl /dev/sdq /dev/sdr /dev/sdm /dev/sds /dev/sdo /dev/sdp /dev/sdv /dev/sdu"
+DEVS_SUP_1ADAP="/dev/sg34 /dev/sg35 /dev/sg40 /dev/sg41"
+DEVS_SUP_2ADAP="/dev/sg34 /dev/sg35 /dev/sg40 /dev/sg41"
+
+if [[ $_AIX = AIX ]]
+then
+  _64=64
+  DEVS_SUP_1ADAP="/dev/hdisk19"
+  DEVS_SUP_2ADAP="/dev/hdisk18 /dev/hdisk19"
+else
+  if [[ $(cat /proc/sys/fs/aio-max-nr) -ne 500000 ]]
+  then
+    echo "500000" > /proc/sys/fs/aio-max-nr
+  fi
+fi
+
+DEVS_LEG=$DEVS_LEG_1ADAP;
+DEVS_SUP=$DEVS_SUP_1ADAP;
+
+for loop in 1 2
+do
+  if [[ $loop = 2 && $1 != 2 ]]; then break; fi
+
+  if [[ $loop = 2 && $1 = 2 ]]
+  then
+    DEVS_LEG=$DEVS_LEG_2ADAP;
+    DEVS_SUP=$DEVS_SUP_2ADAP;
+  fi
+  echo "LEG="$DEVS_LEG;
+  echo "SUP="$DEVS_SUP;
+  if [[ $_AIX != AIX ]]
+  then
+    echo "Legacy, fio:libaio"
+    PROCS=2 NUMJOBS=1 NR=100 NW=0 ENG=libaio QD=1 SECS=$SECS DEVS=$DEVS_LEG CMD="fio parm.fio" ioppts.qd
+    echo "Legacy, fio:ktms"
+    PROCS=2 NUMJOBS=1 NR=100 NW=0 ENG=ktms   QD=1 SECS=$SECS DEVS=$DEVS_SUP CMD="fio parm.fio" ioppts.qd
+  fi
+  echo "blockio, polling"
+  PROCS=2 CMD="blockio$_64 -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "blockio, bckgrnd thrds"
+  PROCS=2 CMD="blockio$_64 -i -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "blockplistio"
+  PROCS=2 CMD="blockplistio$_64 -d \$DEV -l1 -c\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "run_kv_benchmark"
+  PROCS=2 CMD="run_kv_benchmark$_64 -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+
+  if [[ $_AIX != AIX ]]
+  then
+    echo "Legacy, fio:libaio"
+    PROCS=16 NUMJOBS=1 NR=100 NW=0 ENG=libaio QD=1 SECS=$SECS DEVS=$DEVS_LEG CMD="fio parm.fio" ioppts.qd
+    echo "Legacy, fio:ktms"
+    PROCS=16 NUMJOBS=1 NR=100 NW=0 ENG=ktms   QD=1 SECS=$SECS DEVS=$DEVS_SUP CMD="fio parm.fio" ioppts.qd
+  fi
+  echo "blockio, polling"
+  PROCS=16 CMD="blockio$_64 -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "blockio, bckgrnd thrds"
+  PROCS=16 CMD="blockio$_64 -i -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "blockplistio"
+  PROCS=16 CMD="blockplistio$_64 -d \$DEV -l1 -c\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "run_kv_benchmark"
+  PROCS=16 CMD="run_kv_benchmark$_64 -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+
+  if [[ $_AIX != AIX ]]
+  then
+    echo "Legacy, fio:libaio"
+    PROCS=100 NUMJOBS=1 NR=100 NW=0 ENG=libaio QD=1 SECS=$SECS DEVS=$DEVS_LEG CMD="fio parm.fio" ioppts.qd
+    echo "Legacy, fio:ktms"
+    PROCS=100 NUMJOBS=1 NR=100 NW=0 ENG=ktms   QD=1 SECS=$SECS DEVS=$DEVS_SUP CMD="fio parm.fio" ioppts.qd
+  fi
+  echo "blockio, polling"
+  PROCS=100 CMD="blockio$_64 -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "blockio, bckgrnd thrds"
+  PROCS=100 CMD="blockio$_64 -i -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "blockplistio"
+  PROCS=100 CMD="blockplistio$_64 -d \$DEV -l1 -c\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+  echo "run_kv_benchmark"
+  PROCS=100 CMD="run_kv_benchmark$_64 -d \$DEV -q\$QD -s$SECS" DEVS=$DEVS_SUP ioppts.qd
+done

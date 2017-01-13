@@ -35,6 +35,14 @@ extern "C"
 #include "cflash_test.h"
 }
 
+
+#ifndef _AIX
+TEST(Cflash_FVT_Suite,G_dk_capi_clone)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DK_CAPI_CLONE));
+}
+#endif
+
 TEST(Cflash_FVT_Suite, E_MC_test_Ioctl_Invalid_Versions)
 {
 #ifdef _AIX
@@ -719,15 +727,18 @@ TEST(Cflash_FVT_Suite, E_bad_ioarcb_address)
 
 TEST(Cflash_FVT_Suite, E_bad_ioasa_address)
 {
-#ifdef _AIX
-    ASSERT_EQ(255, test_mc_invalid_ioarcb(101));
-#else
     int res = test_mc_invalid_ioarcb(101);
+#ifdef _AIX
+    if ( res == 255)
+#else
     if ( res == 10 || res == 255 )
-        res = 1; 
-        
-    ASSERT_EQ(1, res);
 #endif
+        res = 1;
+    //sanity check
+    int ret_flag = test_spio_vlun(2);
+    if( ret_flag )
+        res = 2; // if sanity check fails set res to 2
+    ASSERT_EQ(1, res);
 }
 
 TEST(Cflash_FVT_Suite, E_cmd_room_violation)
@@ -887,6 +898,9 @@ TEST(Cflash_FVT_Suite, E_test_detach_diff_proc)
     ASSERT_EQ(0,mc_test_engine(TEST_DETACH_DIFF_PROC));
 }
 
+#ifdef _AIX
+
+
 TEST(Cflash_FVT_Suite, E_test_vlun_verify)
 {
     ASSERT_EQ(0,mc_test_engine(EXCP_VLUN_VERIFY));
@@ -896,7 +910,6 @@ TEST(Cflash_FVT_Suite, E_test_plun_verify)
 {
     ASSERT_EQ(0,mc_test_engine(EXCP_PLUN_VERIFY));
 }
-
 
 TEST(Cflash_FVT_Suite,E_test_inval_devno)
 {
@@ -912,13 +925,6 @@ TEST(Cflash_FVT_Suite,E_test_inval_rschndl)
     ASSERT_EQ(0,mc_test_engine(EXCP_INVAL_RSCHNDL));
 }
 
-#ifndef _AIX
-TEST(Cflash_FVT_Suite,G_dk_capi_clone)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DK_CAPI_CLONE));
-}
-#endif
-#ifdef _AIX
 TEST(Cflash_FVT_Suite, G_MC_test_MRC_MC_VLUN)
 {
     ASSERT_EQ(0,mc_test_engine(G_ioctl_7_1_119));
@@ -1074,6 +1080,80 @@ TEST(Cflash_FVT_Suite, G_7_1_203)
 {
     ASSERT_EQ(0,mc_test_engine(G_ioctl_7_1_203));
 }
+
+#ifdef AIX_MANUAL
+
+TEST(Cflash_FVT_Suite, E_MC_test_DCA_EEH_Flag_Set_Reuse_CTX_On_New_Disk)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCA_REUSE_CTX_NEW_DISK_AFTER_EEH));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_of_VLUN)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Vlun_Resuse_Ctx)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN_RESUSE_CTX));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Plun_Resuse_Ctx)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_PLUN_RESUSE_CTX));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Vlun_Resize)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN_RESIZE));
+}
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Vlun_Release)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN_RELEASE));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_IO_EEH_vlun)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_IO_EEH_VLUN));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_IO_EEH_Plun)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_IO_EEH_PLUN));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCV_Plun_Rst_flag_EEH)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCV_PLUN_RST_FlAG_EEH));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Plun_Mutli_Vlun)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_PLUN_MULTI_VLUN));
+}
+
+TEST(Cflash_FVT_Suite, E_test_vSpio_EEH_Recovery)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_VSPIO_EEHRECOVERY));
+}
+
+TEST(Cflash_FVT_Suite, E_test_dSpio_EEH_Recovery)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DSPIO_EEHRECOVERY));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCV_Unexpected_error_EEH)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCV_UNEXPECTED_ERR));
+}
+
+TEST(Cflash_FVT_Suite, G_MC_test_DCV_Unexpected_error_vlun_EEH)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_DCV_UNEXPECTED_ERR_VLUN));
+}
+
+#endif
+ 
 #ifdef MANUAL
 
 TEST(Cflash_FVT_Suite, M_7_5_13_1)
@@ -1095,57 +1175,7 @@ TEST(Cflash_FVT_Suite, E_test_fc_reset_plun)
     ASSERT_EQ(0,mc_test_engine(TEST_FC_PR_RESET_PLUN));
 }
 
-TEST(Cflash_FVT_Suite, E_MC_test_DCA_EEH_Flag_Set_Reuse_CTX_On_New_Disk)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCA_REUSE_CTX_NEW_DISK_AFTER_EEH));
-}
 
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_of_VLUN)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN));
-}
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Vlun_Resuse_Ctx)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN_RESUSE_CTX));
-}
-
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Plun_Resuse_Ctx)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_PLUN_RESUSE_CTX));
-}
-
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Vlun_Resize)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN_RESIZE));
-}
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Vlun_Release)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_VLUN_RELEASE));
-}
-
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_IO_Eeh_vlun)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_IO_EEH_VLUN));
-}
-
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_IO_Eeh_Plun)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_IO_EEH_PLUN));
-}
-
-TEST(Cflash_FVT_Suite, G_MC_test_DCV_Unexpected_error)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCV_UNEXPECTED_ERR));
-}
-
-TEST(Cflash_FVT_Suite, G_MC_test_DCV_Unexpected_error_vlun)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCV_UNEXPECTED_ERR_VLUN));
-}
-TEST(Cflash_FVT_Suite, G_MC_test_DCV_Plun_Rst_flag_EEH)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCV_PLUN_RST_FlAG_EEH));
-}
 /*** DK_CAPI_LOG_EVENT ****/
 
 #ifdef _AIX
@@ -1179,24 +1209,14 @@ TEST(Cflash_FVT_Suite, E_test_ioctl_fcp)
 }
 #endif
 
-TEST(Cflash_FVT_Suite, E_test_vSpio_eehRecovery)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_VSPIO_EEHRECOVERY));
-}
-
-TEST(Cflash_FVT_Suite, E_test_dSpio_eehRecovery)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DSPIO_EEHRECOVERY));
-}
-
-TEST(Cflash_FVT_Suite, E_test_vSpio_eehRecovery_long)
+TEST(Cflash_FVT_Suite, E_test_vSpio_EEH_Recovery_long)
 {
 	int rc=get_fvt_dev_env();
 	if(rc)
 		ASSERT_EQ(0,rc);	
     ASSERT_EQ(0,test_vSpio_eehRecovery(2));
 }
-TEST(Cflash_FVT_Suite, E_test_dSpio_eehRecovery_long)
+TEST(Cflash_FVT_Suite, E_test_dSpio_EEH_Recovery_long)
 {
 	int rc=get_fvt_dev_env();
 	if(rc)
@@ -1233,7 +1253,7 @@ TEST(Cflash_FVT_Suite, E_max_ctx_rcvr_last_one_no_rcvr)
     ASSERT_EQ(0,mc_test_engine(MAX_CTX_RCVR_LAST_ONE_NO_RCVR));
 }
 
-TEST(Cflash_FVT_Suite,E_test_eeh_simulation)
+TEST(Cflash_FVT_Suite,E_test_EEH_simulation)
 {
     ASSERT_EQ(0,mc_test_engine(EXCP_EEH_SIMULATION));
 }
@@ -1282,10 +1302,6 @@ TEST(Cflash_FVT_Suite, E_test_cfdisk_ctxs_diff_devno)
     ASSERT_EQ(0,mc_test_engine(TEST_CFDISK_CTXS_DIFF_DEVNO));
 }
 #endif
-TEST(Cflash_FVT_Suite, G_MC_test_DCRC_EEH_Plun_Mutli_Vlun)
-{
-    ASSERT_EQ(0,mc_test_engine(TEST_DCRC_EEH_PLUN_MULTI_VLUN));
-}
 TEST(Cflash_FVT_Suite,E_test_vlun_uattention)
 {
     ASSERT_EQ(0,mc_test_engine(EXCP_VLUN_UATTENTION));

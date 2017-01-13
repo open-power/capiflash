@@ -37,7 +37,6 @@
 #include <errno.h>
 
 int x = 1;
-#define H 64
 #define ARK_KV_ALIGN 16
 
 void *am_malloc(size_t size)
@@ -49,22 +48,26 @@ void *am_malloc(size_t size)
     if ((int64_t)size > 0)
     {
 #ifdef _AIX
-      p = malloc(size + (ARK_KV_ALIGN - 1));
+      p = malloc(size + ARK_KV_ALIGN);
 #else
-      p = zmalloc(size + (ARK_KV_ALIGN - 1));
+      p = zmalloc(size + ARK_KV_ALIGN);
 #endif
-      if (p) {memset(p,0x00, size + (ARK_KV_ALIGN - 1));}
+      if (p) {memset(p,0x00, size + ARK_KV_ALIGN);}
       else
       {
           KV_TRC_FFDC(pAT, "ALLOC_FAIL errno=%d", errno);
           if (!errno) {errno = ENOMEM;}
       }
     }
+    KV_TRC_DBG(pAT, "ALLOC   %p size:%ld up:%ld", p, size,size+ARK_KV_ALIGN);
     return p;
 }
 
 void am_free(void *ptr)
 {
+  if ((uint64_t)ptr < 0xFFFF) {KV_TRC_FFDC(pAT, "FREE  BAD:%p", ptr); return;}
+  else                        {KV_TRC_DBG (pAT, "FREE  %p",     ptr);}
+
 #ifdef _AIX
   if (ptr) {free(ptr); ptr=NULL;}
 #else
@@ -81,9 +84,9 @@ void *am_realloc(void *ptr, size_t size)
     if (ptr && (int64_t)size > 0)
     {
 #ifdef _AIX
-      p = realloc(ptr, size + (ARK_KV_ALIGN - 1));
+      p = realloc(ptr, size + ARK_KV_ALIGN);
 #else
-      p = zrealloc(ptr, size + (ARK_KV_ALIGN - 1));
+      p = zrealloc(ptr, size + ARK_KV_ALIGN);
 #endif
     }
     else
@@ -97,6 +100,7 @@ void *am_realloc(void *ptr, size_t size)
         KV_TRC_FFDC(pAT, "REALLOC_FAIL errno=%d", errno);
         if (!errno) {errno = ENOMEM;}
     }
+    KV_TRC_DBG(pAT, "REALLOC old:%p new:%p size:%ld up:%ld", ptr, p, size,size+ARK_KV_ALIGN);
 
     return p;
 }

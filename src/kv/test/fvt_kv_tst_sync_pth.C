@@ -110,6 +110,42 @@ TEST(FVT_KV_GOOD_PATH, SYNC_2_PTH_1_CONTEXT)
  *******************************************************************************
  * \brief
  ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SYNC_64_PTH_BIG_BLOCKS)
+{
+    uint32_t num_ctxt = 1;
+    uint32_t num_pth  = 64;
+    uint32_t vlen     = KV_500K;
+    uint32_t LEN      = 2;
+    uint32_t secs     = 3;
+
+    Sync_pth sync_pth;
+
+    sync_pth.run_multi_ctxt(num_ctxt, num_pth, vlen, LEN, secs);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SYNC_100_PTH_STARVE)
+{
+    uint32_t num_ctxt = 1;
+    uint32_t num_pth  = 100;
+    uint32_t vlen     = KV_64K;
+    uint32_t LEN      = 100;
+    uint32_t secs     = 3;
+
+    TESTCASE_SKIP_IF_FILE;
+
+    Sync_pth sync_pth;
+
+    sync_pth.run_multi_ctxt(num_ctxt, num_pth, 50, 256, vlen, LEN, secs);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 TEST(FVT_KV_GOOD_PATH, SYNC_1_PTH_2_CONTEXT)
 {
     uint32_t num_ctxt = 2;
@@ -138,32 +174,9 @@ TEST(FVT_KV_GOOD_PATH, SYNC_4_PTH_40_CONTEXT)
     uint32_t secs     = 3;
 
     TESTCASE_SKIP_IF_FILE;
+    TESTCASE_SKIP_IF_RAID0;
 
     Sync_pth sync_pth;
 
     sync_pth.run_multi_ctxt(num_ctxt, num_pth, vlen, LEN, secs);
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-#ifdef _AIX
-TEST(FVT_KV_GOOD_PATH, DISABLED_SYNC_4_PTH_200_CONTEXT)
-#else
-TEST(FVT_KV_GOOD_PATH, SYNC_4_PTH_200_CONTEXT)
-#endif
-{
-    uint32_t num_ctxt = 200;
-    uint32_t num_pth  = 4;
-    uint32_t npool    = 1;
-    uint32_t vlen     = 128;
-    uint32_t LEN      = 100;
-    uint32_t secs     = 3;
-
-    TESTCASE_SKIP_IF_FILE;
-
-    Sync_pth sync_pth;
-
-    sync_pth.run_multi_ctxt(num_ctxt, num_pth, npool, vlen, LEN, secs);
 }

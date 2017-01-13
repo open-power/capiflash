@@ -163,7 +163,12 @@ typedef struct sisl_ioarcb_s {
     __u16 timeout; /* in units specified by req_flags */
     __u32 rsvd1;
     __u8 cdb[16]; /* must be in big endian */
-    __u64 rsvd2;
+    union {
+	__u64 sq_ioasa_ea;          /* When using Submission queues (SQ),*/
+                                /* this is the effective address of  */
+				                /* ths associated IOASA.             */
+	__u64 rsvd2;
+    };
 } sisl_ioarcb_t;
 
 
@@ -347,6 +352,12 @@ __u64 intr_status; /* this sends LISN# programmed in ctx_ctrl.
     __u64 cmd_room;
     __u64 ctx_ctrl;  /* least signiifcant byte or b56:63 is LISN# */
     __u64 mbox_w;    /* restricted use */
+    __u64 sq_start;  /* Submission queue (SQ) start register */
+    __u64 sq_end;    /* Submission queue (SQ) end register */
+    __u64 sq_head;   /* Submission queue (SQ) head register */
+    __u64 sq_tail;   /* Submission queue (SQ) tail register */
+    __u64 sq_context_reset; /* Submission queue (SQ) context reset 
+                               register. */
 };
 
 /* per context provisioning & control MMIO */

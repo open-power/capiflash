@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
@@ -23,41 +23,29 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-#Constants
+
 KERNEL_MOD="cxlflash"
-CAPI_FLASH=capi_flash.pl
-CAPI_IMAGE=1410f0041410f004.00000001151029D1
+CAPI_FLASH_PL=capi_flash.pl
+PERST_PL=cflash_perst.pl
+CORSA_IMAGE=1410f0041410f004.00000001160512D1
+GT_F_IMAGE=1410000614100006.00000001160903N0
+GT_IMAGE=1410000614100006.00000001161114N1
 IMAGES_DIR=images #relative to the cwd of the script
 FLASH_ROOT=/opt/ibm/capikv/afu
-
 MINCAPMASK="0003"
 CAPABILITYKW="V3"
-#Globals
-factory=""
-
-#allow us to die with a specific error code
-die()
-{
-    echo "AFUFLASHERR$2: $1" 1>&2;
-    exit $2;
-}
-
-if [ "$1" == "--factory" ]; then
-    factory="-p0"
-fi
-
+e_rc=0
+do_perst=0
+load_factory=0
+opt=""
 
 checkidle()
 {
-    echo "INFO: Checking for CAPI Master Context..."
-    master_offline=true
-    lsmod | grep $KERNEL_MOD && master_offline=false #if the cxlflash module is found, we set the master_offline flag to false
-#otherwise, shows the module info
-
-    if $master_offline ; then
-        echo "INFO: CXL Flash Module is not running. Device is assumed to be idle.";
-    else
-        die "CXL Flash is running (see above). Cannot flash while the device is active. Run \"rmmod cxlflash\" to unload it." 1;
+    mods=$(lsmod)
+    if [[ $mods == *"cxlflash"* ]]
+    then
+        printf "       ERROR, Cannot flash with cxlflash loaded: \"rmmod cxlflash\" and retry\n\n"
+        exit 1
     fi
 }
 
@@ -65,66 +53,231 @@ readvpd()
 {
     local pciid=$1
     local keyword=$2
-    local value=`lspci -s $pciid -vv | sed -n -e '/Vital Product Data/,/End/ p' | grep $keyword | awk -F": " '{print $2}'`
-    if [[ -z "$value" ]]; then
-        die "Unable to read PCI device $pciid, VPD keyword $keyword. This afu image is not compatible with this adapter." 2;
+    vpd_value=$(lspci -s $pciid -vv | sed -n -e '/Vital Product Data/,/End/ p' | grep $keyword | awk -F": " '{print $2}')
+    if [[ -z "$vpd_value" ]]
+    then
+        printf "       ERROR, PCI device %s, VPD keyword: %s not found\n\n" $pciid $keyword
+        return 2
     fi
-    echo $value
+    return 0
 }
 
 findloc()
 {
-    devspecpath="/sys/bus/pci/devices/$1/devspec"
+    local devspecpath="/sys/bus/pci/devices/$1/devspec"
     if [[ ! -f "$devspecpath" ]]; then
-        die "Unable to find devspec for device $1. Could not find '$devspecpath'" 3;
+        echo "       ERROR, Unable to find devspec for device %s. Could not find '%s'\n\n" $1 $devspecpath
+        return 3
     fi
-    local devspec=`cat $devspecpath`
+    local devspec=$(cat $devspecpath)
     local loccodepath="/proc/device-tree$devspec/ibm,loc-code"
     if [[ ! -f "$loccodepath" ]]; then
-        die "Unable to find device tree special file path for PCI device $1: $loccodepath" 4;
+        printf "       ERROR, Unable to find device tree special file path for PCI device %s: %s\n\n" $1 $loccodepath
+        return 4
     fi
-    local loccode=`cat $loccodepath`;
-    if [[ -z "$loccode" ]]; then
-        die "Location code is invalid for PCI device $1" 5;
+    loccode=$(cat $loccodepath)
+    if [[ -z "$loccode" ]]
+    then
+        printf "       ERROR, Location code is invalid for PCI device %s\n\n" $1
+        return 5
     fi
-    echo $loccode;
- } 
+    return 0
+}
 
 checkcompat()
 {
-    echo "INFO: Checking card / image compatibility for image $CAPI_IMAGE"
-    #enumerate all adapters, get the PCI id (e.g. "0000:01:00.0" from below)
-    #parse something like "Found CAPI Adapter : /sys/bus/pci/devices/0000:01:00.0"
-    for adapter in `$FLASH_ROOT/$CAPI_FLASH -l | awk -F/ '{print $NF}'`;
-    do
-        echo "INFO: Checking adapter / firmware compatibility for $(findloc $adapter)";
-        adaptermask=$(readvpd $adapter $CAPABILITYKW);
-        local resultmask=$(($MINCAPMASK & $adaptermask))
-        if [[ "$resultmask" -ne "$MINCAPMASK" ]]; then
-            die "Adapter $(findloc $adapter) firmware is incompatible with this adapter. Please use a different firmware image. Minimum capability mask for this firmware is 0x$MINCAPMASK and adapter VPD capability is 0x$adaptermask." 6;
-        fi
-    done
-    echo "INFO: All present IBM DataEngine for NoSQL adapters are capable of loading this image."
-    
-}
+    line=$(lspci -s $1| egrep "04cf|0601")
+    if [ $? -ne 0 ]
+    then
+      printf "       ERROR, unknown capi adapter\n\n"
+      rc=7
+    fi
 
+    if [[ -z $2 ]]; then return 0; fi
+
+    readvpd $1 $2; rc=$?
+    if [ $rc -ne 0 ]; then return $rc; fi
+    resultmask=$(($MINCAPMASK & $vpd_value))
+    if [[ "$resultmask" -ne "$MINCAPMASK" ]]
+    then
+        printf "       ERROR, The available firmware is incompatible with this adapter. %s=0x%s\n\n" $2 $vpd_value
+        rc=6
+    fi
+    return $rc
+}
 
 flashadapters()
 {
-    echo "INFO: Now flashing all CAPI devices..."
-
-    #enumerate all adapters, get the path (item #5 from the awk command)
-    #parse something like "Found CAPI Adapter : /sys/bus/pci/devices/0000:01:00.0"
-    for adapter in `$FLASH_ROOT/$CAPI_FLASH -l | awk '{print $5}'`;
+    $FLASH_ROOT/$CAPI_FLASH_PL -l | while read adapStr
     do
-        echo "INFO: Flashing adapter: $adapter";
-        $FLASH_ROOT/$CAPI_FLASH $factory -t $adapter -f $FLASH_ROOT/$IMAGES_DIR/$CAPI_IMAGE || die "Unable to flash. Halting script." 2;
+        adap=$(echo  $adapStr|awk '{print $6}')
+        afu=$(echo $adapStr|awk '{print $5}')
+        #verify location code
+        findloc $adap; rc=$?
+        if [[ $rc -ne 0 ]]; then e_rc=$rc; continue; fi
+
+        #get device ID
+        devid=$(lspci -s $adap| awk 'BEGIN{FS="IBM Device "}; {print $NF}'|awk -F\( '{print $1}')
+
+        if [[ $devid =~ 04cf && $load_factory -eq 1 ]]; then continue; fi
+
+        echo "INFO:  Processing: $adap $afu $loccode"
+
+        #check for a healthy adap
+        if [ ! -f /sys/devices/*/*/$adap/cxl/card*/image_loaded ]
+        then
+           echo "       ERROR, Skipping, card is in a bad state"
+           echo
+           continue
+        fi
+
+        #query FW level
+        afuver=$(/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/${afu}.0m -v 2>/dev/null| grep "AFU Version"|awk -F" " '{print $NF}')
+        if [[ -z $afuver ]]
+        then
+          afuver=__UNKNOWN_FW_LEVEL__
+        fi
+
+        if [ $devid = "04cf" ]    #CORSA
+        then
+          #verify VPD
+          checkcompat $adap $CAPABILITYKW; rc=$?
+          if [[ $rc -ne 0 ]]
+          then
+            e_rc=$rc;
+            continue;
+          fi
+
+          if [[ $CORSA_IMAGE =~ $afuver ]]
+          then
+            printf "       Firmware is up to date (%s)\n\n" $afuver
+            continue
+          fi
+          printf "       Replacing %s with %s\n\n" $afuver $CORSA_IMAGE
+          $FLASH_ROOT/$CAPI_FLASH_PL -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$CORSA_IMAGE
+          rc=$?
+          if [[ $rc -ne 0 ]]
+          then
+            e_rc=$rc
+            echo "       ERROR: Failed flashing $adap"
+          else
+            if [[ $do_perst -eq 1 ]]
+            then
+              $FLASH_ROOT/$PERST_PL -t $adap
+              rc=$?
+              if [[ $rc -ne 0 ]]
+              then
+                e_rc=$rc
+                echo "       ERROR: Failed PERSTing $adap"
+              fi
+            fi
+          fi
+
+        elif [ $devid = "0601" ]  #FLASH_GT
+        then
+          #verify VPD
+          checkcompat $adap; rc=$?
+          if [[ $rc -ne 0 ]]; then e_rc=$rc; continue; fi
+
+          if [[ $GT_IMAGE =~ $afuver ]]
+          then
+            printf "       Firmware is up to date (%s)\n\n" $afuver
+            continue
+          fi
+          if [[ $load_factory -eq 1 ]]
+          then
+            printf "       Flashing %s\n\n" $GT_IMAGE
+          else
+            if [[ $GT_F_IMAGE =~ $afuver ]]
+            then
+              printf "       Flashing %s\n\n" $GT_IMAGE
+            else
+              printf "       Replacing %s with %s\n\n" $afuver $GT_IMAGE
+            fi
+          fi
+          $FLASH_ROOT/$CAPI_FLASH_PL $opt -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$GT_IMAGE
+          rc=$?
+          if [[ $rc -ne 0 ]]
+          then
+            e_rc=$rc
+            echo "       ERROR: Failed flashing $adap"
+          else
+            if [[ $do_perst -eq 1 ]]
+            then
+              $FLASH_ROOT/$PERST_PL -t $adap
+              rc=$?
+              if [ $rc -ne 0 ]
+              then
+                e_rc=$rc
+                echo "       ERROR: Failed PERSTing $adap"
+              fi
+            fi
+          fi
+
+        else
+          echo "       ERROR, Download is not supported for the Device ID: $devid"
+          e_rc=8
+        fi
+        echo ""
     done
 }
 
-#Main Code
-checkidle; 
-checkcompat;
-flashadapters;
+flashadapters_VM()
+{
+  $FLASH_ROOT/$CAPI_FLASH_PL -l | while read adap
+  do
+    if [[ $adap =~ 04cf ]]; then fw=$CORSA_IMAGE;
+    else                         fw=$GT_IMAGE;
+    fi
+    afuN=$(echo $adap|cut -c19-24)m
+    echo $adap
+    afuver=$(/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/$afuN -v 2>/dev/null| grep "AFU Version"|awk -F" " '{print $NF}')
 
-echo "INFO: Adapter update complete. To restart the adapters on the new image, please run ${FLASH_ROOT}/reload_all_adapters"
+    echo "INFO:  Processing: $afuN"
+    if [[ -z $afuver ]]; then afuver=__UNKNOWN_FW_LEVEL__; fi
+
+    if [[ $fw =~ $afuver ]]
+    then
+      printf "       Firmware is up to date (%s)\n\n" $afuver
+      continue
+    fi
+    printf "       Replacing %s with %s\n\n" $afuver $fw
+
+    $FLASH_ROOT/$CAPI_FLASH_PL -t $afuN -f $fw
+    if [ $rc -ne 0 ]
+    then
+      e_rc=$rc
+      echo "       ERROR: Failed flashing $adap"
+    fi
+  done
+}
+
+#########
+# main
+#########
+grep pSeries /proc/cpuinfo >/dev/null 2>&1 && _VM=1
+checkidle
+echo "module cxlflash +p" > /sys/kernel/debug/dynamic_debug/control
+
+if [[ $1 =~ reload  || $2 =~ reload  ]]; then do_perst=1; fi
+if [[ $1 =~ factory || $2 =~ factory ]]
+then
+  opt=" -p0 "
+  load_factory=1
+  GT_IMAGE=$GT_F_IMAGE
+fi
+
+if [[ $_VM -eq 1 ]]; then flashadapters_VM
+else                      flashadapters
+fi
+
+echo ""
+if [[ $e_rc -eq 0 ]]
+then
+  echo "INFO:  Adapter update success"
+else
+  echo "INFO:  review msgs for errors"
+fi
+
+echo "module cxlflash -p" > /sys/kernel/debug/dynamic_debug/control
+exit $e_rc

@@ -25,7 +25,7 @@
 UNAME=$(shell uname)
 ROOTPATH = ../../..
 
-APPNAME?=capikv
+APPNAME?=cflash
 
 PREFIX?=${PKGDIR}/install_root
 TEST_PREFIX?=${PKGDIR}/test_root
@@ -65,11 +65,13 @@ _SYSTEMD_DIR=${PREFIX}/usr/lib/systemd/system
 _UDEV_RULES_DIR=${PREFIX}/lib/udev/rules.d
 IMAGE="${_RESOURCEDIR}/corsa*"
 IMAGEH="${_RESOURCEDIR}/1410*"
+
 all:
 	rm -rf ${INSTALL_ROOT}
-	${MAKE} capikv capikv-test afuimage
+	${MAKE} cflash cflash-test cflashimage
+	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${PKGDIR}
 
-capikv:
+cflash:
 	@mkdir -p ${_BIN_DIR}
 	@mkdir -p ${_ETC_DIR}
 	@mkdir -p ${_LIB_DIR}
@@ -79,6 +81,7 @@ capikv:
 	@mkdir -p -m 755 ${_INC_DIR}
 	@mkdir -p ${_SYSTEMD_DIR}
 	@mkdir -p ${_UDEV_RULES_DIR}
+	@mkdir -p ${PREFIX}/var/log/cflash/misc
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/kv/arkdb.h ${_INC_DIR}
 	${INSTALL} ${ROOTPATH}/src/include/zmalloc.h ${_INC_DIR}
@@ -100,8 +103,14 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/asyncstress64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/_tst_ark64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blockio64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/blocksio64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/blockr0io64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/blockr0sio64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blocklistio64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blockplistio64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/blocksio ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/blockr0io ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/blockr0sio ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blockio ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blocklistio ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blockplistio ${_BIN_DIR}
@@ -109,6 +118,8 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/run_kv_sync64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_persist64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_benchmark64 ${_BIN_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/ioppt.pl ${_BIN_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
 else
 	${INSTALL} -s ${PGMDIR}/cxlfd ${_BIN_DIR}
 	${INSTALL} -s ${PGMDIR}/cxlflashutil ${_BIN_DIR}
@@ -116,19 +127,27 @@ else
 	${INSTALL} -s ${_TESTSRCDIR}/asyncstress ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/_tst_ark ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blockio ${_BIN_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/blocksio ${_BIN_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/blockr0io ${_BIN_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/blockr0sio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blocklistio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blockplistio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_sync ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_async ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_persist ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_benchmark ${_BIN_DIR}
+	${INSTALL}    ${ROOTPATH}/src/test/ioppt.pl ${_BIN_DIR}
+	${INSTALL}    ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
 
 	${INSTALL} ${_RESOURCEDIR}/cxlfrefreshluns ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cablecheck ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlfsetlunmode ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlfstatus ${_BIN_DIR}
-	${INSTALL} ${_RESOURCEDIR}/capikvutils.sh ${_BIN_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cflashutils.sh ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/setup.sh ${_BIN_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cflash_version ${_BIN_DIR}
+	${INSTALL} ${_RESOURCEDIR}/machine_info ${_BIN_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cflash_logs_cron ${_BIN_DIR}
 
 
 	#TEMPORARY install - remove this after kernel driver can run workaround
@@ -138,6 +157,9 @@ else
 	@#Dev Permissions for cxl - set mode to 644 explicitly
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxl.rules ${_UDEV_RULES_DIR}
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxlflash.rules ${_UDEV_RULES_DIR}
+	
+	${INSTALL} ${_RESOURCEDIR}/cxlffdc.debug ${_ETC_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cxlffdc.cleardebug ${_ETC_DIR}
 endif
 	
 	@#Libs
@@ -179,7 +201,7 @@ endif
 	@#Version tags and useful info
 	echo "${GITREVISION}" > ${INSTALL_ROOT}/version.txt
 
-capikv-test:	
+cflash-test:	
 
 	@#TEST ONLY CONTENT - DO NOT SHIP
 	@mkdir -p ${_TEST_DIR}
@@ -201,6 +223,7 @@ capikv-test:
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_check ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_tool ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_kv_tst_ark ${_TEST_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/run_ioppts ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${_TEST_DIR}
 	@#Enable factory flash if the test image is installed
@@ -226,7 +249,15 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/fvt_kv_tst_ark64 ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${_TEST_DIR}
+else
+	${INSTALL} ${ROOTPATH}/src/test/vpd/surelock_vpd2rbf.pl ${_TEST_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/vpd/vpd_FlashGT.csv ${_TEST_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/flashgt_vpd_access ${_TEST_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cflash_inject.pl ${_TEST_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_inject ${_TEST_DIR}
+	${INSTALL} -s ${_RESOURCEDIR}/flashgt_nvme_override ${_TEST_DIR}
 endif
+
 ifeq ($(UNAME),AIX)
 	@#Manpages - this is highly repetative
 else
@@ -242,22 +273,37 @@ else
 	gzip -f ${_MAN_DIR}/*.h.3
 endif
 
-afuimage:
+cflashimage:
 	@mkdir -p ${_AFU_IMAGES_DIR}
+#install if image PAPR header is promoted
+ifneq ("$(wildcard ${_RESOURCEDIR}/1410*)","")
+	${INSTALL} ${_RESOURCEDIR}/1410* ${_AFU_IMAGES_DIR}
+	${INSTALL} ${_RESOURCEDIR}/BTV* ${_AFU_IMAGES_DIR}
+ifneq ($(UNAME),AIX)
+	cd ${_AFU_IMAGES_DIR}; /usr/bin/md5sum 1410* > afu_fw.md5sum; /usr/bin/md5sum *.bin >> afu_fw.md5sum
+endif
+endif
 ifeq ($(UNAME),AIX) 
 # need to have a valid ffdc mechanism for AIX...
 else #Linux only
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_dump ${AFU_ROOT}
+	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_status ${AFU_ROOT}
+	${INSTALL} -s ${_TESTSRCDIR}/flashgt_temp ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/capi_flash.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_perst.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_perf.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_capacity.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_devices.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_temp.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_wear.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_stick.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_perfcheck.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/blacklist-cxlflash.conf ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/flash_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/reload_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/psl_trace_dump ${AFU_ROOT}
-#install if image PAPR header is promoted
-ifneq ("$(wildcard ${_RESOURCEDIR}/1410*)","")
-	${INSTALL} ${_RESOURCEDIR}/1410* ${_AFU_IMAGES_DIR}
-endif
+	${INSTALL} ${_RESOURCEDIR}/cxl_flash_vm ${AFU_ROOT}
 
 #install if image without header is promoted
 ifneq ("$(wildcard ${_RESOURCEDIR}/corsa*)","")

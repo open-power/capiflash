@@ -36,6 +36,14 @@
 int MAX_RES_HANDLE=16;  /*default 16 MAX_RHT_CONTEXT */
 
 char cflash_path[MC_PATHLEN];
+
+#ifndef _AIX
+int  manEEHonoff = 0; // 0 means manual EEH will turned off ; 1 means manual EEH will be on
+#define CFLASH_HOST_TYPE_FILE  "/proc/cpuinfo"
+#define CFLASH_HOST_BUF_SIZE   256
+
+#endif
+
 sigjmp_buf sBuf;
 bool afu_reset = false;
 bool bad_address = false;
@@ -64,12 +72,26 @@ int  irPFlag=0 ;
 
 int static rw_cmd_loaded=0;
 int static force_dump = 0;
+
+// LIMITED_EEH_TC - user need to set this env var to 
+// try out limited EEH during cflash FVT automatic bucket run
+// right now, 5 EEH per hour is priority for tests 
+// if LIMITED_EEH_TC var is set then only 5 EEH test will be executed 
+// with quick regression run
+#ifndef _AIX
+
+int quickEEHonoff = 0;
+
+#endif
+
 //bool static cmd_cleared=false;
 //set afu device path from env
 int get_fvt_dev_env()
 {
     char *fvt_dev = getenv("FVT_DEV");
     char *LONG_RN = getenv("LONG_RUN");
+    char *quickEEHP = getenv("LIMITED_EEH_TC");
+
     if (NULL == fvt_dev)
     {
         fprintf(stderr, "FVT_DEV ENV var NOT set, Please set...\n");
@@ -77,9 +99,23 @@ int get_fvt_dev_env()
     }
 
 #ifndef _AIX
+
     int rc;
+    char * manualEehP   = getenv("MANUAL_EEH");
     rc=system("/opt/ibm/capikv/bin/cxlfstatus | grep -q superpipe");
     CHECK_RC(rc, "Test Setup doesn't have any Flash disk in spio mode");
+
+    // looking for user set value
+    if ( NULL != manualEehP )
+    {
+       manEEHonoff = atoi(manualEehP);
+    }
+
+    if ( NULL != quickEEHP )
+    {
+       quickEEHonoff = atoi(quickEEHP);
+    }
+
 #endif
 
     strcpy(cflash_path, fvt_dev);
@@ -94,6 +130,119 @@ int get_fvt_dev_env()
     }
     return 0;
 }
+
+/* Return the interrupt number based on the Host type */
+
+int cflash_interrupt_number(void )
+{
+
+   int interrupt_number ;
+
+#ifdef _AIX
+
+   interrupt_number = CFLSH_NUM_INTERRUPTS ;
+
+#else
+
+   if( host_type == CFLASH_HOST_PHYP )
+    {
+       /* copied from Jim's methods :-
+         * For linux pHyp the number of interrupts specified
+         * by user space should not include the page fault
+         * (PSL) handler interrupt). Thus we must substract 1.
+         * For AIX or BML, the define CFLSH_NUM_INTERRUPTS
+         * is the correct number of interrupts to use.
+         */
+
+       interrupt_number = CFLSH_NUM_INTERRUPTS -1;
+    }
+    else
+    {
+       interrupt_number = CFLSH_NUM_INTERRUPTS ;
+    }
+
+#endif
+     return interrupt_number;
+}
+
+#ifndef _AIX
+
+void setupFVT_ENV( void )
+{ 
+     identifyHostType();
+
+     if( host_type == CFLASH_HOST_PHYP )
+     {    
+         setenv("FVT_ENV", "PVM", 1);
+     }
+      
+    return ;
+}
+
+void identifyHostType( void )
+{
+    FILE *fp;
+    char buf[CFLASH_HOST_BUF_SIZE];
+    char *platform_line;
+
+   /* Cflash FVT: we are not asking FVT suite to fail/abort based on the result of the function */
+    host_type = CFLASH_HOST_NV;   
+
+    if ((fp = fopen(CFLASH_HOST_TYPE_FILE,"r")) == NULL) 
+    {
+        debug("%d: Can not determine host type, failed to open = %s\n", pid,CFLASH_HOST_TYPE_FILE );
+        return;
+    }
+
+    while (fgets(buf,CFLASH_HOST_BUF_SIZE,fp)) 
+    {
+        platform_line = strstr(buf,"platform");
+
+        if ((platform_line) &&
+             (strstr(platform_line,":")) ) 
+        {
+            debug("%d: Platform_line = %s\n", pid, platform_line);
+         
+            if (strstr(platform_line,"PowerNV")) 
+            {
+	        debug("%d: BML host type\n", pid);
+                host_type = CFLASH_HOST_NV;
+
+                break;
+            } 
+            else if (strstr(platform_line,"pSeries (emulated by qemu)")) 
+            { 
+	        debug("%d: PowerKVM host type\n", pid);
+                host_type = CFLASH_HOST_KVM;
+
+            } 
+            else if (strstr(platform_line,"pSeries")) 
+            {
+	        debug("%d: pHyp host type\n", pid);
+                host_type = CFLASH_HOST_PHYP;
+
+            }
+            else 
+            {
+	        debug("%d: Platform_string = %s\n", pid, platform_line);
+            }
+
+            break;
+        }
+    }
+
+    if ( host_type == CFLASH_HOST_UNKNOWN ) 
+    {
+        debug("%d: Cant determine the platform type", pid);
+    }
+
+    fclose (fp);
+
+    return;
+}
+
+#endif
+
 
 int ctx_init_thread(void *args)
 {
@@ -191,7 +340,8 @@ int ctx_init_internal(struct ctx *p_ctx,
     }
 
     p_ctx->flags = flags;
-    p_ctx->work.num_interrupts = 4; // use num_interrupts from AFU desc
+
+    p_ctx->work.num_interrupts = cflash_interrupt_number(); // use num_interrupts from AFU desc
     p_ctx->devno = devno;
 
     //do context attach
@@ -203,6 +353,13 @@ int ctx_init_internal(struct ctx *p_ctx,
         return -1;
     }
 
+    /* AFU is running with SQ mode */
+    if ( p_ctx->sq_mode_flag == TRUE )
+    {
+         p_ctx->p_sq_start = &p_ctx->sq_entry[0];
+         p_ctx->p_sq_end   = &p_ctx->sq_entry[NUM_RRQ_ENTRY];
+         p_ctx->p_sq_curr  = p_ctx->p_sq_start;
+    }
     // initialize RRQ pointers
     p_ctx->p_hrrq_start = &p_ctx->rrq_entry[0];
     p_ctx->p_hrrq_end = &p_ctx->rrq_entry[NUM_RRQ_ENTRY - 1];
@@ -229,8 +386,16 @@ int ctx_init_internal(struct ctx *p_ctx,
     }
     else
     {
+
         write_64(&p_ctx->p_host_map->rrq_start, (__u64) p_ctx->p_hrrq_start);
         write_64(&p_ctx->p_host_map->rrq_end, (__u64) p_ctx->p_hrrq_end);
+
+        if ( p_ctx->sq_mode_flag == TRUE )
+        {
+            write_64(&p_ctx->p_host_map->sq_start, (__u64) p_ctx->p_sq_start );
+            write_64(&p_ctx->p_host_map->sq_end, (__u64) p_ctx->p_sq_end );
+        }
+
     }
 
     mypid = getpid();
@@ -822,6 +987,11 @@ int send_write(struct ctx *p_ctx, __u64 start_lba,
 
         p_ctx->cmd[i].sa.host_use[0] = 0; // 0 means active
         p_ctx->cmd[i].sa.ioasc = 0;
+ 
+        if ( p_ctx->sq_mode_flag == TRUE )
+        {
+           p_ctx->cmd[i].rcb.sq_ioasa_ea = (uint64_t)&(p_ctx->cmd[i].sa);
+        }
         hexdump(&p_ctx->wbuf[i][0],0x20,"Writing");
     }
     //send_single_cmd(p_ctx);
@@ -857,45 +1027,73 @@ int send_cmd(struct ctx *p_ctx)
     asm volatile( "lwsync" : : );
     while (cnt)
     {
-        room = read_64(&p_ctx->p_host_map->cmd_room);
-        debug_2("%d:room =0X%"PRIX64"\n",pid,room);
+
+        if ( p_ctx->sq_mode_flag == TRUE )
+        {
+           debug_2("%d:Placing IOARCB =0X%"PRIX64" into SQ \n",
+                   pid,(__u64)&p_ctx->cmd[p_cmd].rcb);
+
+           hexdump((void *)(&p_ctx->cmd[p_cmd].rcb), sizeof(p_ctx->cmd[p_cmd].rcb),
+                   "RCB data writing in SQ........");
+
+           bcopy((void*)&p_ctx->cmd[p_cmd++].rcb,(void*)p_ctx->p_sq_curr,
+                  sizeof(sisl_ioarcb_t));
+
+           p_ctx->p_sq_curr++;
+
+           if ( p_ctx->p_sq_curr > p_ctx->p_sq_end )
+           {
+                p_ctx->p_sq_curr = p_ctx->p_sq_start;
+           }
+
+           write_64(&p_ctx->p_host_map->sq_tail, (__u64)p_ctx->p_sq_curr);
+
+           cnt--;
+        }
+        else 
+        {
+           
+            room = read_64(&p_ctx->p_host_map->cmd_room);
+            debug_2("%d:room =0X%"PRIX64"\n",pid,room);
 #ifdef _AIX //not to break anything on Linux
 #ifndef __64BIT__
 		if (0XFFFFFFFF == room)
 #else
-        if ( -1 == room)
+                if ( -1 == room)
 #endif
-        {
-            fprintf(stderr,"%d:Failed:cmd_room=-1 afu_reset done/not recovered...\n",pid);
-            usleep(1000);
-            return -1;
-        }
+                {
+                   fprintf(stderr,"%d:Failed:cmd_room=-1 afu_reset done/not recovered...\n",pid);
+                   usleep(1000);
+                   return -1;
+                }
 #endif
-        if (0 == room)
-        {
-            usleep(MC_BLOCK_DELAY_ROOM);
-            wait_try--;
-            debug("%d:still pending cmd:%d\n",pid,cnt);
-        }
-        if (0 == wait_try)
-        {
-            fprintf(stderr, "%d : send cmd wait over %d cmd remain\n",
+                if (0 == room)
+                {
+                   usleep(MC_BLOCK_DELAY_ROOM);
+                   wait_try--;
+                   debug("%d:still pending cmd:%d\n",pid,cnt);
+                }
+                if (0 == wait_try)
+                {
+                    fprintf(stderr, "%d : send cmd wait over %d cmd remain\n",
                     pid, cnt);
-            return -1;
-        }
-        for (i = 0; i < room; i++)
-        {
-            // add a usleep here if room=0 ?
-            // write IOARRIN
-            debug_2("%d:Placing IOARCB =0X%"PRIX64" into ioarrin\n",
+                    return -1;
+                }
+               for (i = 0; i < room; i++)
+               {
+                  // add a usleep here if room=0 ?
+                  // write IOARRIN
+                  debug_2("%d:Placing IOARCB =0X%"PRIX64" into ioarrin\n",
                     pid,(__u64)&p_ctx->cmd[p_cmd].rcb);
-            hexdump((void *)(&p_ctx->cmd[p_cmd].rcb), sizeof(p_ctx->cmd[p_cmd].rcb),
+                  hexdump((void *)(&p_ctx->cmd[p_cmd].rcb), sizeof(p_ctx->cmd[p_cmd].rcb),
                     "RCB data writing in ioarrin........");
-            write_64(&p_ctx->p_host_map->ioarrin,
+                  write_64(&p_ctx->p_host_map->ioarrin,
                      (__u64)&p_ctx->cmd[p_cmd++].rcb);
-            wait_try = MAX_TRY_WAIT; //each cmd give try max time
-            if (cnt-- == 1) break;
-        }
+                  wait_try = MAX_TRY_WAIT; //each cmd give try max time
+                  if (cnt-- == 1) break;
+               }
+
+         }
     }
     rw_cmd_loaded=1;
     return 0;
@@ -1048,6 +1246,12 @@ int send_read(struct ctx *p_ctx, __u64 start_lba,
 
         p_ctx->cmd[i].sa.host_use[0] = 0; // 0 means active
         p_ctx->cmd[i].sa.ioasc = 0;
+
+        if ( p_ctx->sq_mode_flag == TRUE )
+        {
+           p_ctx->cmd[i].rcb.sq_ioasa_ea = (uint64_t)&(p_ctx->cmd[i].sa );
+        }
+
     }
 
     //send_single_cmd(p_ctx);
@@ -1500,9 +1704,9 @@ int send_rw_lsize(struct ctx *p_ctx, struct rwlargebuf *p_rwb,
                    buf_len))
         {
             sprintf(buf,"read.%d",pid);
-            rfd = open(buf,O_RDWR|O_CREAT);
+            rfd = open(buf,O_RDWR|O_CREAT, 0600);
             sprintf(buf,"write.%d",pid);
-            wfd = open(buf,O_RDWR|O_CREAT);
+            wfd = open(buf,O_RDWR|O_CREAT, 0600);
             write(rfd,p_rwb->rbuf[i],buf_len);
             write(wfd,p_rwb->rbuf[i],buf_len);
             close(rfd);
@@ -1763,6 +1967,22 @@ int ioctl_dk_capi_attach(struct ctx *p_ctx)
           p_ctx->last_phys_lba,p_ctx->block_size,p_ctx->chunk_size,p_ctx->max_xfer);
 #endif
 
+#ifdef DK_CXLFLASH_APP_CLOSE_ADAP_FD
+    // if context attach returns DK_CXLFLASH_APP_CLOSE_ADAP_FD flag 
+    if (p_ctx->return_flags & DK_CXLFLASH_APP_CLOSE_ADAP_FD) 
+    {
+        p_ctx->close_adap_fd_flag = TRUE; 
+    }
+
+#endif
+
+#ifdef DK_CXLFLASH_CONTEXT_SQ_CMD_MODE
+     if ( p_ctx->return_flags & DK_CXLFLASH_CONTEXT_SQ_CMD_MODE )
+     {
+          p_ctx->sq_mode_flag = TRUE ;
+     }
+#endif
+
     debug("%d:adap_fd=%d return_flag=0X%"PRIX64"\n",pid,p_ctx->adap_fd,p_ctx->return_flags);
     debug("%d:------------- End DK_CAPI_ATTACH -------------\n", pid);
 
@@ -1817,6 +2037,12 @@ int ioctl_dk_capi_detach(struct ctx *p_ctx)
 #else
     p_ctx->return_flags = capi_detach.hdr.return_flags;
 #endif
+
+    // if DK_CXLFLASH_APP_CLOSE_ADAP_FD flag returns during attach
+    if (p_ctx->close_adap_fd_flag == TRUE)
+    {
+       close(p_ctx->adap_fd);
+    }
     debug("%d:return_flag=0X%"PRIX64"\n",pid,p_ctx->return_flags);
 
     debug("%d:--------------- End DK_CAPI_DETACH -------------\n",pid);
@@ -2179,6 +2405,7 @@ int ioctl_dk_capi_log(struct ctx *p_ctx, char *s_data)
 int ioctl_dk_capi_recover_ctx(struct ctx *p_ctx)
 {
     int rc;
+     
     debug("%d:--------Start DK_CAPI_RECOVER_CTX ---------\n",pid);
 #ifdef _AIX
     struct dk_capi_recover_context recv_ctx;
@@ -2205,9 +2432,13 @@ int ioctl_dk_capi_recover_ctx(struct ctx *p_ctx)
     p_ctx->mmio_size = recv_ctx.mmio_size;
     p_ctx->return_flags = recv_ctx.return_flags;
 #else
+
+    int old_adap_fd ;
+
     struct dk_cxlflash_recover_afu recv_ctx;
     memset(&recv_ctx, 0, sizeof(recv_ctx));
 
+    old_adap_fd  = p_ctx->adap_fd;
     recv_ctx.hdr.version = p_ctx->version;
     recv_ctx.hdr.flags = p_ctx->flags;
     recv_ctx.context_id = p_ctx->context_id;
@@ -2242,6 +2473,13 @@ int ioctl_dk_capi_recover_ctx(struct ctx *p_ctx)
             CHECK_RC(1,"mmap failed");
         }
         else debug("%d: New mmap() returned success..\n", pid);
+
+        // if context attach returns DK_CXLFLASH_APP_CLOSE_ADAP_FD flag
+        if(p_ctx->close_adap_fd_flag == TRUE)
+        {
+           close(old_adap_fd);
+        }
+
     }
     else
     {
@@ -2624,6 +2862,69 @@ int wait4all()
     return rc;
 }
 
+int wait4allOnlyRC()
+{
+    int rc = 0;
+    int rc1 = 0;
+    pid_t mypid;
+    int nerror = 0;
+    int rc_fail_cnt=0;
+    char * noIOP   = getenv("NO_IO");
+
+    while ((mypid = waitpid(-1, &rc, 0)))
+    {
+        debug("pid %d waitpid() status =%d\n", mypid,rc);
+        if (mypid == -1)
+        {
+            break;
+        }
+        if (WIFEXITED(rc))
+        {
+            rc1 |=  WEXITSTATUS(rc);
+            if (rc1)
+            {
+               /* It should start failing whenver it hits the first fail */
+               fprintf(stderr, "%d : Returned Failure RC = %d\n", mypid,rc); 
+               nerror = -1;
+               rc_fail_cnt = rc_fail_cnt +1; 
+               // IO can fail with UA only one time after Recover. 
+               // if rc_fail_cnt = 1 ; then rc_fail_cnt has the authority to change
+               // nerror = 0 else test case will be marked as failed.
+               // First IO failure scenario can only happen if we are running with 
+               // IO. In case of NO IO and non-SurelockFC , we should expect no failure 
+               if ( rc_fail_cnt == 1 &&  noIOP == NULL && is_UA_device(cflash_path) == TRUE )
+               {
+                   debug("pid %d Reset cnt %d for nerror status =%d\n", mypid,rc_fail_cnt,nerror);
+                   nerror = 0;
+                   rc1 = 0;
+               }
+            }
+           
+        }
+        else
+        {
+            fprintf(stderr, "%d : abnormally terminated\n", mypid);
+            nerror =-1;
+        }
+        debug("pid %d exited with rc=%d\n", mypid,rc);
+        fflush(stdout);
+
+    }
+
+    // Ideally rc_fail_cnt should be 1 ; if it is zero. that IO never failed
+    // with UA. which is not expected case.
+    // In case of NO IO, we should expect no failure. rc_fail_cnt should be 0
+    if ( rc_fail_cnt == 0 && noIOP == NULL && is_UA_device(cflash_path) == TRUE )
+    {
+       debug("pid %d First IO did not fail with UA, So test failed \n", getpid());
+       nerror = 255;
+    }
+    
+    rc = nerror;
+    nerror = 0;
+    return rc;
+}
+
 int do_internal_io(struct ctx *p_ctx, __u64 stride, bool iocompare)
 {
     __u64 st_lba= p_ctx->st_lba;
@@ -2709,7 +3010,7 @@ int get_max_res_hndl_by_capacity(char *dev)
 #ifdef _AIX
     rc=ioctl_dk_capi_query_path(p_ctx);
 #endif
-    p_ctx->work.num_interrupts =4;
+    p_ctx->work.num_interrupts =cflash_interrupt_number();
     rc = ioctl_dk_capi_attach(p_ctx);
     if (rc)
     {
@@ -2747,7 +3048,7 @@ __u64 get_disk_last_lba(char *dev, dev64_t devno, uint64_t *chunk_size)
     strcpy(myctx.dev, dev);
     myctx.devno = devno;
     myctx.flags = DK_AF_ASSIGN_AFU;
-    myctx.work.num_interrupts =4;
+    myctx.work.num_interrupts =cflash_interrupt_number();
     rc = ioctl_dk_capi_attach(&myctx);
     last_lba = myctx.last_phys_lba;
     *chunk_size = myctx.chunk_size;
@@ -2846,8 +3147,7 @@ int do_eeh(struct ctx *p_ctx)
     pthread_condattr_t cattrVar;
     char tmpBuff[MAXBUFF];
 
-    char * manualEehP   = getenv("MANUAL_EEH");
-    if ( NULL != manualEehP )
+    if (  manEEHonoff != 0 )
     {
         while (1)
         {
@@ -3287,6 +3587,12 @@ int ioctl_dk_capi_clone(struct ctx *p_ctx,uint64_t src_ctx_id,int src_adap_fd)
     rc =ioctl(p_ctx->fd,DK_CXLFLASH_VLUN_CLONE, &clone);
     if (rc)
         CHECK_RC(errno, "DK_CXLFLASH_VLUN_CLONE failed with errno\n");
+
+    // if context attach returns DK_CXLFLASH_APP_CLOSE_ADAP_FD flag
+    if ( p_ctx->close_adap_fd_flag == TRUE )
+    {
+       close(src_adap_fd);
+    }
     debug("%d:----------- Done DK_CXLFLASH_VLUN_CLONE ----------\n", pid);
 #endif
     return rc;
@@ -3947,7 +4253,7 @@ int ioctl_dk_capi_attach_reuse_all_disk( )
 #ifdef _AIX
         new_ctx[i]->work.num_interrupts = 5;
 #else
-        new_ctx[i]->work.num_interrupts  = 4;
+        new_ctx[i]->work.num_interrupts  = cflash_interrupt_number();
         //TBD for linux
 #endif
 
@@ -4369,6 +4675,7 @@ int keep_doing_eeh_test(struct ctx *p_ctx)
     int rc;
     pthread_t ioThreadId;
     pthread_t thread;
+    pthread_t thread2;
     do_io_thread_arg_t ioThreadData;
     do_io_thread_arg_t * p_ioThreadData=&ioThreadData;
     p_ioThreadData->p_ctx=p_ctx;
@@ -4384,11 +4691,16 @@ int keep_doing_eeh_test(struct ctx *p_ctx)
         CHECK_RC(rc, "do_io_thread() pthread_create failed");
         //Trigger EEH
         do_eeh(p_ctx);
-        rc = ioctl_dk_capi_recover_ctx(p_ctx);
-        CHECK_RC(rc, "ctx reattached failed");
+
+        // Wait for IO thread to complete
+        pthread_join(ioThreadId, NULL);
+
 #ifndef _AIX
         pthread_cancel(thread);
 #endif
+
+        rc = ioctl_dk_capi_recover_ctx(p_ctx);
+        CHECK_RC(rc, "ctx reattached failed");
 #ifdef _AIX
         if (!(p_ctx->return_flags & DK_RF_REATTACHED))
             CHECK_RC(1, "recover ctx, expected DK_RF_REATTACHED");
@@ -4397,7 +4709,10 @@ int keep_doing_eeh_test(struct ctx *p_ctx)
 #endif
         ctx_reinit(p_ctx);
         usleep(1000);
-#ifdef _AIX
+
+#ifndef _AIX
+        pthread_create(&thread2, NULL, ctx_rrq_rx, p_ctx);
+#endif
         //better to use io(get failed with UA) rather than verify
         //otherwise do call verify ioctl on all paths
         rc=do_io(p_ctx,0x10000);
@@ -4405,10 +4720,15 @@ int keep_doing_eeh_test(struct ctx *p_ctx)
         {
             fprintf(stderr,"%d:expected to fail for UA, dont worry....\n",pid);
         }
-#endif
         rc = ioctl_dk_capi_verify(p_ctx);
         CHECK_RC(rc, "ioctl_dk_capi_verify failed");
         usleep(1000);
+   
+        rc=do_io(p_ctx,0x1000);
+        CHECK_RC(rc, "2nd IO request failed\n");
+#ifndef _AIX
+        pthread_cancel(thread2);
+#endif
     }
     return 0;
 }
@@ -4562,7 +4882,6 @@ int allDiskToArray( char ** allDiskArrayP, int * diskCountP)
 
 int diskInSameAdapater( char * p_file )
 {
-
     int rc     =0;
 #ifndef _AIX
     int iCount =0;
@@ -4572,7 +4891,6 @@ int diskInSameAdapater( char * p_file )
 
     char tmpBuff[MAXBUFF];
     char npBuff[MAXNP][MAXBUFF];
-    char blockCheckP[MAXBUFF];
     char * allDiskArray [MAXBUFF];
     char sameAdapDisk[MAXNP][MAXBUFF];
 
@@ -4580,7 +4898,7 @@ int diskInSameAdapater( char * p_file )
     int smCnt  = 0;
     int allCnt   = 0;
 
-    const char *initCmdP = "lspci -v | grep \"Processing accelerators\" | awk '{print $1}' > /tmp/trashFile";
+    const char *initCmdP = "/opt/ibm/capikv/bin/cxlfstatus | grep superpipe | awk '{print $2}' | cut -d: -f1 | sort -u  > /tmp/trashFile";
 
     rc = system(initCmdP);
     if ( rc != 0)
@@ -4622,33 +4940,20 @@ int diskInSameAdapater( char * p_file )
 
         smCnt = 0;
 
-        // only supporting for scsi_generic device now
-
-        sprintf(blockCheckP,"ls -l /sys/bus/pci/devices/"
-                    "%s/pci***:**/***:**:**.*/host*/"
-                    "target*:*:*/*:*:*:*/ | grep -w \"scsi_generic\" >/dev/null 2>&1",tmpBuff);
-        rc = system(blockCheckP);
-
-        if ( rc == 0 )
+        for ( allCnt=0; allCnt < diskCount ;allCnt++)
         {
+           sprintf(npBuff[iCount]," /opt/ibm/capikv/bin/cxlfstatus | grep %s |"
+            "awk '{print $2}' | cut -d: -f1 | grep %s >/dev/null 2>&1",allDiskArray[allCnt],tmpBuff);
 
-            for ( allCnt=0; allCnt < diskCount ;allCnt++)
+            rc = system(npBuff[iCount]);
+            if ( rc == 0 )
             {
-
-                sprintf(npBuff[iCount],"ls -l /sys/bus/pci/devices/"
-                            "%s/pci***:**/***:**:**.*/host*/"
-                            "target*:*:*/*:*:*:*/scsi_generic | grep %s >/dev/null 2>&1",tmpBuff,allDiskArray[allCnt]);
-
-                rc = system(npBuff[iCount]);
-                if ( rc == 0 )
-                {
-                    strcpy(sameAdapDisk[smCnt], allDiskArray[allCnt] );
-                    smCnt++;
-                }
+               strcpy(sameAdapDisk[smCnt], allDiskArray[allCnt] );
+               smCnt++;
             }
-
-            iCount++;
         }
+
+         iCount++;
     }
 
     if ( fclose(fileP) == EOF )
@@ -4673,7 +4978,6 @@ int diskInSameAdapater( char * p_file )
             rc = EINVAL;
             goto xerror;
         }
-
     }
 
 xerror:
@@ -4866,5 +5170,242 @@ char * diskWithoutDev(char * source , char * destination )
     return destination;
 }
 
+
+#endif
+
+#ifndef _AIX
+
+int turnOffTestCase( char * reqEnv)
+{
+    char *tmP = NULL;
+    int    rc =0; 
+
+    char *envName = (char *)getenv("FVT_ENV");
+
+    if ( NULL != envName )
+    {
+       tmP = strtok( envName, "," );
+
+       while (  tmP != NULL )
+       {
+          if (!strcmp(tmP, reqEnv))
+          {
+             rc = 1 ;
+             break; 
+          }      
+
+        tmP=strtok(NULL,",");
+       }
+    }
+
+    return rc;
+}
+
+int diskSizeCheck(char * diskName , float recDiskSize)
+{
+   float diskSize = 0.0 ;
+   int rc = 0 ;
+   FILE *filePtr = NULL;
+   char tmBuff[1024];
+
+   sprintf(tmBuff,"lsscsi -sg | grep %s | grep GB >/dev/null 2>&1",diskName);
+   if( system( tmBuff ))
+   { 
+      sprintf(tmBuff," lsscsi -sg | grep %s | awk -F' ' '{print $NF}' | sed 's/TB//g'", diskName);
+      filePtr = popen(tmBuff, "r");
+      fscanf(filePtr, "%f", &diskSize);
+      diskSize = diskSize * 1024; // convert to GB 
+   }
+   else
+   {
+      sprintf(tmBuff," lsscsi -sg | grep %s | awk -F' ' '{print $NF}' | sed 's/GB//g'", diskName);
+      filePtr = popen(tmBuff, "r");
+      fscanf(filePtr, "%f", &diskSize);
+   }
+
+   pclose(filePtr);
+
+   if(  diskSize <  recDiskSize)
+   {
+      rc = 1; // User will be warned as disk size is less or lsscsi package is not installed
+      printf(" *********WARNING : Recommended  disk size for this test %f GB and used disk size is %f"
+      " OR SYSTEM does not have lsscsi package installed**********************\n",recDiskSize,diskSize);
+   }
+
+   debug("***** disk size required for this test %f GB and used disk size is %f GB****\n",recDiskSize,diskSize);
+
+   return rc ;
+}
+
+#endif
+
+int is_UA_device( char * diskName ) 
+{
+#ifndef _AIX
+    int rc     =0;
+    int iTer   =0;
+    int iKey   =0;
+    int found = FALSE ;
+    FILE *fileP;
+    char tmpBuff[MAXBUFF];
+    char blockCheckP[MAXBUFF];
+
+    /*
+       is_UA_device: this function will look for devices which can recieve Unit attention. 
+       Right now, Surelock FC is only one to get Unit attention ; however we can add more 
+       device ids - lspci -v | grep -E "<ID> | <ID2>" to inform the caller of this function 
+    */
+
+    const char *initCmdP = "lspci -v | grep -E \"04cf\" | awk '{print $1}' > /tmp/adapFile";
+
+    rc = system(initCmdP);
+    if ( rc != 0)
+    {
+        fprintf(stderr,"%d: Failed in lspci \n",pid);
+        return FALSE; 
+    }
+
+    fileP = fopen("/tmp/adapFile", "r");
+    if (NULL == fileP)
+    {
+        fprintf(stderr,"%d: Error opening file /tmp/adapFile \n", pid);
+        return FALSE ;
+    }
+
+    while (fgets(tmpBuff,MAXBUFF, fileP) != NULL)
+    {
+        iTer = 0;
+        while (iTer < MAXBUFF)
+        {
+            if (tmpBuff[iTer] =='\n')
+            {
+                tmpBuff[iTer]='\0';
+                break;
+            }
+            iTer++;
+        }
+        // only supporting for scsi_generic device
+
+        iKey = strlen(diskName)-4 ;
+        sprintf(blockCheckP,"ls -d /sys/devices/*/*/"
+        "%s/*/*/host*/target*/*:*:*:*/scsi_generic/* | grep -w %s >/dev/null 2>&1",tmpBuff,&diskName[iKey]);
+        rc = system(blockCheckP);
+        if ( rc == 0 )
+        {
+           found = TRUE; 
+           printf(".................... is_UA_device() : %s is UA device ........ \n", diskName);
+           fclose(fileP);
+           break;
+        }
+     }
+
+    return found; 
+#else
+    //TBD: AIX related changes will be done in seprate code drop
+    return TRUE;
+#endif
+}
+
+#ifndef _AIX
+
+#define CXLSTAT "/opt/ibm/capikv/bin/cxlfstatus"
+
+int diskToWWID (char * WWID)
+{
+    char * d_name;
+    char cmdToRun[MAXBUFF];
+    int rc = 0;       
+    FILE *fileP = NULL;
+    int i =0;
+
+    d_name = strrchr( cflash_path, '/') + 1;
+
+    sprintf(cmdToRun,"%s | grep %s | awk -F \" \" '{ print $5 }' > /tmp/WWID", CXLSTAT, d_name);
+    rc = system(cmdToRun);
+    if (rc)
+      return rc;  
+     
+    fileP = fopen("/tmp/WWID", "r");
+    if (NULL == fileP)
+    {
+        fprintf(stderr,"%d: Error opening file /tmp/WWID \n", pid);
+        rc = EINVAL;
+        return rc;
+    }
+
+    if ( NULL == fgets(WWID,MAXBUFF, fileP) )
+    {
+        fprintf(stderr,"%d: Error in file /tmp/WWID \n", pid);
+        rc = EINVAL;
+        fclose(fileP);
+        return rc;
+    }
+
+    while( i < MAXBUFF )
+    {
+        if ( WWID[i]=='\n' )
+        {
+           WWID[i]='\0';
+           break;
+        }
+
+        i++;
+    }
+
+    fclose(fileP);
+
+    return rc;
+              
+}
+
+int WWIDtoDisk (char * WWID)
+{
+    char diskNameBuff[MAXBUFF];
+    char cmdToRun[MAXBUFF];
+    FILE *fileP = NULL;
+    int rc = 0;
+    int i =0; 
+    
+    sprintf(cmdToRun,"%s | grep %s | awk '{ print $1 }' | head -1 | sed -e 's/://g' > /tmp/cflash_disk", 
+                    CXLSTAT, WWID);
+
+    rc = system(cmdToRun);
+
+    if (rc)
+      return rc;  
+     
+    fileP = fopen("/tmp/cflash_disk", "r");
+    if (NULL == fileP)
+    {
+        fprintf(stderr,"%d: Error opening file /tmp/cflash_disk \n", pid);
+        rc = EINVAL;
+        return rc;
+    }
+
+    if ( NULL == fgets(diskNameBuff,MAXBUFF, fileP) )
+    {
+        fprintf(stderr,"%d: Error in file /tmp/cflash_disk \n", pid);
+        rc = EINVAL;
+        fclose(fileP);
+        return rc;
+    }
+
+    while( i < MAXBUFF )
+    {
+        if ( diskNameBuff[i]=='\n' )
+        {
+           diskNameBuff[i]='\0';
+           break;
+        }
+
+        i++;
+    }
+
+    sprintf(cflash_path,"/dev/%s", diskNameBuff); 
+
+    fclose(fileP);
+    return rc;
+              
+}
 
 #endif

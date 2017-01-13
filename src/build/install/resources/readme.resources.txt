@@ -38,8 +38,8 @@ psl_trace_dump
 Purpose: collected PSL FFDC / traces on a failed system
 
 
-capikvutils.sh
-Purpose: Utility code for cxlflash and ibmcapikv tooling
+cflashutils.sh
+Purpose: Utility code for cflash tooling
 
 cxlfrefreshluns cxlfsetlunmode cxlfstatus
 Purpose: suite of utilities for manipulating the cxlflash driver

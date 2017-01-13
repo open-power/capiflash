@@ -39,16 +39,22 @@
 /************************************************************************/
 
 /* Byte offsets to various host interface registers */
-#define CAPI_ENDIAN_CTRL_OFFSET   0x00 /* Endian control */
-#define CAPI_INTR_STATUS_OFFSET   0x08 /* Interrupt Staus register */
-#define CAPI_INTR_CLEAR_OFFSET    0x10 /* Interrupt Clear register */
-#define CAPI_INTR_MASK_OFFSET     0x18 /* Interrupt Mask register */
-#define CAPI_IOARRIN_OFFSET       0x20 /* IOARRIN register */
-#define CAPI_RRQ0_START_EA_OFFSET 0x28 /* RRQ#0 start EA register */
-#define CAPI_RRQ0_END_EA_OFFSET   0x30 /* RRQ#0 end EA register */
-#define CAPI_CMD_ROOM_OFFSET      0x38 /* CMD_ROOM register */
-#define CAPI_CTX_CTRL_OFFSET      0x40 /* Context Control register */
-#define CAPI_MBOX_W_OFFSET        0x48 /* Mailbox write register */
+#define CAPI_ENDIAN_CTRL_OFFSET   0x00 /* Endian control            */
+#define CAPI_INTR_STATUS_OFFSET   0x08 /* Interrupt Staus register  */
+#define CAPI_INTR_CLEAR_OFFSET    0x10 /* Interrupt Clear register  */
+#define CAPI_INTR_MASK_OFFSET     0x18 /* Interrupt Mask register   */
+#define CAPI_IOARRIN_OFFSET       0x20 /* IOARRIN register          */
+#define CAPI_RRQ0_START_EA_OFFSET 0x28 /* RRQ#0 start EA register   */
+#define CAPI_RRQ0_END_EA_OFFSET   0x30 /* RRQ#0 end EA register     */
+#define CAPI_CMD_ROOM_OFFSET      0x38 /* CMD_ROOM register         */
+#define CAPI_CTX_CTRL_OFFSET      0x40 /* Context Control register  */
+#define CAPI_MBOX_W_OFFSET        0x48 /* Mailbox write register    */
+#define CAPI_SQ_START_EA_OFFSET   0x50 /* SQ start EA register      */
+#define CAPI_SQ_END_EA_OFFSET     0x58 /* SQ end EA register        */
+#define CAPI_SQ_HEAD_EA_OFFSET    0x60 /* SQ head EA register       */
+#define CAPI_SQ_TAIL_EA_OFFSET    0x68 /* SQ tail EA register       */
+#define CAPI_SQ_CTXTRST_EA_OFFSET 0x70 /* SQ context reset EA       */
+				       /* register.                 */
 
 
 #define CAPI_AFU_GLOBAL_OFFSET  0x10000 /* Offset of AFU Global area */
@@ -106,7 +112,12 @@ typedef struct sisl_ioarcb_s {
   __u16 timeout; /* in units specified by req_flags */
   __u32 rsvd1;
   __u8 cdb[16]; /* must be in big endian */
-  __u64 rsvd2;
+    union {
+	__u64 sq_ioasa_ea;          /* When using Submission queues (SQ),*/
+                                    /* this is the effective address of  */
+				    /* ths associated IOASA.             */
+	__u64 rsvd2;
+    };
 } sisl_ioarcb_t;
 
 struct sisl_rc { 
@@ -142,7 +153,13 @@ struct sisl_rc {
    */
 #define SISL_AFU_RC_NO_CHANNELS           0x20u /* see afu_extra, may retry */
 #define SISL_AFU_RC_CAP_VIOLATION         0x21u /* either user error or
-						   afu reset/master restart
+						   afu reset/master restart.
+						   see afu_extra for more 
+						   information. It contains
+						   the values of the ctx_cap
+						   register. With the ctx_cap
+						   upper and lower bytes 
+						   contiguous in the afu_extra.
 						 */
 #define SISL_AFU_RC_OUT_OF_DATA_BUFS      0x30u /* always retry */
 #define SISL_AFU_RC_DATA_DMA_ERR          0x31u /* see afu_extra
@@ -192,6 +209,8 @@ struct sisl_rc {
 						  reported len, possbly due to dropped
 						  frames */
 #define SISL_FC_RC_TGTABORT               0x5C /* command aborted by target */
+#define SISL_FC_RC_SHUTDOWN               0x5E /* command aborted by AFU due to  */
+					       /* shutdown.                      */
 
 };
 
@@ -278,6 +297,13 @@ struct sisl_host_map {
   __u64 cmd_room;
   __u64 ctx_ctrl;  /* least signiifcant byte or b56:63 is LISN# */
   __u64 mbox_w;    /* restricted use */
+  __u64 sq_start;  /* Submission queue (SQ) start register */
+  __u64 sq_end;    /* Submission queue (SQ) end register */
+  __u64 sq_head;   /* Submission queue (SQ) head register */
+  __u64 sq_tail;   /* Submission queue (SQ) tail register */
+  __u64 sq_context_reset; /* Submission queue (SQ) context reset 
+                             register. */
+
 };
 
 /* per context provisioning & control MMIO */

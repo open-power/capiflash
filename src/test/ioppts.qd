@@ -1,0 +1,56 @@
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/test/ioppts.qd $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+# ENG=libaio NR=100 NW=0 DEVS="/dev/sdk /dev/sdl /dev/sdm /dev/sdn" PROCS=10 SECS=10 ./ppts.fio ../img ../obj/tests ../parm.fio
+# ENG=ktms   NR=100 NW=0 DEVS="/dev/sg4 /dev/sg5 /dev/sg6 /dev/sg7" PROCS=10 SECS=10 ./ppts.fio ../img ../obj/tests ../parm.fio
+#where $2 contains:
+# parm.fio:
+#[global]
+#buffered=0
+#bs=4k
+#iodepth=${QD}
+#numjobs=1
+#group_reporting=1
+#size=8g
+#rw=randrw
+#rwmixread=${NR}
+#rwmixwrite=${NW}
+#ioengine=${ENG}
+#runtime=${SECS}
+#time_based
+
+#[job1]
+#filename=${DEV}
+
+#-------
+
+if [ ! -z $1 ]
+then
+  export LD_LIBRARY_PATH=$1
+fi
+echo $PROCS|awk '{printf "%dP QD1   ", $1}'; QD=1   ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD8   ", $1}'; QD=8   ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD16  ", $1}'; QD=16  ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD32  ", $1}'; QD=32  ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD128 ", $1}'; QD=128 ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"

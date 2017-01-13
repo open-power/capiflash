@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 #  IBM_PROLOG_BEGIN_TAG
 #  This is an automatically generated prolog.
 #
@@ -25,7 +25,7 @@
 # IBM_PROLOG_END_TAG
 
 CAPIKV=/opt/ibm/capikv
-source $CAPIKV/bin/capikvutils.sh
+source $CAPIKV/bin/cflashutils.sh
 
 
 showhelp()

@@ -34,8 +34,11 @@
  *   OFF         KV_TRC_VERBOSITY == 0
  *   KV_TRC_FFDC KV_TRC_VERBOSITY <= 1
  *   KV_TRC      KV_TRC_VERBOSITY <= 2
- *   KV_TRC_IO   KV_TRC_VERBOSITY <= 3
- *   KV_TRC_DBG  KV_TRC_VERBOSITY <= 4
+ *   KV_TRC_PERF KV_TRC_VERBOSITY <= 3
+ *   KV_TRC_IO   KV_TRC_VERBOSITY <= 4
+ *   KV_TRC_DBG  KV_TRC_VERBOSITY <= 5
+ *   KV_TRC_DBG6 KV_TRC_VERBOSITY <= 6
+ *   KV_TRC_DBG7 KV_TRC_VERBOSITY <= 7
  * \ingroup
  ******************************************************************************/
 #ifndef _H_KV_TRACE_LOG
@@ -54,7 +57,7 @@
 
 #define B_EYE  0xABCDBEEF
 #define E_EYE  0xDCBAFEED
-#define STRLEN 256
+#define STRLEN 1024
 
 #define EYEC_INVALID(_p_KT) ((_p_KT->b_eye != B_EYE) || (_p_KT->e_eye != E_EYE))
 
@@ -79,11 +82,13 @@ typedef struct
  * \brief
  *   setup to run kv log trace macro
  ******************************************************************************/
-#define KV_TRC_OPEN( _pKT, _filename)                                          \
+#define KV_TRC_OPEN( _pKT, _fn_in)                                             \
 do                                                                             \
 {                                                                              \
     char *env_verbosity = getenv("KV_TRC_VERBOSITY");                          \
+    char *env_dir       = getenv("KV_TRC_DIR");                                \
     char *env_user      = getenv("USER");                                      \
+    char  dir[STRLEN+1] = {0};                                                 \
     char  fn[STRLEN+1]  = {0};                                                 \
     int   pid           = getpid();                                            \
     struct timeb _cur_time;                                                    \
@@ -106,8 +111,11 @@ do                                                                             \
                                                                                \
     if (_pKT->init_done >= 1) {++_pKT->init_done; goto open_unlock;}           \
                                                                                \
-    if (_filename) snprintf(fn, STRLEN,"/tmp/%s.%s.kv.log",env_user,_filename);\
-    else           snprintf(fn, STRLEN,"/tmp/%s.kv.log",   env_user);          \
+    if (env_dir && strlen(env_dir)<256) {sprintf(dir, "%s", env_dir);}         \
+    else                                {sprintf(dir, "/tmp");}                \
+                                                                               \
+    if (_fn_in) snprintf(fn, STRLEN, "%s/%s.%s.kv.log", dir, env_user, _fn_in);\
+    else        snprintf(fn, STRLEN, "%s/%s.kv.log",    dir, env_user);        \
                                                                                \
     if ((_pKT->logfp = fopen(fn, "a")) == NULL)                                \
     {                                                                          \
@@ -225,7 +233,7 @@ do                                                                             \
             }                                                                  \
         } while (0)
 
-#define KV_TRC(_pKT, msg, ...)                                                 \
+#define KV_TRC_PERF1(_pKT, msg, ...)                                           \
         do                                                                     \
         {                                                                      \
             if (_pKT && _pKT->verbosity >= 2)                                  \
@@ -234,7 +242,7 @@ do                                                                             \
             }                                                                  \
         } while (0)
 
-#define KV_TRC_IO(_pKT, msg, ...)                                              \
+#define KV_TRC_PERF2(_pKT, msg, ...)                                                 \
         do                                                                     \
         {                                                                      \
             if (_pKT && _pKT->verbosity >= 3)                                  \
@@ -243,7 +251,7 @@ do                                                                             \
             }                                                                  \
         } while (0)
 
-#define KV_TRC_DBG(_pKT, msg, ...)                                             \
+#define KV_TRC(_pKT, msg, ...)                                                 \
         do                                                                     \
         {                                                                      \
             if (_pKT && _pKT->verbosity >= 4)                                  \
@@ -251,8 +259,53 @@ do                                                                             \
                 KV_TRACE_LOG_DATA(_pKT, msg, ## __VA_ARGS__);                  \
             }                                                                  \
         } while (0)
+
+#define KV_TRC_IO(_pKT, msg, ...)                                              \
+        do                                                                     \
+        {                                                                      \
+            if (_pKT && _pKT->verbosity >= 5)                                  \
+            {                                                                  \
+                KV_TRACE_LOG_DATA(_pKT, msg, ## __VA_ARGS__);                  \
+            }                                                                  \
+        } while (0)
+
+#define KV_TRC_DBG(_pKT, msg, ...)                                             \
+        do                                                                     \
+        {                                                                      \
+            if (_pKT && _pKT->verbosity >= 6)                                  \
+            {                                                                  \
+                KV_TRACE_LOG_DATA(_pKT, msg, ## __VA_ARGS__);                  \
+            }                                                                  \
+        } while (0)
+
+#define KV_TRC_EXT1(_pKT, msg, ...)                                            \
+        do                                                                     \
+        {                                                                      \
+            if (_pKT && _pKT->verbosity >= 7)                                  \
+            {                                                                  \
+                KV_TRACE_LOG_DATA(_pKT, msg, ## __VA_ARGS__);                  \
+            }                                                                  \
+        } while (0)
+
+#define KV_TRC_EXT2(_pKT, msg, ...)                                            \
+        do                                                                     \
+        {                                                                      \
+            if (_pKT && _pKT->verbosity >= 8)                                  \
+            {                                                                  \
+                KV_TRACE_LOG_DATA(_pKT, msg, ## __VA_ARGS__);                  \
+            }                                                                  \
+        } while (0)
+
+#define KV_TRC_EXT3(_pKT, msg, ...)                                            \
+        do                                                                     \
+        {                                                                      \
+            if (_pKT && _pKT->verbosity >= 9)                                  \
+            {                                                                  \
+                KV_TRACE_LOG_DATA(_pKT, msg, ## __VA_ARGS__);                  \
+            }                                                                  \
+        } while (0)
 #else
-#define KV_TRC_OPEN(_pKT, _filename)
+#define KV_TRC_OPEN(_pKT, _fn_in)
 #define KV_TRC_CLOSE(_pKT)
 #define KV_TRC_FFDC(_pKT, _fmt, ...)
 #define KV_TRC(_pKT, _fmt, ...)

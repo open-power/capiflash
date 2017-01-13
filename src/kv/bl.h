@@ -28,13 +28,14 @@
 #include <stdint.h>
 #include <pthread.h>
 #include "iv.h"
+#include <capiblock.h>
 
 #define BL_INITN 10000
 
 typedef struct ark_io_list
 {
-  int64_t         blkno;
-  int             a_tag;
+  int64_t        blkno;
+  cflsh_cg_tag_t a_tag;
 } ark_io_list_t;
 
 typedef struct _bl

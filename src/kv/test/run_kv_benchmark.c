@@ -27,16 +27,19 @@
 ********************************************************************************
 ** \file
 ** \brief
-**   run iops benchmark for Ark synchronous IO
+**   run iops benchmark for the Ark Key/Value Database Sync/Async IO
 ** \details
-**   Usage: run_kv_benchmark [dev] [-p]                                       \n
-**          [dev]      device name to run to                                  \n
-**          [-p]       run to a physical lun                                  \n
+**   Usage:                                                                   \n
+**     [-d device] [-r %rd] [-q qdepth] [-n npool] [-s secs] [-p]             \n
 **                                                                            \n
-**    example:  run_kv_benchmark                                              \n
-**              run_kv_benchmark /tmp/kvstore   *kvstore must be at least 1gb \n
-**              run_kv_benchmark /dev/sg9                                     \n
-**              run_kv_benchmark /dev/sg9 -p                                  \n
+**                                                                            \n
+**    examples: run_kv_benchmark                                              \n
+**              run_kv_benchmark -d /tmp/kvstore      *kvstore must be >= 1gb \n
+**              run_kv_benchmark -d /dev/sg9                                  \n
+**              run_kv_benchmark -d /dev/sg9 -q 1 -r 75                       \n
+**              run_kv_benchmark -d /dev/sg9 -n 4                             \n
+**              run_kv_benchmark -d /dev/sg9 -p                               \n
+**              run_kv_benchmark -d /dev/sg9 -s 120                           \n
 **
 *******************************************************************************/
 #include <arkdb.h>
@@ -51,15 +54,17 @@
 
 #define KV_PTHS             128
 #define KV_JOBS             128
-#define KV_NASYNC           130
+#define KV_NASYNC           260
 #define KV_BASYNC           8*1024
-#define KV_NPOOL            1
-#define KV_MIN_SECS         12
+int     KV_NPOOL    =       1;
+int     KV_MIN_SECS =       12;
 
+#define _4K                 (4*1024)
+#define _64K                (64*1024)
 #define KLEN                16
 #define VLEN_4k             4000
 #define VLEN_64k            64000
-#define LEN                 100    // make this 50 to view even % r/w
+int     LEN =               100;        // make this 50 to view even % r/w
 
 #define MAX_IO_ARKS         10
 #define MAX_IO_PTHS         40
@@ -70,8 +75,6 @@
 #define KV_ASYNC_GET               0x00800000
 #define KV_ASYNC_EXISTS            0x00400000
 #define KV_ASYNC_DEL               0x00200000
-
-#define KV_ASYNC_MAX_JOBS_PER_CTXT 128
 
 #define TRUE  1
 #define FALSE 0
@@ -114,7 +117,7 @@ typedef struct
     uint32_t   flags;
     uint64_t   itag;
     uint64_t   tag;
-    char       gvalue[VLEN_64k];
+    char      *gvalue;
 } async_CB_t;
 
 /**
@@ -126,7 +129,7 @@ typedef struct
 {
     ARK       *ark;
     uint32_t   flags;
-    async_CB_t pCBs[KV_ASYNC_MAX_JOBS_PER_CTXT];
+    async_CB_t pCBs[KV_NASYNC];
 } async_context_t;
 
 /**
@@ -156,14 +159,15 @@ typedef struct
 *******************************************************************************/
 db_t *dbs;
 
+uint32_t read100_count   = 0;
 uint32_t read100         = 0;
 uint32_t testcase_start  = 0;
 uint32_t testcase_stop   = 0;
+uint32_t error_stop      = 0;
 uint64_t ark_create_flag = ARK_KV_VIRTUAL_LUN;
 
 void kv_async_SET_KEY   (async_CB_t *pCB);
 void kv_async_GET_KEY   (async_CB_t *pCB);
-void kv_async_EXISTS_KEY(async_CB_t *pCB);
 void kv_async_DEL_KEY   (async_CB_t *pCB);
 
 /**
@@ -194,13 +198,14 @@ void kv_async_DEL_KEY   (async_CB_t *pCB);
 ** \brief
 **   print error msg, clear RUNNING flag to shutdown job, and exit the function
 *******************************************************************************/
-#define KV_ERR_STOP(_pCB, _msg, _rc)     \
-do                                       \
-{                                        \
-    printf("(%s:%d)", _msg,_rc);         \
-    if (NULL == _pCB) return;            \
-    _pCB->flags &= ~KV_ASYNC_RUNNING;    \
-    return;                              \
+#define KV_ERR_STOP(_pCB, _msg, _rc)                                           \
+do                                                                             \
+{                                                                              \
+    printf("(%s:%d)", _msg,_rc);                                               \
+    if (NULL == _pCB) {error_stop=1; return;}                                  \
+    if (_pCB->flags & KV_ASYNC_RUNNING) {_pCB->flags &= ~KV_ASYNC_RUNNING;}    \
+    else                                {error_stop=1;}                        \
+    return;                                                                    \
 } while (0)
 
 /**
@@ -212,6 +217,7 @@ do                                       \
 do                                    \
 {                                     \
     printf("\n(%s:%d)\n", _msg,_rc);  \
+    error_stop=1;                     \
     return _rc;                       \
 } while (0)
 
@@ -230,6 +236,24 @@ do                                    \
                                        KV_BASYNC,               \
                                        ark_create_flag));       \
         assert(NULL != ark);                                    \
+
+/**
+********************************************************************************
+** \brief print the usage
+** \details
+**   -d device     *the device name to run KV IO                              \n
+**   -r %rd        *the percentage of reads to issue (75 or 100)              \n
+**   -q queuedepth *the number of outstanding ops to maintain                 \n
+**   -n npool      *the number of threads in the Ark pool                     \n
+**   -s secs       *the number of seconds to run the I/O                      \n
+**   -p            *run in physical lun mode                                  \n
+*******************************************************************************/
+void usage(void)
+{
+    printf("Usage:\n");
+    printf("   [-d device] [-r %%rd] [-q qdepth] [-n npool] [-s secs] [-p]\n");
+    exit(0);
+}
 
 /**
 ********************************************************************************
@@ -305,7 +329,7 @@ void free_kv_db(uint32_t n_db, uint32_t len)
 /**
 ********************************************************************************
 ** \brief
-**   callback for ark functions: set,get,exists,del
+**   callback for ark functions: set,get,del
 *******************************************************************************/
 void kv_async_cb(int errcode, uint64_t dt, int64_t res)
 {
@@ -332,7 +356,16 @@ void kv_async_cb(int errcode, uint64_t dt, int64_t res)
             pCB->len_i  = 0;
             pCB->flags &= ~KV_ASYNC_SET;
             pCB->flags |= KV_ASYNC_GET;
-            kv_async_GET_KEY(pCB);
+            if (read100_count)
+            {
+                pCB->flags &= ~KV_ASYNC_RUNNING;
+                --read100_count;
+                return;
+            }
+            else
+            {
+                kv_async_GET_KEY(pCB);
+            }
             goto done;
         }
         kv_async_SET_KEY(pCB);
@@ -356,26 +389,12 @@ void kv_async_cb(int errcode, uint64_t dt, int64_t res)
             else
             {
                 pCB->flags &= ~KV_ASYNC_GET;
-                pCB->flags |= KV_ASYNC_EXISTS;
-                kv_async_EXISTS_KEY(pCB);
+                pCB->flags |= KV_ASYNC_DEL;
+                kv_async_DEL_KEY(pCB);
             }
             goto done;
         }
         kv_async_GET_KEY(pCB);
-        goto done;
-    }
-    else if (pCB->flags & KV_ASYNC_EXISTS)
-    {
-        /* if end of db len sequence, move to next step */
-        if (pCB->len_i == pCB->len)
-        {
-            pCB->len_i  = 0;
-            pCB->flags &= ~KV_ASYNC_EXISTS;
-            pCB->flags |= KV_ASYNC_DEL;
-            kv_async_DEL_KEY(pCB);
-            goto done;
-        }
-        kv_async_EXISTS_KEY(pCB);
         goto done;
     }
     else if (pCB->flags & KV_ASYNC_DEL)
@@ -453,24 +472,6 @@ void kv_async_GET_KEY(async_CB_t *pCB)
 ** \brief
 **   save a key/value into the ark db
 *******************************************************************************/
-void kv_async_EXISTS_KEY(async_CB_t *pCB)
-{
-    uint32_t rc=0;
-    pCB->tag = pCB->itag + pCB->len_i;
-
-    while (EAGAIN == (rc=ark_exists_async_cb(pCB->ark,
-                                             pCB->db->klen,
-                                             pCB->db->kv[pCB->len_i].key,
-                                             kv_async_cb,
-                                             pCB->tag))) usleep(10000);
-    if (rc) KV_ERR_STOP(pCB,"EXIST_KEY",rc);
-}
-
-/**
-********************************************************************************
-** \brief
-**   save a key/value into the ark db
-*******************************************************************************/
 void kv_async_DEL_KEY(async_CB_t *pCB)
 {
     uint32_t rc=0;
@@ -490,26 +491,29 @@ void kv_async_DEL_KEY(async_CB_t *pCB)
 **   do an ark asynchronous IO performance run
 *******************************************************************************/
 void kv_async_io(char    *dev,
-                  uint32_t ctxts,
-                  uint32_t jobs,
-                  uint32_t vlen,
-                  uint32_t len,
-                  uint32_t read)
+                 uint32_t ctxts,
+                 uint32_t jobs,
+                 uint32_t vlen,
+                 uint32_t len,
+                 uint32_t read)
 {
     async_context_t *pCT          = NULL;
     async_CB_t      *pCB          = NULL;
     uint32_t         job          = 0;
     uint32_t         ctxt         = 0;
-    uint32_t         ctxt_running = 0;
+    uint32_t         ctxt_running = TRUE;
     uint32_t         i            = 0;
     uint32_t         e_secs       = 0;
     uint64_t         ops          = 0;
     uint64_t         ios          = 0;
     uint32_t         tops         = 0;
     uint32_t         tios         = 0;
+    uint32_t         wr_ops       = 0;
+    uint32_t         wr_ios       = 0;
+    uint32_t         time_started = 0;
 
-    if (read == 75) read100 = FALSE;
-    else            read100 = TRUE;
+    if (read == 75) {read100 = FALSE;}
+    else            {read100 = TRUE; read100_count=ctxts*jobs;}
     printf("ASYNC: ctxt:%-2d QD:%-3d size:%2dk read:%3d%% ",
             ctxts, jobs, vlen/1000, read);
     fflush(stdout);
@@ -535,10 +539,13 @@ void kv_async_io(char    *dev,
             pCB->flags     = KV_ASYNC_SET;
             pCB->db        = dbs+job;
             pCB->len       = len;
+            if (0==posix_memalign((void**)&pCB->gvalue, 128, vlen))
+                {assert(pCB->gvalue);}
         }
     }
 
     testcase_start = time(0);
+    if (!read100) {time_started=TRUE;}
 
     /* start all jobs for all contexts */
     for (ctxt=0; ctxt<ctxts; ctxt++)
@@ -555,6 +562,33 @@ void kv_async_io(char    *dev,
     /* loop until all jobs are done or until time elapses */
     do
     {
+        /* restart jobs if 100% reads, and all writes are complete */
+        if (read100 && read100_count==0 && !time_started)
+        {
+
+            testcase_start = time(0);
+            time_started   = TRUE;
+            /* continue all jobs for all contexts */
+            for (ctxt=0; ctxt<ctxts; ctxt++)
+            {
+                (void)ark_stats(pCTs[ctxt].ark, &ops, &ios);
+                wr_ops += (uint32_t)ops;
+                wr_ios += (uint32_t)ios;
+                for (pCB=pCTs[ctxt].pCBs;
+                     pCB<pCTs[ctxt].pCBs+jobs;
+                     pCB++)
+                {
+                    pCB->flags |=  KV_ASYNC_RUNNING;
+                    kv_async_GET_KEY(pCB);
+                }
+            }
+        }
+        else if (read100 && !time_started)
+        {
+            usleep(50000);
+            continue;
+        }
+
         ctxt_running = FALSE;
 
         /* loop through contexts(arks) and check if all jobs are done or
@@ -584,8 +618,9 @@ void kv_async_io(char    *dev,
                 }
             }
         }
+        usleep(50000);
     }
-    while (ctxt_running);
+    while (!error_stop && ctxt_running);
 
     testcase_stop = time(0);
     e_secs = testcase_stop - testcase_start;
@@ -598,6 +633,7 @@ void kv_async_io(char    *dev,
         tios += (uint32_t)ios;
     }
 
+    if (read100) {tops-=wr_ops; tios-=wr_ios;}
     tops = tops / e_secs;
     tios = tios / e_secs;
     printf("op/s:%-7d io/s:%-7d secs:%d\n", tops, tios, e_secs);
@@ -605,6 +641,7 @@ void kv_async_io(char    *dev,
     /* sum perf ops for all contexts/jobs and delete arks */
     for (i=0; i<ctxts; i++)
     {
+        for (job=0; job<jobs; job++) {free(pCTs[i].pCBs[job].gvalue);}
         assert(0 == ark_delete(pCTs[i].ark));
     }
 
@@ -641,15 +678,13 @@ uint32_t kv_load(ARK *ark, db_t *db)
 ** \brief
 **   validate that a k/v database exists in the ark
 *******************************************************************************/
-uint32_t kv_query(ARK *ark, db_t *db)
+uint32_t kv_query(ARK *ark, db_t *db, char *buf)
 {
     uint32_t i      = 0;
     uint32_t rc     = 0;
     int64_t  res    = 0;
-    char    *gvalue = NULL;
 
-    gvalue = malloc(db->vlen);
-    assert(gvalue);
+    assert(buf);
 
     for (i=0; i<db->len; i++)
     {
@@ -657,42 +692,11 @@ uint32_t kv_query(ARK *ark, db_t *db)
                                      db->klen,
                                      db->kv[i].key,
                                      db->vlen,
-                                     gvalue,
+                                     buf,
                                      0,
                                      &res))) usleep(10000);
         if (rc)               KV_ERR("get1", rc);
         if (db->vlen != res)  KV_ERR("get2",0);
-
-        while (EAGAIN == (rc=ark_exists(ark,
-                                        db->klen,
-                                        db->kv[i].key,
-                                        &res))) usleep(10000);
-        if (rc)              KV_ERR("exists1",rc);
-        if (db->vlen != res) KV_ERR("exists2",0);
-    }
-    free(gvalue);
-    return 0;
-}
-
-/**
-********************************************************************************
-** \brief
-**   validate that a k/v database exists in the ark
-*******************************************************************************/
-uint32_t kv_exists(ARK *ark, db_t *db)
-{
-    uint32_t i   = 0;
-    uint32_t rc  = 0;
-    int64_t  res = 0;
-
-    for (i=0; i<db->len; i++)
-    {
-        while (EAGAIN == (rc=ark_exists(ark,
-                                        db->klen,
-                                        db->kv[i].key,
-                                        &res))) usleep(10000);
-        if (rc)              KV_ERR("exists1",rc);
-        if (db->vlen != res) KV_ERR("exists2",0);
     }
     return 0;
 }
@@ -728,18 +732,19 @@ uint32_t kv_del(ARK *ark, db_t *db)
 void read_100_percent(worker_t *w)
 {
     int start=0,cur=0,rc=0;
+    char *buf=NULL;
 
-    kv_load(w->ark, w->db);
+    if (0==posix_memalign((void**)&buf, _4K, _64K)) {assert(buf);}
 
     start = time(0);
     do
     {
-        if ((rc=kv_query(w->ark, w->db))) break;
+        if ((rc=kv_query(w->ark, w->db, buf))) break;
         cur = time(0);
     }
     while (cur-start < KV_MIN_SECS);
 
-    kv_del(w->ark, w->db);
+    free(buf);
 }
 
 /**
@@ -750,37 +755,21 @@ void read_100_percent(worker_t *w)
 void read_75_percent(worker_t *w)
 {
     int start=0,cur=0,rc=0;
+    char *buf=NULL;
+
+    if (0==posix_memalign((void**)&buf, _4K, _64K)) {assert(buf);}
 
     start = time(0);
     do
     {
-        if ((rc=kv_load (w->ark, w->db))) break;
-        if ((rc=kv_query(w->ark, w->db))) break;
-        if ((rc=kv_del  (w->ark, w->db))) break;
+        if ((rc=kv_load (w->ark, w->db)))      break;
+        if ((rc=kv_query(w->ark, w->db, buf))) break;
+        if ((rc=kv_query(w->ark, w->db, buf))) break;
+        if ((rc=kv_del  (w->ark, w->db)))      break;
         cur = time(0);
     }
     while (cur-start < KV_MIN_SECS);
-}
-
-/**
-********************************************************************************
-
-** \brief
-**   write and read k/v in a database from the ark to equal 50% reads 50% writes
-*******************************************************************************/
-void do_50_percent_read(worker_t *w)
-{
-    int start=0,cur=0,rc=0;
-
-    start = time(0);
-    do
-    {
-        if ((rc=kv_load  (w->ark, w->db))) break;
-        if ((rc=kv_exists(w->ark, w->db))) break;
-        if ((rc=kv_del   (w->ark, w->db))) break;
-        cur = time(0);
-    }
-    while (cur-start < KV_MIN_SECS);
+    free(buf);
 }
 
 /**
@@ -819,6 +808,9 @@ void kv_sync_io(char    *dev,
     char    *fp_txt = NULL;
     void*  (*fp)(void*);
 
+    init_kv_db(pths, KLEN, vlen, len);
+    NEW_ARK(dev, &ark);
+
     if (read == 75)
     {
         fp = (void*(*)(void*))read_75_percent;
@@ -828,9 +820,9 @@ void kv_sync_io(char    *dev,
     {
         fp = (void*(*)(void*))read_100_percent;
         fp_txt="read:100%";
+        for (i=0; i<pths; i++) {kv_load(ark, dbs+i);}
     }
-    init_kv_db(pths, KLEN, vlen, len);
-    NEW_ARK(dev, &ark);
+
     printf("SYNC:  ctxt:%-2d QD:%-3d size:%2dk %s ", 1, pths, vlen/1000,fp_txt);
     fflush(stdout);
 
@@ -896,6 +888,8 @@ void kv_max_sync_io(char    *dev,
 
     for (i=0; i<MAX_IO_ARKS; i++)
     {
+        for (j=0; j<MAX_IO_PTHS; j++) {kv_load(ark[i], dbs+j);}
+
         /* create all threads */
         for (j=0; j<MAX_IO_PTHS; j++)
         {
@@ -953,47 +947,106 @@ void kv_max_sync_io(char    *dev,
 *******************************************************************************/
 int main(int argc, char **argv)
 {
-    int      i           = 1;
     uint32_t run_to_file = FALSE;
+    char     FF          = 0xFF;
+    char     c           = '\0';
+    char    *dev         = NULL;
+    char    *_secs       = NULL;
+    char    *_QD         = NULL;
+    char    *_RD         = NULL;
+    char    *_np         = NULL;
+    char    *_len        = NULL;
+    uint32_t plun        = 0;
+    uint32_t sync        = 0;
+    uint32_t QD          = 0;
+    uint32_t nRD         = 100;
 
-    if (argv[1]    != NULL &&
-        argv[1][0] == '/'  &&
-        strncmp("/dev/", argv[1], 5) != 0)
+    /*--------------------------------------------------------------------------
+     * process and verify input parms
+     *------------------------------------------------------------------------*/
+    while (FF != (c=getopt(argc, argv, "d:r:q:s:n:l:hpiS")))
+    {
+        switch (c)
+        {
+            case 'd': dev        = optarg; break;
+            case 'r': _RD        = optarg; break;
+            case 'q': _QD        = optarg; break;
+            case 's': _secs      = optarg; break;
+            case 'n': _np        = optarg; break;
+            case 'l': _len       = optarg; break;
+            case 'p': plun       = 1;      break;
+            case 'S': sync       = 1;      break;
+            case 'h':
+            case '?': usage();             break;
+        }
+    }
+    if (_secs)      KV_MIN_SECS = atoi(_secs);
+    if (_QD)        QD          = atoi(_QD);
+    if (_RD)        nRD         = atoi(_RD);
+    if (_np)        KV_NPOOL    = atoi(_np);
+    if (_len)       LEN         = atoi(_len);
+
+    if (QD  >  KV_NASYNC) QD          = KV_NASYNC;
+    if (nRD >= 100)       nRD         = 100;
+    else                  nRD         = 75;
+
+    if (dev !=NULL && strncmp("/dev/", dev, 5) != 0)
     {
         run_to_file = TRUE;
     }
 
-    if (argv[1] == NULL)
+    if (dev == NULL || (dev && strlen(dev)==0))
     {
-        printf("MEMORY: SYNC: npool:%d nasync:%d basync:%d\n",
+        printf("MEMORY: npool:%d nasync:%d basync:%d\n",
                 KV_NPOOL, KV_NASYNC, KV_BASYNC);
     }
-    else if (argv[2]!=NULL && 0 == strncmp(argv[2], "-p", 2))
+    else if (plun)
     {
-        printf("PHYSICAL: %s: SYNC: npool:%d nasync:%d basync:%d\n",
-                 argv[i], KV_NPOOL, KV_NASYNC, KV_BASYNC);
+        printf("PHYSICAL: %s: npool:%d nasync:%d basync:%d\n",
+                 dev, KV_NPOOL, KV_NASYNC, KV_BASYNC);
         ark_create_flag = 0;
+    }
+    else if (QD)
+    {
+        if (sync)
+        {
+            printf("VIRTUAL SYNC: %s: QD:%d npool:%d nasync:%d basync:%d ",
+                   dev, QD, KV_NPOOL, KV_NASYNC, KV_BASYNC);
+        }
+        else
+        {
+            printf("VIRTUAL ASYNC: %s: QD:%d npool:%d nasync:%d basync:%d ",
+                   dev, QD, KV_NPOOL, KV_NASYNC, KV_BASYNC);
+        }
     }
     else
     {
-        printf("VIRTUAL: %s: SYNC: npool:%d nasync:%d basync:%d\n",
-                 argv[i], KV_NPOOL, KV_NASYNC, KV_BASYNC);
+        printf("VIRTUAL: %s: npool:%d nasync:%d basync:%d\n",
+                 dev, KV_NPOOL, KV_NASYNC, KV_BASYNC);
     }
     fflush(stdout);
 
-    kv_async_io(argv[i], 1,  1,       VLEN_4k,  LEN, 100);
-    kv_async_io(argv[i], 1,  KV_JOBS, VLEN_4k,  LEN, 75);
-    kv_async_io(argv[i], 1,  KV_JOBS, VLEN_4k,  LEN, 100);
-    kv_async_io(argv[i], 1,  KV_JOBS, VLEN_64k, LEN, 100);
-    if (ark_create_flag && !run_to_file)
-        kv_async_io(argv[i], 10, 40,  VLEN_4k,  LEN, 100);
+    if (QD)
+    {
+        if (sync) {kv_sync_io(dev, VLEN_4k, LEN, QD, nRD);}
+        else      {kv_async_io(dev, 1, QD, VLEN_4k, LEN, nRD);}
+        exit(0);
+    }
 
-    kv_sync_io(argv[1], VLEN_4k,  LEN, 1,      100);
-    kv_sync_io(argv[1], VLEN_4k,  LEN, KV_PTHS, 75);
-    kv_sync_io(argv[1], VLEN_4k,  LEN, KV_PTHS, 100);
-    kv_sync_io(argv[1], VLEN_64k, LEN, KV_PTHS, 100);
+    kv_async_io(dev, 1,  1,       VLEN_4k,  LEN, 100);
+    kv_async_io(dev, 1,  64,      VLEN_4k,  LEN, 100);
+    kv_async_io(dev, 1,  KV_JOBS, VLEN_4k,  LEN, 75);
+    kv_async_io(dev, 1,  KV_JOBS, VLEN_4k,  LEN, 100);
+    kv_async_io(dev, 1,  KV_JOBS, VLEN_64k, LEN, 100);
     if (ark_create_flag && !run_to_file)
-        kv_max_sync_io(argv[i], VLEN_4k, LEN);
+        kv_async_io(dev, 10, 40,  VLEN_4k,  LEN, 100);
 
-    return 0;
+    kv_sync_io(dev, VLEN_4k,  LEN, 1,      100);
+    kv_sync_io(dev, VLEN_4k,  LEN, KV_PTHS, 75);
+    kv_sync_io(dev, VLEN_4k,  LEN, KV_PTHS, 100);
+    kv_sync_io(dev, VLEN_64k, LEN, KV_PTHS, 100);
+    if (ark_create_flag && !run_to_file)
+        kv_max_sync_io(dev, VLEN_4k, LEN);
+
+    exit(0);
 }

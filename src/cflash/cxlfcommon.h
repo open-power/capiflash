@@ -45,7 +45,12 @@
 
 #define TRACE_ENABLED
 #define KWDATA_SZ 256
-#define MAX_VPD_SIZE 0x58
+#define MAX_VPD_SIZE 0xFF
+/* Minimum VPD size is 16 bytes - 4 bytes of page 0x83 header, 
+ * 4 bytes designator header and 8 bytes for the smallest 
+ * designator such as EUI64
+ */
+#define MIN_VPD_SIZE 0x10
 #define DEV_STRING_SZ 128
 #define MAX_NUM_SGDEVS 4096
 #define MAX_NUM_LUNS 4096
@@ -137,7 +142,7 @@ uint32_t convert_to_binary (uint8_t **output_buffer,
 
 
 bool cxlf_get_mode(char* target_device);
-bool cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid);
+int  cxlf_set_mode(char* target_device, uint8_t target_mode, uint8_t* wwid);
 bool cxlf_parse_wwid(uint8_t* o_buffer, char* i_string, uint8_t i_buffer_sz);
 int extract_lun_from_vpd(const char* i_sgdevpath, uint8_t* o_lun);
 int compare_luns(const void* item1, const void* item2);

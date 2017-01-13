@@ -1,0 +1,685 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/cflash_configure $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
+
+if [[ ! -e /opt ]]; then mkdir /opt; fi
+if [[ ! -e /opt/.lic ]]; then mkdir /opt/.lic; fi
+
+export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/afu
+rc=0
+LD=.EaienF48ajfFgBMIhsalfc
+HD=.Jfa82FBMIhsalfc
+force=no
+ADV_TC=at10
+K_VER="4.4.0-36.55"
+K_VER_INST="4.4.0-36"
+K_VER_GRUB="4.4.0-36-generic"
+
+wget www.ibm.com >/dev/null 2>&1
+internet=$?
+
+##################################
+# Determine distro
+if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];               then ubuntu=1; fi
+if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];         then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1; fi
+
+CF_VER=$(cat ver.txt)
+
+################################################################################
+################################################################################
+################################################################################
+#                                                                              #
+#                                                                              #
+#                               Ubuntu                                         #
+#                                                                              #
+#                                                                              #
+################################################################################
+################################################################################
+################################################################################
+if [[ $ubuntu ]]
+then
+
+ ##################################
+ # install Adv Toolchain and others
+ if [[ -z $(dpkg -l|grep $ADV_TC) && $internet -ne 0 ]]
+ then
+   echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
+ else
+   echo "------------------------------"
+   echo -e "INFO: Checking other dependencies\n"
+
+  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev1:|i  libudev-dev:|i  sg3-utils   ") -ne 6 ]]
+  then
+    apt-get -y install software-properties-common python3-software-properties python3 libudev1 libudev-dev sg3-utils
+  fi
+  if [[ -z $(dpkg -l|grep $ADV_TC) ]]
+  then
+    if [[ $(dpkg -l|egrep -c "i  make   |i  cscope   |i  doxygen   |i  git   |i  gitk   ") -ne 5 ]]
+    then
+      apt-get -fy install make cscope ctags doxygen git
+    fi
+    wget ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu/dists/precise/6976a827.gpg.key
+    apt-key add 6976a827.gpg.key
+    add-apt-repository "deb ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu trusty at10.0 "
+    apt-get -y update
+    apt-get -y install advance-toolchain-at10.0-runtime advance-toolchain-at10.0-perf advance-toolchain-at10.0-devel advance-toolchain-at10.0-mcore-libs
+  fi
+ fi
+
+ if [[ -z $(dpkg -l|grep "i  libudev1:") ]]; then echo "ERROR: libudev1 is not installed."; fi
+ if [[ -z $(dpkg -l|grep $ADV_TC) ]];        then echo "ERROR: $ADV_TC is not installed.";  fi
+
+ ##################################
+ # Check usr-mode software version
+ echo "------------------------------"
+ echo -e "INFO: Checking software versions\n"
+
+ if [[ $ubuntu ]]
+ then
+   ls *cxlflash*.deb >/dev/null 2>&1
+   if [[ $? -ne 0 ]]
+   then
+     echo "ERROR: no cxlflash pkgs found in the current dir"
+     exit 2
+   fi
+
+   if [[ $1 =~ mfg && ! -e /opt/ibm/capikv/lib/libafu.so ]]; then force=yes; fi
+
+   #remove old
+   EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
+   if [[ $EXISTS_LVL =~ ibmcapikv-test ]]
+   then
+     dpkg -r ibmcapikv-test
+   fi
+   if [[ $EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER ]]
+   then
+     dpkg -r cxlflash-test
+   fi
+
+   EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  ibmcapikv |i  cxlflash ")
+   if [[ $EXISTS_LVL =~ ibmcapikv ]]
+   then
+     dpkg -r ibmcapikv
+   fi
+   if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
+   then
+     dpkg -r cxlflash
+   fi
+
+   EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  afuimage |i  cxlflashimage ")
+   if [[ $EXISTS_LVL =~ afuimage ]]
+   then
+     dpkg -r afuimage
+   fi
+   if [[ $EXISTS_LVL =~ cxlflashimage && ! $EXISTS_LVL =~ $CF_VER ]]
+   then
+     dpkg -r cxlflashimage
+   fi
+
+   #install new
+   EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  cxlflash ")
+   if [[ ! $EXISTS_LVL =~ "i  cxlflash " || $force =~ yes || \
+          ($EXISTS_LVL =~ "i  cxlflash " && ! $EXISTS_LVL =~ $CF_VER) ]]
+   then
+     dpkg -i cxlflash_*$CF_VER*.deb
+   fi
+
+   EXISTS_LVL=$(dpkg -l|egrep "i  cxlflash-test")
+   if [[ ! $EXISTS_LVL =~ "i  cxlflash-test" || \
+          ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
+   then
+     dpkg -i cxlflash-test*$CF_VER*.deb
+   fi
+
+   EXISTS_LVL=$(dpkg -l|grep 'i  cxlflashimage')
+   if [[ ! $EXISTS_LVL =~ cxlflashimage || \
+          ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
+   then
+     dpkg -i cxlflashimage*$CF_VER*.deb
+   fi
+ fi
+
+ ##################################
+ # Check LIC
+ if [[ ! $1 =~ mfg ]]
+ then
+   if [[ -e /tmp/cxlflash_headless ]]
+   then
+     echo "INFO: running headless"
+     date > /opt/.lic/$LD
+   else
+     if [[ ! $1 =~ dev ]]
+     then
+       if [[ ! -e /opt/.lic/$LD ]]
+       then
+         echo ""
+         echo "Please review the licenses available in /opt/ibm/capikv/license/"
+         echo "Press 'y' to accept the license agreement, or skip now and rerun later"
+         read char
+         if [[ $char = [yY] ]]
+         then
+           date > /opt/.lic/$LD
+           if [[ -e /opt/$HD && ! -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
+           then
+             mv /opt/$HD/* /opt/ibm/capikv/lib
+           fi
+           rm -R /opt/$HD >/dev/null 2>&1
+         else
+           echo "ERROR: The license must be accepted"
+           if [[ -e /opt/ibm/capikv/lib ]]
+           then
+             if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
+             mv /opt/ibm/capikv/lib/* /opt/$HD
+           fi
+           exit 128
+         fi
+       fi
+     fi
+   fi
+ fi
+
+ ##################################
+ # Check OS version
+ OS_VER=16.04.1
+ if [[ $1 =~ dev ]]
+ then
+   echo "------------------------------"
+   echo -e "INFO: Checking OS version\n"
+ fi
+
+ if [[ ! $(lsb_release -a 2>/dev/null) =~ $OS_VER ]]
+ then
+   if [[ $internet -ne 0 ]]
+   then
+     echo "ERROR: unable to reach the internet for OS updates. A firewall may be up, telnet to www.ibm.com and rerun to update your OS"
+   else
+     if [[ ! $(lsb_release -a 2>/dev/null) =~ $OS_VER ]]
+     then
+       do_upgrade=0
+       if [[ ! -e /tmp/cxlflash_headless ]]
+       then
+         echo "The linux OS must be updated to $OS_VER"
+         echo " enter 'y' to continue, or <enter> to skip the upgrade to $OS_VER"
+         read -r yes
+         if [[ $yes = [Yy] ]]
+         then
+           do_upgrade=1
+         elif [[ ! $1 =~ dev ]]
+         then
+           echo "aborting the install, retry when the OS may be upgraded to $OS_VER"
+           exit 11
+         fi
+       fi
+       if [[ $do_upgrade -eq 1 ]]
+       then
+         apt-get -y install update-manager-core
+         apt-get -y install --reinstall apt
+         apt-get -y update
+         apt-get -y upgrade
+         do-release-upgrade
+         apt-get -y dist-upgrade
+       fi
+     fi
+   fi
+ fi
+
+ ######################################
+ # Check the recommended kernel version
+ if [[ -z $(dpkg -l|grep -v libc|grep "i  linux-image-$K_VER_GRUB") ]]
+ then
+   apt-get -y install linux-image-"$K_VER_INST"-generic
+ fi
+ if [[ -z $(dpkg -l|grep -v libc|grep "i  linux-image-extra-$K_VER_GRUB") ]]
+ then
+   apt-get -y install linux-image-extra-"$K_VER_INST"-generic
+ fi
+ if [[ -z $(dpkg -l|grep -v libc|grep "i  linux-tools-$K_VER_GRUB") ]]
+ then
+   apt-get -y install linux-tools-"$K_VER_INST"-generic
+ fi
+
+ ##################################
+ # check grub.cfg
+ if [[ ! $(grep initrd /boot/grub/grub.cfg|head -1) =~ $K_VER_GRUB ]]
+ then
+   echo -e "\n------------------------------"
+   echo -e "INFO: Fixing grub.cfg\n"
+   ln=$(grep -n "menuentry 'Ubuntu" /boot/grub/grub.cfg|head -1|awk -F: '{print $1}')
+   ln=$((ln-1))
+   head -$ln /boot/grub/grub.cfg > /tmp/new
+   TXT=$(grep -A16 "with Linux $K_VER_GRUB'" /boot/grub/grub.cfg)
+   echo "$TXT" >> /tmp/new
+   awk -v ln=$ln 'NR>ln' /boot/grub/grub.cfg >> /tmp/new
+   cp /boot/grub/grub.cfg /boot/grub/grub.cfg.$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)
+   mv /tmp/new /boot/grub/grub.cfg
+ fi
+
+ ##################################
+ # Check cxlflash pkgs
+ if [[ -z $(dpkg -l|grep "i  cxlflash") ]]
+ then
+   echo -e "\nERROR: cxlflash packages failed to install\n"
+   exit 15
+ fi
+fi
+
+
+################################################################################
+################################################################################
+################################################################################
+#                                                                              #
+#                                                                              #
+#                                  RedHat                                      #
+#                                                                              #
+#                                                                              #
+################################################################################
+################################################################################
+################################################################################
+if [[ $redhat ]]
+then
+  K_VER="3.10.0"
+  K_VER_INST="3.10.0"
+  K_VER_GRUB="3.10.0"
+  CF_VER=$(cat ver.txt | sed 's,-,_,g')
+
+  ##################################
+  # install Adv Toolchain and others
+  if [[ -z $(rpm -qa|grep $ADV_TC) && $internet -ne 0 ]]
+  then
+    echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
+  else
+    echo "------------------------------"
+    echo -e "INFO: Checking other depencencies\n"
+  fi
+  if [[ $(rpm -qa | egrep -c -e "sg3_utils-|systemd-devel" ) -ne 3 ]]
+  then
+    yum -y install sg3_utils systemd-devel
+  fi
+  if [[ -z $(rpm -qa | grep $ADV_TC) ]]
+  then
+    if [[ $(rpm -qa| egrep -c -e"make|cscope|doxygen|git-") -ne 4 ]]
+    then
+      yum -y install make cscope ctags doxygen git
+    fi
+
+    #These commands retrieved from :
+    wget ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-6976a827-5164221b
+    rpm --import gpg-pubkey-6976a827-5164221b
+
+    if [[ ! -e /etc/yum.repos.d/atX.X.repo ]]
+    then
+      #create repo configuration file for advanced tool chain
+      cat > /etc/yum.repos.d/atX.X.repo <<EOF
+#Beginning of configuration file
+[atX.X]
+name=Advance Toolchain Unicamp FTP
+baseurl=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/
+failovermethod=priority
+enabled=1
+gpgcheck=1
+gpgkey=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-6976a827-5164221b
+#End of configuration file
+EOF
+  fi
+
+    if [[ ! -e /etc/yum.repos.d/rhel.kte.repo ]]
+    then
+      #create configuration for RHEL 7.3 repo
+      cat > /etc/yum.repos.d/rhel.kte.repo <<EOF
+[rhel7u3le]
+name=Red Hat Enterprise Linux
+baseurl=http://9.3.117.9/distros/RHEL7.3-LE-Snapshot4/
+enabled=1
+gpgcheck=0
+EOF
+    fi
+
+    yum repolist
+    yum -y update; yum -y upgrade
+    yum -y install advance-toolchain-at10.0-runtime advance-toolchain-at10.0-perf advance-toolchain-at10.0-devel advance-toolchain-at10.0-mcore-libs
+  fi
+
+  if [[ -z $(rpm -qa|grep "systemd-devel") ]]; then echo "ERROR: systemd-devel is not installed."; exit 1 ;fi
+  if [[ -z $(rpm -qa|grep $ADV_TC) ]];         then echo "ERROR: $ADV_TC is not installed.";       exit 1;fi
+
+  ##################################
+  # Check usr-mode software version
+  echo "------------------------------"
+  echo -e "INFO: Checking software versions\n"
+
+  ls *cxlflash*.rpm >/dev/null 2>&1
+  if [[ $? -ne 0 ]]
+  then
+    echo "ERROR: no cxlflash pkgs found in the current dir"
+    exit 2
+  fi
+
+  if [[ $1 =~ mfg && ! -e /opt/ibm/capikv/lib/libafu.so ]]; then force=yes; fi
+
+  ################
+  #remove old
+  EXISTS_LVL=$(rpm -qa|egrep "ibmcapikv-test|cxlflash-test")
+  if [[ $EXISTS_LVL =~ ibmcapikv-test ]]
+  then
+    rpm -e ibmcapikv-test
+  fi
+  if [[ $EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER ]]
+  then
+    rpm -e -v cxlflash-test
+  fi
+
+  EXISTS_LVL=$(rpm -qa|grep -v test|egrep "ibmcapikv|cxlflash")
+  if [[ $EXISTS_LVL =~ ibmcapikv ]]
+  then
+    rpm -e -v  ibmcapikv
+  fi
+  if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
+  then
+    rpm -e -v cxlflash
+  fi
+
+  EXISTS_LVL=$(rpm -qa|grep -v test|egrep "afuimage|cxlflashimage")
+  if [[ $EXISTS_LVL =~ afuimage ]]
+  then
+    rpm -e afuimage
+  fi
+  if [[ $EXISTS_LVL =~ cxlflashimage && ! $EXISTS_LVL =~ $CF_VER ]]
+  then
+    rpm -e cxlflashimage
+  fi
+
+  #################
+  #install new: redhat if another version exists can't install
+  EXISTS_LVL=$(rpm -qa|grep -v test|egrep "cxlflash")
+  if [[ ! $EXISTS_LVL =~ "cxlflash" || $force =~ yes || \
+         ($EXISTS_LVL =~ "cxlflash" && ! $EXISTS_LVL =~ $CF_VER) ]]
+  then
+    rpm -i -v cxlflash-*$CF_VER*.rpm
+  fi
+
+  EXISTS_LVL=$(rpm -qa|egrep "cxlflash-test")
+  if [[ ! $EXISTS_LVL =~ "cxlflash-test" || \
+         ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
+  then
+    rpm -i -v cxlflash-test*$CF_VER*.rpm
+  fi
+
+  EXISTS_LVL=$(rpm -qa|grep 'cxlflashimage')
+  if [[ ! $EXISTS_LVL =~ cxlflashimage || \
+         ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
+  then
+    rpm -i -v cxlflashimage*$CF_VER*.rpm
+  fi
+
+  ##################################
+  # Check LIC
+  if [[ ! $1 =~ mfg ]]
+  then
+    if [[ -e /tmp/cxlflash_headless ]]
+    then
+      echo "INFO: running headless"
+      date > /opt/.lic/$LD
+    else
+      if [[ ! $1 =~ dev ]]
+      then
+        if [[ ! -e /opt/.lic/$LD ]]
+        then
+          echo ""
+          echo "Please review the licenses available in /opt/ibm/capikv/license/"
+          echo "Press 'y' to accept the license agreement, or skip now and rerun later"
+          read char
+          if [[ $char = [yY] ]]
+          then
+            date > /opt/.lic/$LD
+            if [[ -e /opt/$HD && ! -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
+            then
+              mv /opt/$HD/* /opt/ibm/capikv/lib
+            fi
+            rm -R /opt/$HD >/dev/null 2>&1
+          else
+            echo "ERROR: The license must be accepted"
+            if [[ -e /opt/ibm/capikv/lib ]]
+            then
+              if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
+              mv /opt/ibm/capikv/lib/* /opt/$HD
+            fi
+            exit 128
+          fi
+        fi
+      fi
+    fi
+  fi
+
+  ##################################
+  # Check OS version
+  OS_VER=7.3
+  if [[ $1 =~ dev ]]
+  then
+    echo "------------------------------"
+    echo -e "INFO: Checking OS version\n"
+  fi
+
+  if [[ ! $(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}') =~ $OS_VER || -z $(rpm -q kernel |grep $K_VER) ]]
+  then
+    if [[ $internet -ne 0 ]]
+    then
+      echo "ERROR: unable to reach the internet for OS updates. A firewall may be up, telnet to www.ibm.com and rerun to update your OS"
+    else
+      if [[ ! $(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}' ) =~ $OS_VER ]]
+      then
+        do_upgrade=0
+        if [[ ! -e /tmp/cxlflash_headless ]]
+        then
+          echo "The linux OS must be updated to $OS_VER"
+          echo " enter 'y' to continue, or <enter> to skip the upgrade to $OS_VER"
+          read -r yes
+          if [[ $yes = [Yy] ]]
+          then
+            do_upgrade=1
+          elif [[ ! $1 =~ dev ]]
+          then
+            echo "aborting the install, retry when the OS may be upgraded to $OS_VER"
+            exit 11
+          fi
+        fi
+        if [[ $do_upgrade -eq 1 ]]
+        then
+          echo "Don't know how to upgrade to $OS_VER. You must updgrade."
+          #TODO:
+          #yum -y install update-manager-core
+          #yum -y install --reinstall apt
+          #yum -y update
+          #yum -y upgrade
+          #do-release-upgrade
+          #yum -y dist-upgrade
+        fi
+      fi
+
+      if [[ -z $(rpm -q kernel | grep $K_VER) ]]
+      then
+        echo "Don't know how to upgrade to $K_VER kernel. You must updgrade."
+        #TODO:
+        #yum -y install linux-image-"$K_VER_INST"-generic
+        #yum -y install linux-image-extra-"$K_VER_INST"-generic
+        #yum -y install linux-tools-"$K_VER_INST"-generic
+        #yum -y install linux-headers-"$K_VER_INST"-generic
+      fi
+    fi
+  fi
+
+  ##################################
+  # Check cxlflash pkgs
+  if [[ -z $(rpm -qa|grep "cxlflash") ]]
+  then
+    echo -e "\nERROR: cxlflash packages failed to install\n"
+    exit 15
+  fi
+fi
+
+
+################################################################################
+################################################################################
+################################################################################
+#                                                                              #
+#                                                                              #
+#                                  Common                                      #
+#                                                                              #
+#                                                                              #
+################################################################################
+################################################################################
+################################################################################
+
+  ##################################
+  # Check AFU version
+  echo -e "\n------------------------------"
+  echo -e "INFO: Checking firmware versions\n"
+
+  systemctl stop cxlfd.service
+  if [[ $1 =~ dev && -e /sbin/multipath && -n $(lsmod | grep multipath) ]]; then multipath -F; fi
+
+  for x in 1 2 3
+  do
+    lsmod | grep cxlflash >/dev/null 2>&1
+    if [[ $? -eq 0 ]]
+    then
+      rmmod cxlflash >/dev/null 2>&1
+      if [[ $? -ne 0 && $x -eq 3 ]]
+      then
+        lsof|grep cxlflash
+        echo "ERROR: unable to unload cxlflash"
+        if [[ ! $1 =~ dev && -e /sbin/multipath && -n $(lsmod | grep multipath) ]]
+        then
+          echo "       you could try 'multipath -F'"
+        fi
+        exit 3
+      else
+        sleep 1
+      fi
+    fi
+  done
+
+  adaps=$(lspci|grep 0601|awk '{print $1}') #FlashGT
+
+  flash_all_adapters -reload
+  sleep 2
+
+  if [[ -z $(lsmod |grep cxlflash) ]]; then modprobe cxlflash; fi
+  if [[ $? -ne 0 ]]
+  then
+    echo "ERROR: unable to reload cxlflash"
+    exit 4
+  fi
+  echo ""
+
+  systemctl restart cxlfd.service
+
+  ##################################
+  # Re-check all versions
+  echo -e "\n------------------------------"
+  cflash_version $K_VER
+  if [[ $? -ne 0 ]]
+  then
+    echo -e "\n\n*************************"
+    echo -e "ERROR: ABORTING..."
+    echo -e "*************************\n\n"
+    exit 5
+  fi
+  echo -e "\nINFO: Installed Versions....OK\n"
+
+  ##################################
+  # Check for FlashGT devices
+  echo -e "\n------------------------------"
+  echo -e "INFO: Checking for devices\n"
+
+  #check that sg devices show up
+  adapN=0
+  for adap in $adaps; do let adapN=$adapN+1; done
+  if [[ $adapN -eq 0 ]]
+  then
+    echo "INFO: no capiflash EJ1K adapters found"
+    exit 0
+  fi
+
+  if [[ $VM ]]
+  then
+    sgs=$(for adap in $adaps
+        do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|awk -F/ '{print $12}' |tr -d '\r'
+        done)
+  else
+    sgs=$(for adap in $adaps
+        do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|awk -F/ '{print $13}' |tr -d '\r'
+        done)
+  fi
+
+  sglist=""
+  sgN=0
+  for sg in $sgs; do sgN=$((sgN+1)); sglist="$sglist /dev/$sg "; done
+  sglist=$(echo $sglist|tr -d '\r')
+  if [[ $sgN -ne  $((adapN*2)) ]] #FlashGT
+  then
+    echo "ERROR: #adaps($adapN) should have $((adapN*2)) sg devices, but there are only $sgN devices"
+    exit 7
+  fi
+
+  ##################################
+  # Check IO
+  echo -e "\n------------------------------"
+  echo -e "INFO: Checking IO\n"
+  unset CFLSH_BLK_TRC_VERBOSITY
+
+  for sg in $sglist
+  do
+    legacy=0
+    if [[ $(cxlfstatus|grep ${sg:5:6}) =~ legacy ]]
+    then
+      legacy=1
+      wwid=$(cxlfstatus|grep ${sg:5:6}|awk '{print $5}')
+      cxlfsetlunmode $wwid 1 >/dev/null
+    fi
+    iops=$(LD_LIBRARY_PATH=/opt/ibm/capikv/lib /opt/ibm/capikv/bin/blockio -d $sg -s5 2>&1)
+    if [[ ! $iops =~ err && $(echo $iops|awk -Fiops: '{print $2}') -gt 140000 ]]
+    then
+      echo "  $sg OK"
+    else
+      echo "  $sg failed ($iops)"
+      rc=8
+    fi
+    if [[ $legacy -eq 1 ]]; then cxlfsetlunmode $wwid 0 >/dev/null; fi
+  done
+  if [[ $rc -ne 0 ]]; then echo "ERROR: IO Test failed"; exit $rc; fi
+
+  if [[ $1 =~ mfg ]]
+  then
+    if [[ -e /opt/.lic/$LD ]]; then rm -f /opt/.lic/$LD; fi
+    if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
+    mv /opt/ibm/capikv/lib/* /opt/$HD
+  fi
+
+  echo -e "\nINSTALL success"
+
+exit 0

@@ -1,0 +1,186 @@
+#! /usr/bin/perl
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/cflash_perf.pl $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+##
+use strict;
+use warnings;
+use Fcntl;
+use Fcntl ':seek';
+use Getopt::Long;
+
+my $adap;
+my $ci=0;
+my @devs;
+my $di=0;
+my @start;
+my @last;
+my @last_rds;
+my $cfg_devid;
+my @stime;
+my $time;
+my $sleep=2;
+my $secs;
+my $long;
+my $prthelp;
+my $pstr;
+my $iops;
+my $tiops;
+my $rd_iops;
+my $t_rd_iops;
+my $ratio;
+
+#-------------------------------------------------------------------------------
+# print usage
+#-------------------------------------------------------------------------------
+sub usage()
+{
+  print "\n";
+  print "Usage: [-l] [-s secs]\n";
+  print "    -l             : histogram format           \n";
+  print "    -s             : update interval seconds    \n";
+  print "    -h or --help   : Help - Print this message  \n\n";
+  exit 0;
+}
+
+#check sudo permissions
+(`id -u` == 0) || die "Run with sudo permissions";
+
+#-------------------------------------------------------------------------------
+# Make stdout autoflush
+#-------------------------------------------------------------------------------
+select(STDOUT);
+$| = 1;
+
+#-------------------------------------------------------------------------------
+# Main
+#-------------------------------------------------------------------------------
+if (@ARGV==0) {usage();}
+
+if (! GetOptions ("long"       => \$long,
+                  "s=i"        => \$sleep,
+                  "h|help!"    => \$prthelp,
+                  ))
+{
+  usage();
+}
+if ($ARGV[0])
+{
+  print "\nUnknown Command Line Options:\n";
+  foreach(@ARGV)
+  {
+    print "   $_\n";
+  }
+  print "\n";
+  usage();
+}
+if ($prthelp) {usage();}
+$sleep = $sleep > 60 ? 60 : $sleep;
+
+#-------------------------------------------------------------------------------
+# BMC -list CAPI Devices
+#-------------------------------------------------------------------------------
+
+while (1)
+{
+  my @files = </sys/bus/pci/devices/*>;
+  my ($vendor, $device);
+
+  for my $file ( @files )
+  {
+    open(F, $file . "/vendor") or die "ERROR: Can't open $file: $!";
+    read(F, $vendor, 6);
+    close (F);
+    open(F, $file . "/device") or die "ERROR: Can't open $file: $!";
+    read(F, $device, 6);
+    close (F);
+
+    if (($vendor eq "0x1014") && ($device eq "0x0601"))
+    {
+      my @dds = split /\//, $file;
+      $adap = pop @dds;
+
+      for (my $i=0; $i<2; $i++)
+      {
+        my $devstr=`ls -d /sys/devices/*/*/$adap/*/*/host*/target*:$i:*/*:*:*:*/scsi_generic/* 2>/dev/null`;
+        if ($? != 0) {next;}
+        my @sdev=split /\//, $devstr;
+        $devs[$di]=$sdev[12];
+        chomp $devs[$di];
+        my $rds=`sg_logs /dev/$devs[$di] -a|grep "read commands ="|awk '{print \$6}'`;
+        my $wrs=`sg_logs /dev/$devs[$di] -a|grep "write commands ="|grep -v plus|awk '{print \$6}'`;
+        chomp $rds;
+        chomp $wrs;
+        $last[$di]=$rds+$wrs;
+        $last_rds[$di]=$rds;
+        $stime[$di]=time;
+        ++$di;
+      }
+    }
+  }
+
+  sleep 1;
+
+  #print iops in infinite loop
+  while (1)
+  {
+    my $cnt;
+
+    sleep $sleep;
+
+    if ($long) {$pstr=`date|awk '{print \$1" "\$2" "\$3" "\$4"  =>  "}'`; chomp $pstr;}
+    else       {$pstr="";}
+
+    $tiops=0; $t_rd_iops=0; $ratio=0;
+    for (my $i=0; $i<$di; $i++)
+    {
+      `sg_logs /dev/$devs[$i] -a >/dev/null 2>&1`;
+      if ($? !=0) {next;}
+      my $rds=`sg_logs /dev/$devs[$i] -a|grep "read commands ="|awk '{print \$6}'`;
+      my $wrs=`sg_logs /dev/$devs[$i] -a|grep "write commands ="|grep -v plus|awk '{print \$6}'`;
+      $secs=time-$stime[$i];
+      $stime[$i]=time;
+      chomp $rds;
+      chomp $wrs;
+      $cnt=$rds+$wrs;
+      $iops=($cnt-$last[$i])/$secs;
+      $tiops+=$iops;
+      $rd_iops=($rds-$last_rds[$i])/$secs;
+      $t_rd_iops+=$rd_iops;
+      $last[$i]=$cnt;
+      $last_rds[$i]=$rds;
+      my $str=sprintf(" %s:%-7d", $devs[$i], $iops);
+      $pstr.=$str;
+    }
+    if ($t_rd_iops>0) {$ratio=$t_rd_iops/$tiops;}
+    if ($tiops>0) {$ratio+=0.005;}
+    $ratio*=100;
+    $ratio=$ratio > 100 ? 100 : $ratio;
+    if ($long) {printf("%s   total:%-8d rds:%d%%\n",                   $pstr, $tiops, $ratio);}
+    else       {printf("%s   total:%-8d rds:%d%%                  \r", $pstr, $tiops, $ratio);}
+
+    if ($di == 0) {last;}
+  }
+}
+

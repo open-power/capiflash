@@ -32,6 +32,9 @@
 #ifdef BLOCK_FILEMODE_ENABLED
 #include <sys/stat.h> 
 #endif
+#ifdef _AIX
+#include <sys/scsi.h>
+#endif
 
 
 char             cblk_filename[PATH_MAX];
@@ -370,6 +373,133 @@ int cblk_valid_endianess(void)
 
 /* ----------------------------------------------------------------------------
  *
+ * NAME: cblk_get_host_type
+ *                  
+ * FUNCTION:  Determine if this OS is running on Bare Metal, pHyp
+ *            or PowerKVM.
+ *          
+ *
+ *
+ * CALLED BY:
+ *    
+ *
+ * INTERNAL PROCEDURES CALLED:
+ *      
+ *     
+ *                              
+ * EXTERNAL PROCEDURES CALLED:
+ *     
+ *      
+ *
+ * RETURNS:     
+ *     
+ * ----------------------------------------------------------------------------
+ */ 
+
+
+void cblk_get_host_type(void)
+{
+#ifdef _AIX
+
+    /*
+     * For AIX always assume pHyp platform type
+     */
+
+    cflsh_blk.host_type = CFLASH_HOST_PHYP;
+    return;
+
+#else
+#define CFLASH_BLOCK_HOST_BUF_SIZE   256
+    FILE *fp;
+    char buf[CFLASH_BLOCK_HOST_BUF_SIZE];
+    char *platform_line;
+
+    /*
+     * Set host type to unknown until we had a chance
+     * to deterine otherwise.
+     */
+
+    cflsh_blk.host_type = CFLASH_HOST_UNKNOWN;
+
+    if ((fp = fopen(CFLASH_BLOCK_HOST_TYPE_FILE,"r")) == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"Can not determine host type, failed to open = %s",
+			    CFLASH_BLOCK_HOST_TYPE_FILE);
+	return;
+    }
+
+
+    
+    while (fgets(buf,CFLASH_BLOCK_HOST_BUF_SIZE,fp)) {
+
+
+	/*
+	 * The /proc/cpuinfo file will have a line
+	 * that starts with the format:
+	 *
+	 *     platform    :
+	 *
+	 * after the ":" will be the platform/host type
+	 *
+	 * So we first search for platform, then extract out 
+	 * platform/host type.
+	 */
+
+	platform_line = strstr(buf,"platform");
+
+	if ((platform_line) &&
+	     (strstr(platform_line,":")) ) {
+
+	    CBLK_TRACE_LOG_FILE(9,"Platform_line = %s",platform_line);
+
+
+	    /*
+	     * NOTE: The order below is import, because two of the 
+	     * platform strings start with pSeries.
+	     */
+
+	    if (strstr(platform_line,"PowerNV")) {
+
+		CBLK_TRACE_LOG_FILE(9,"BML host type");
+		cflsh_blk.host_type = CFLASH_HOST_NV;
+
+		break;
+	    } else if (strstr(platform_line,"pSeries (emulated by qemu)")) {
+
+		CBLK_TRACE_LOG_FILE(9,"PowerKVM host type");
+		cflsh_blk.host_type = CFLASH_HOST_KVM;
+
+	    } else if (strstr(platform_line,"pSeries")) {
+
+		CBLK_TRACE_LOG_FILE(9,"pHyp host type");
+		cflsh_blk.host_type = CFLASH_HOST_PHYP;
+
+	    } else {
+		CBLK_TRACE_LOG_FILE(1,"Unknown platform string= %s",
+			    platform_line);
+	    }
+
+	    break;
+
+
+	}
+
+    }
+
+    if (cflsh_blk.host_type == CFLASH_HOST_UNKNOWN) {
+
+	CBLK_TRACE_LOG_FILE(9,"could not determine host type");
+    }
+
+
+    fclose (fp);
+    
+    return;
+#endif
+}
+
+/* ----------------------------------------------------------------------------
+ *
  * NAME: cblk_chunk_sigsev_handler
  *                  
  * FUNCTION:  Since a failing CAPI adapter, can generate SIGSEV
@@ -416,7 +546,7 @@ void  cblk_chunk_sigsev_handler (int signum, siginfo_t *siginfo, void *uctx)
 
     for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
 
-	chunk = cflsh_blk.hash[i];
+	chunk = cflsh_blk.hash[i].head;
     
 
 	while (chunk) {
@@ -455,6 +585,180 @@ void  cblk_chunk_sigsev_handler (int signum, siginfo_t *siginfo, void *uctx)
     return;
 }
 
+/*
+ * NAME:        cblk_reopen_after_fork
+ *
+ * FUNCTION:    After a fork, this routine reuses an existing chunk
+ *              for a physical lun and reopens it for use by the child.
+ *
+ * NOTES:       Assumes caller as the cflsh_blk.global_lock.
+ *
+ * INPUTS:
+ *              path - Path of device to open
+ *          
+ *              flags - Flags for open
+ *
+ * RETURNS:
+ *              None
+ *              
+ */
+
+void cblk_reopen_after_fork(cflsh_chunk_t *chunk, int flags)
+{
+    int cleanup_depth;
+#ifndef BLOCK_FILEMODE_ENABLED
+    int mode = 0;
+    int i;
+#endif /* BLOCK_FILEMODE_ENABLED */
+    cflsh_cmd_info_t *cmdi;
+    cflsh_cmd_info_t *next_cmdi;
+    
+    errno = 0;
+    
+    /*
+     * Reopen after fork only works for physical luns. 
+     */
+    
+    if (chunk->flags & CFLSH_CHNK_VLUN) {
+	
+	
+	
+        CBLK_TRACE_LOG_FILE(1,"virtual lun attempted to reopen after fork flags = 0x%x",
+			    chunk->flags);
+        return;
+        
+    }
+
+    CFLASH_BLOCK_LOCK(chunk->lock);
+    
+    CBLK_TRACE_LOG_FILE(9,"reopening for %s starting",chunk->dev_name);
+    /*
+     * Clear some statistics. We can not clear
+     * all stats, because the code below will not
+     * correctly reset some of them. Also the num_paths
+     * is correct initially until we clean up below and
+     * then it will get reset to the current number of paths.
+     */
+
+    chunk->stats.num_active_threads = 0;
+    chunk->stats.num_reads = 0;
+    chunk->stats.num_areads = 0;
+    chunk->stats.num_writes = 0;
+    chunk->stats.num_awrites = 0;
+
+
+    cmdi = chunk->head_act;
+
+    while (cmdi) {
+
+	next_cmdi = cmdi->act_next;
+
+
+	CBLK_FREE_CMDI(chunk,cmdi);
+	    
+
+	cmdi = next_cmdi;
+    }
+
+#ifndef BLOCK_FILEMODE_ENABLED
+
+    if (chunk->flags & (CFLSH_CHNK_RD_AC|CFLSH_CHNK_WR_AC))  {
+	mode = O_RDWR;
+
+    } else if (chunk->flags & CFLSH_CHNK_RD_AC)  {
+
+	mode = O_RDONLY;
+    } else if (chunk->flags & CFLSH_CHNK_WR_AC)  {
+
+	mode = O_WRONLY;
+    }
+
+    /*
+     * Unmap all mmio space in use
+     */
+
+    cblk_chunk_unmap(chunk,FALSE);
+
+    
+
+    CBLK_TRACE_LOG_FILE(9,"reopening successful for %s",chunk->dev_name);
+    cleanup_depth = 30;
+
+
+    for (i=0;i < chunk->num_paths;i++) {
+
+
+	if (cblk_chunk_attach_process_map_path(chunk,i,mode,
+					       chunk->path[i]->afu->adap_devno,
+					       chunk->dev_name,
+					       chunk->path[i]->fd,0,
+					       &cleanup_depth,FALSE)) {
+
+	    CBLK_TRACE_LOG_FILE(1,"Unable to attach errno = %d",errno);
+	    chunk->path[i]->flags &= ~CFLSH_PATH_ACT;
+
+	    chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+
+	    return;
+	}
+    }
+    
+    CBLK_TRACE_LOG_FILE(9,"reopening attach/map successful for %s",chunk->dev_name);
+    
+#endif /* ! BLOCK_FILEMODE_ENABLED */
+
+    cleanup_depth = 40;
+    
+#ifdef _COMMON_INTRPT_THREAD
+    
+    
+    if (cblk_start_common_intrpt_thread(chunk)) {
+	
+	
+	CBLK_TRACE_LOG_FILE(1,"cblk_start_common_intrpt thread failed with errno= %d",
+			    errno);
+	
+	
+	cblk_chunk_open_cleanup(chunk,cleanup_depth);
+	
+	CFLASH_BLOCK_UNLOCK(chunk->lock);
+	
+	free(chunk);
+	
+	
+	return;
+    }
+    
+    cleanup_depth = 45;
+#endif 
+    
+#ifndef BLOCK_FILEMODE_ENABLED
+    CBLK_TRACE_LOG_FILE(9,"started background interrupt thread for child for %s",chunk->dev_name);
+    if (cblk_chunk_get_mc_device_resources(chunk,&cleanup_depth)) {
+	
+	
+	CBLK_TRACE_LOG_FILE(5,"cblk_get_device_info failed errno = %d",
+			    errno);
+	
+	cblk_chunk_open_cleanup(chunk,cleanup_depth);
+	
+	CFLASH_BLOCK_UNLOCK(chunk->lock);
+	
+	free(chunk);
+	
+	
+	return;
+	
+    }
+#endif /* ! BLOCK_FILEMODE_ENABLED */
+
+    CFLASH_BLOCK_UNLOCK(chunk->lock);
+
+    CBLK_TRACE_LOG_FILE(5,"reopening for %s completed",chunk->dev_name);
+
+    return;
+}
+
 
 /* ----------------------------------------------------------------------------
  *
@@ -476,6 +780,7 @@ void  cblk_chunk_sigsev_handler (int signum, siginfo_t *siginfo, void *uctx)
 void cblk_prepare_fork (void)
 {
     cflsh_chunk_t *chunk = NULL;
+    cflsh_afu_t *afu = NULL;
     int i;
 
 
@@ -486,7 +791,7 @@ void cblk_prepare_fork (void)
 
     for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
 
-	chunk = cflsh_blk.hash[i];
+	chunk = cflsh_blk.hash[i].head;
     
 
 	while (chunk) {
@@ -499,7 +804,16 @@ void cblk_prepare_fork (void)
 
     } /* for */
 
+    afu = cflsh_blk.head_afu;
 
+
+    while (afu) {
+
+
+	CFLASH_BLOCK_LOCK(afu->lock);
+
+	afu = afu->next;
+    }
     return;
 }
 
@@ -523,6 +837,7 @@ void cblk_prepare_fork (void)
 void  cblk_parent_post_fork (void)
 {
     cflsh_chunk_t *chunk = NULL;
+    cflsh_afu_t *afu = NULL;
     int i;
     int rc;
 
@@ -530,7 +845,7 @@ void  cblk_parent_post_fork (void)
 
     for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
 
-	chunk = cflsh_blk.hash[i];
+	chunk = cflsh_blk.hash[i].head;
     
 
 	while (chunk) {
@@ -544,6 +859,17 @@ void  cblk_parent_post_fork (void)
     } /* for */
 
 
+    afu = cflsh_blk.head_afu;
+
+
+    while (afu) {
+
+
+	CFLASH_BLOCK_UNLOCK(afu->lock);
+
+	afu = afu->next;
+    }
+
 
     rc = pthread_mutex_unlock(&cblk_log_lock);
 
@@ -556,7 +882,7 @@ void  cblk_parent_post_fork (void)
 
 	for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
 
-	    chunk = cflsh_blk.hash[i];
+	    chunk = cflsh_blk.hash[i].head;
     
 
 	    if (chunk) {
@@ -573,8 +899,6 @@ void  cblk_parent_post_fork (void)
 
 	}
     }
-
-
     CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
     return;
 }
@@ -600,13 +924,14 @@ void  cblk_parent_post_fork (void)
 void  cblk_child_post_fork (void)
 {
     cflsh_chunk_t *chunk = NULL;
+    cflsh_afu_t *afu = NULL;
     int i;
     int rc;
 
 
     for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
 
-	chunk = cflsh_blk.hash[i];
+	chunk = cflsh_blk.hash[i].head;
     
 
 	while (chunk) {
@@ -620,6 +945,18 @@ void  cblk_child_post_fork (void)
     } /* for */
 
 
+    afu = cflsh_blk.head_afu;
+
+
+    while (afu) {
+
+
+	afu->num_issued_cmds = 0;
+	afu->cmd_room = 0;
+	CFLASH_BLOCK_UNLOCK(afu->lock);
+
+	afu = afu->next;
+    }
 
     rc = pthread_mutex_unlock(&cblk_log_lock);
 
@@ -633,7 +970,7 @@ void  cblk_child_post_fork (void)
 
 	for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
 
-	    chunk = cflsh_blk.hash[i];
+	    chunk = cflsh_blk.hash[i].head;
     
 
 	    if (chunk) {
@@ -649,8 +986,67 @@ void  cblk_child_post_fork (void)
 	    cblk_notify_mc_err(chunk,0,0x206,rc, CFLSH_BLK_NOTIFY_SFW_ERR,NULL);
 
 	}
+    } else {
+	
+	/*
+	 * Since we forked the child, get its new PID
+	 * and clear its old process name if known.
+	 */
+	cflsh_blk.caller_pid = getpid();
+	
+	
+	if (cflsh_blk.process_name) {
+	    
+	    free(cflsh_blk.process_name);
+	}
+	
+	/*
+	 * Since we forked the child, if we have tracing turned
+	 * on for a trace file per process, then we need to
+	 * open the new file for this child's PID.  The routine
+	 * cblk_setup_trace_files will handle the situation
+	 * where multiple chunks are cloned and using the same
+	 * new trace file.
+	 */
+	
+	cblk_setup_trace_files(TRUE);
+	
+	CBLK_TRACE_LOG_FILE(9,"child_fork");
+
+
+	for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
+	    
+	    chunk = cflsh_blk.hash[i].head;
+	    
+	    
+	    while (chunk) {
+		
+		if (!(chunk->flags & CFLSH_CHNK_VLUN)) {
+		    
+		    /*
+		     * Only handle physical luns here. Virtual luns
+		     * are handled separately with an explicit call
+		     * to cblk_clone_after_fork. 
+		     *
+		     * For physical luns we will reuse the chunk.
+		     */
+		    
+		    cblk_reopen_after_fork(chunk,0);
+		}
+
+		chunk = chunk->next;
+		
+	    } /* while */
+	    
+	    
+	} /* for */
+
+
+ 
+	CBLK_TRACE_LOG_FILE(9,"child_fork");
     }
 
+	
 
     CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 
@@ -869,6 +1265,17 @@ cflsh_block_chunk_type_t cblk_get_chunk_type(const char *path, int arch_type)
 {
     
     cflsh_block_chunk_type_t chunk_type;
+#ifdef BLOCK_FILEMODE_ENABLED
+    char *env_arch_type = getenv("CFLSH_BLK_ARCH_TYPE");
+
+
+    if (env_arch_type) {
+
+	chunk_type = atoi(env_arch_type);
+
+	return chunk_type;
+    } 
+#endif /* BLOCK_FILEMODE_ENABLED */
 
 
     if (arch_type) {
@@ -925,6 +1332,7 @@ int  cblk_set_fcn_ptrs(cflsh_path_t *path)
 
     switch (path->type) {
     case CFLASH_BLK_CHUNK_SIS_LITE:
+    case CFLASH_BLK_CHUNK_SIS_LITE_SQ:
 
 	/*
 	 * SIS Lite adapter/AFU type
@@ -994,21 +1402,38 @@ int cblk_alloc_hrrq_afu(cflsh_afu_t *afu, int num_cmds)
     }
 
     /*
-     * Align RRQ on cacheline boundary.
+     * Align start/end RRQ on cacheline boundary. 
+     *
+     * NOTE: We will pad out the end of the rrq to     
+     *       to the next cacheline. This is needed
+     *       in case we encounter a UE on the RRQ.
+     *       The dcbz interface to clear the poison bits
+     *       works only on cachelines. Thus we can not
+     *       allow someone else to potentiallly share the
+     *       cacheline with the last RRQ entry pointers.
      */
 
-    if ( posix_memalign((void *)&(afu->p_hrrq_start),128,
-			(sizeof(*(afu->p_hrrq_start)) * num_cmds))) {
+    afu->size_rrq = sizeof(*(afu->p_hrrq_start)) * num_cmds;
+
+    
+    if ((afu->size_rrq) % CBLK_CACHE_LINE_SIZE ) {
+
+
+	afu->size_rrq = ((afu->size_rrq)/CBLK_CACHE_LINE_SIZE  + 1) * CBLK_CACHE_LINE_SIZE;
+    }
+
+
+
+    if ( posix_memalign((void *)&(afu->p_hrrq_start),CBLK_CACHE_LINE_SIZE,afu->size_rrq)) {
 
 		    
-	CBLK_TRACE_LOG_FILE(1,"Failed posix_memalign for rrq errno= %d",errno);
+	CBLK_TRACE_LOG_FILE(1,"Failed posix_memalign for rrq errno= %d, size_rrq = %d",errno,afu->size_rrq);
 
 	return -1;
 
     }
 
-    bzero((void *)afu->p_hrrq_start ,
-	  (sizeof(*(afu->p_hrrq_start)) * num_cmds));
+    bzero((void *)afu->p_hrrq_start ,afu->size_rrq);
 
 
     afu->p_hrrq_end = afu->p_hrrq_start + (num_cmds - 1);
@@ -1073,6 +1498,145 @@ int cblk_free_hrrq_afu(cflsh_afu_t *afu)
     return 0;
 }
 
+
+
+/*
+ * NAME:        cblk_alloc_sq_afu
+ *
+ * FUNCTION:    This routine allocates and initializes
+ *              the SQ (submission queue) per AFU.
+ *
+ * NOTE:        This routine assumes the caller
+ *              has the cflsh_blk.global_lock.
+ *
+ *
+ * INPUTS:
+ *              NONE
+ *
+ * RETURNS:
+ *              0        - Success
+ *              nonzero  - Failure
+ *              
+ */
+int cblk_alloc_sq_afu(cflsh_afu_t *afu, int num_cmds)
+{
+    int rc = 0;
+
+
+    if (num_cmds == 0) {
+
+	CBLK_TRACE_LOG_FILE(1,"num_cmds = 0");
+
+	return -1;
+
+    }
+
+    if (afu == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"No AFU provided");
+
+	return -1;
+
+    }
+
+
+    if (afu->p_sq_start) {
+
+	//TODO:?? CBLK_TRACE_LOG_FILE(5,"SQ allocated already");
+
+	// TODO:?? Maybe this should be failed eventually.
+	return 0;
+    }
+
+    /*
+     * Align start SQ on page boundary and end of SQ on
+     * cache line boundary.
+     *
+     * NOTE: We will pad out the end of the sq to     
+     *       to the next cacheline. This is being
+     *       done to prevent the end of the SQ from being
+     *       shared by some host memory that could be written
+     *       from the AFU. For that case then that cache
+     *       line could potentially encounter a UE. Thus
+     *       we can not share the cache line of the last
+     *       SQ entry.
+     */
+
+    afu->size_sq = sizeof(*(afu->p_sq_start)) * (num_cmds + 1);
+
+    
+    if ((afu->size_sq) % CBLK_CACHE_LINE_SIZE ) {
+
+
+	afu->size_sq = ((afu->size_sq)/CBLK_CACHE_LINE_SIZE  + 1) * CBLK_CACHE_LINE_SIZE;
+    }
+
+
+
+    if ( posix_memalign((void *)&(afu->p_sq_start),4096,afu->size_sq)) {
+
+		    
+	CBLK_TRACE_LOG_FILE(1,"Failed posix_memalign for rrq errno= %d, size_rrq = %d",errno,afu->size_sq);
+
+	return -1;
+
+    }
+
+    bzero((void *)afu->p_sq_start ,afu->size_sq);
+
+
+    afu->p_sq_end = afu->p_sq_start + (num_cmds);
+
+    afu->p_sq_curr = afu->p_sq_start;
+
+
+
+    return rc;
+}
+
+
+/*
+ * NAME:        cblk_free_sq_afu
+ *
+ * FUNCTION:    This routine frees the 
+ *              SQ (submission queu)  per AFU.
+ *
+ * NOTE:        This routine assumes the caller
+ *              has the cflsh_blk.global_lock.
+ *
+ *
+ * INPUTS:
+ *              NONE
+ *
+ * RETURNS:
+ *              0        - Success
+ *              nonzero  - Failure
+ *              
+ */
+int cblk_free_sq_afu(cflsh_afu_t *afu)
+{
+
+
+    if (afu == NULL) {
+
+	return 0;
+
+    }
+
+
+    if (afu->p_sq_start == NULL) {
+
+	return 0;
+    }
+
+
+    free(afu->p_sq_start);
+
+    afu->p_sq_start = NULL;
+    afu->p_sq_end = NULL;
+
+    return 0;
+}
 
 
 /*
@@ -1290,6 +1854,28 @@ cflsh_afu_t *cblk_get_afu(cflsh_path_t *path, char *dev_name, dev64_t adap_devno
 		return NULL;
 	    }
 
+	    if (type == CFLASH_BLK_CHUNK_SIS_LITE_SQ) {
+
+		/*
+		 * This AFU is using a Submission Queue (SQ)
+		 * to issue IOARCBs to it. Let's allocate
+		 * the SQ now.
+		 */
+
+
+		if (cblk_alloc_sq_afu(afu,num_cmds)) {
+
+
+		    cblk_free_hrrq_afu(afu);
+		    free(afu);
+
+		    return NULL;
+		}
+
+		afu->flags |= CFLSH_AFU_SQ;
+
+		afu->hrrq_to_ioarcb_off = sizeof(sisl_ioarcb_t);
+	    }
 
 	    pthread_rc = pthread_cond_init(&(afu->resume_event),NULL);
     
@@ -1317,6 +1903,7 @@ cflsh_afu_t *cblk_get_afu(cflsh_path_t *path, char *dev_name, dev64_t adap_devno
 
 	    afu->eyec = CFLSH_EYEC_AFU;
 
+	    path->afu_share_type = *in_use;
 	    CBLK_Q_NODE_TAIL(cflsh_blk.head_afu,cflsh_blk.tail_afu,afu,prev,next);
 	    
 	}
@@ -1379,6 +1966,34 @@ int cblk_update_afu_type(cflsh_afu_t *afu,cflsh_block_chunk_type_t type)
 	}
 
 	afu->type = type;
+
+	if ((type == CFLASH_BLK_CHUNK_SIS_LITE_SQ) &&
+	    !(afu->flags & CFLSH_AFU_SQ)) {
+
+
+	    /*
+	     * This AFU is using a Submission Queue (SQ)
+	     * to issue IOARCBs to it and we have not
+	     * yet allocated the SWQ. So let's do that
+	     * now.
+	     */
+
+	
+	    if (cblk_alloc_sq_afu(afu,afu->num_rrqs)) {
+
+
+		cblk_free_hrrq_afu(afu);
+		errno = ENOMEM;
+
+		return -1;
+	    }
+
+	    afu->flags |= CFLSH_AFU_SQ;
+
+	    afu->hrrq_to_ioarcb_off = sizeof(sisl_ioarcb_t);
+
+
+	}
     }
 
     return rc;
@@ -1421,6 +2036,7 @@ void cblk_release_afu(cflsh_path_t *path,cflsh_afu_t *afu)
 		
 	    }
 	    cblk_free_hrrq_afu(afu);
+	    cblk_free_sq_afu(afu);
 	    free(afu);
 	}
 
@@ -1451,7 +2067,7 @@ void cblk_release_afu(cflsh_path_t *path,cflsh_afu_t *afu)
  *              
  */
 
-cflsh_path_t *cblk_get_path(cflsh_chunk_t *chunk, dev64_t adap_devno,cflsh_block_chunk_type_t type,int num_cmds,
+cflsh_path_t *cblk_get_path(cflsh_chunk_t *chunk, dev64_t adap_devno,char *path_name,cflsh_block_chunk_type_t type,int num_cmds,
 			    cflsh_afu_in_use_t *in_use, int share)
 {
     cflsh_path_t *path = NULL;
@@ -1519,6 +2135,11 @@ cflsh_path_t *cblk_get_path(cflsh_chunk_t *chunk, dev64_t adap_devno,cflsh_block
 
 	}
 
+#ifndef _AIX
+	if (path_name) {
+	    strcpy(path->dev_name,path_name);
+	}
+#endif /* _AIX */
 
 	path->eyec = CFLSH_EYEC_PATH;   
 
@@ -1581,6 +2202,11 @@ void cblk_release_path(cflsh_chunk_t *chunk, cflsh_path_t *path)
 
 	cblk_release_afu(path,path->afu);
 	path->afu = NULL;
+
+#ifndef _AIX	
+	bzero(path->dev_name,PATH_MAX);
+#endif /* !_AIX */
+
 	path->eyec = 0;
 	free(path);
 	chunk->num_paths--;
@@ -1613,6 +2239,7 @@ void cblk_release_path(cflsh_chunk_t *chunk, cflsh_path_t *path)
 int cblk_update_path_type(cflsh_chunk_t *chunk, cflsh_path_t *path, cflsh_block_chunk_type_t type)
 {
     int rc = 0;
+    int sq_flags;
 
 
     if (path == NULL) {
@@ -1623,7 +2250,25 @@ int cblk_update_path_type(cflsh_chunk_t *chunk, cflsh_path_t *path, cflsh_block_
 	return -1;
     }
 
+    sq_flags = path->afu->flags & CFLSH_AFU_SQ;
+
     rc = cblk_update_afu_type(path->afu,type);
+
+    if (!sq_flags &&
+	(path->afu->mmio) &&
+	(path->afu->flags & CFLSH_AFU_SQ)) {
+	/*
+	 * If we changed from not having an SQ for this AFU
+	 * to now having one, then we need to register
+	 * the SQ with the AFU. This can happen
+	 * in situations where we determine the
+	 * AFU type after we have already done
+	 * the initial setup.
+	 */
+
+	rc = CBLK_ADAP_SQ_SETUP(chunk,path->path_index);
+
+    }
 
 
     return rc;
@@ -1653,7 +2298,7 @@ chunk_id_t cblk_get_chunk(int flags,int max_num_cmds)
 {
     chunk_id_t ret_chunk_id = NULL_CHUNK_ID;
     cflsh_chunk_t *chunk = NULL;
-    cflsh_chunk_t *tmp_chunk;
+    cflsh_chunk_hash_t *p_hash = NULL;
     int j;
 
 
@@ -1807,62 +2452,20 @@ chunk_id_t cblk_get_chunk(int flags,int max_num_cmds)
 
 	chunk->eyec = CFLSH_EYEC_CHUNK;
 
+	p_hash = &cflsh_blk.hash[chunk->index & CHUNK_HASH_MASK];
 
-	if (cflsh_blk.hash[chunk->index & CHUNK_HASH_MASK] == NULL) {
+    CFLASH_BLOCK_WR_RWLOCK(p_hash->lock);
 
-	    cflsh_blk.hash[chunk->index & CHUNK_HASH_MASK] = chunk;
-	} else {
-
-	    tmp_chunk = cflsh_blk.hash[chunk->index & CHUNK_HASH_MASK];
-
-	    while (tmp_chunk) {
-
-		if ((ulong)tmp_chunk & CHUNK_BAD_ADDR_MASK ) {
-
-		    /*
-		     * Chunk addresses are allocated 
-		     * on certain alignment. If this 
-		     * potential chunk address does not 
-		     * have the correct alignment then fail
-		     * this request.
-		     */
-
-		    cflsh_blk.num_bad_chunk_ids++;
-
-		    CBLK_TRACE_LOG_FILE(1,"Corrupted chunk address = 0x%p, hash[] = 0x%p index = 0x%x", 
-					tmp_chunk, cflsh_blk.hash[chunk->index & CHUNK_HASH_MASK],
-					(chunk->index & CHUNK_HASH_MASK));
-
-		    CBLK_LIVE_DUMP_THRESHOLD(5,"0x200");
-
-		    free(chunk->cmd_info);
-		    free(chunk->cmd_start);
-
-		    chunk->eyec = 0;
-
-		    free(chunk);
-
-		    errno = EFAULT;
-		    return NULL_CHUNK_ID;
-		}
-
-
-		if (tmp_chunk->next == NULL) {
-
-		    tmp_chunk->next = chunk;
-
-		    chunk->prev = tmp_chunk;
-		    break;
-		}
-
-		tmp_chunk = tmp_chunk->next;
-
-	    } /* while */
-
+	if (p_hash->tail)
+	{
+	    chunk->prev        = p_hash->tail;
+	    p_hash->tail->next = chunk;
 	}
-		
-    }
+	if (!p_hash->head) {p_hash->head = chunk;}
+	p_hash->tail = chunk;
 
+	CFLASH_BLOCK_RWUNLOCK(p_hash->lock);
+    }
 
     if (ret_chunk_id == NULL_CHUNK_ID) {
 
@@ -1907,11 +2510,26 @@ cflash_cmd_err_t cblk_process_cmd(cflsh_chunk_t *chunk,int path_index, cflsh_cmd
     int rc2 = 0;
     size_t transfer_size = 0;
     int pthread_rc;
+    int i;
+    
 
 
     if (CBLK_INVALID_CMD_CMDI(chunk,cmd,cmd->cmdi,__FUNCTION__)) {
 
-	CBLK_TRACE_LOG_FILE(1,"cmd/cmdi is valid");
+	CBLK_TRACE_LOG_FILE(1,"cmd/cmdi is invalid for chunk = %s, path_index = 0x%x chunk->flags = 0x%x",
+			    chunk->dev_name,path_index, chunk->flags);
+
+	for (i = 0; i< chunk->num_cmds;i++) {
+
+	    if (cmd == &chunk->cmd_start[i]) {
+
+		
+		CBLK_TRACE_LOG_FILE(1,"cmd/cmdi (cont) cmd found with index = %d, cmd->index = %d, cmdi = %p",
+				    i,cmd->index,&(chunk->cmd_info[i]));
+
+		break;
+	    }
+	}
 	
         errno = EINVAL;
 	rc = CFLASH_CMD_FATAL_ERR;
@@ -2012,6 +2630,7 @@ cflash_cmd_err_t cblk_process_cmd(cflsh_chunk_t *chunk,int path_index, cflsh_cmd
 
 		cmd->cmdi->retry_count++;
 
+		cmd->cmdi->cmd_time = time(NULL);
 
 		/*
 		 * Since the caller used CFLASH_BLOCK_AFU_SHARE_LOCK,
@@ -2238,7 +2857,19 @@ cflash_cmd_err_t cblk_process_cmd(cflsh_chunk_t *chunk,int path_index, cflsh_cmd
 
     if (CBLK_INVALID_CMD_CMDI(chunk,cmd,cmd->cmdi,__FUNCTION__)) {
 
-	CBLK_TRACE_LOG_FILE(1,"cmd/cmdi is valid");
+	CBLK_TRACE_LOG_FILE(1,"cmd/cmdi is invalid");
+	
+	for (i = 0; i< chunk->num_cmds;i++) {
+
+	    if (cmd == &chunk->cmd_start[i]) {
+
+		
+		CBLK_TRACE_LOG_FILE(1,"cmd/cmdi (cont) cmd found with index = %d, cmd->index = %d, cmdi = %p",
+				    i,cmd->index,&(chunk->cmd_info[i]));
+
+		break;
+	    }
+	}
 	
 	return rc;
     }
@@ -2333,7 +2964,7 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 	     */
 
 
-	    while ((!found) && (loop_cnt < CFLASH_BLOCK_MAX_CMD_WAIT_RETRIES))  {
+	    while ((!found) && (loop_cnt++ < CFLASH_BLOCK_MAX_CMD_WAIT_RETRIES))  {
 
 		CFLASH_BLOCK_UNLOCK(chunk->lock);
 
@@ -2353,8 +2984,9 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 		    return -1;
 		}
 
-		CBLK_TRACE_LOG_FILE(1,"No free command found num_active_cmds = %d, num_in_use = %d",
-				    chunk->num_active_cmds,num_in_use);
+		CBLK_TRACE_LOG_FILE(1,"No free command found num_cmds = %d "
+		                      "num_active_cmds = %d, num_in_use = %d flags:%x",
+				    chunk->num_cmds, chunk->num_active_cmds, num_in_use, flags);
 		
 		
 		cmdi = chunk->head_free;
@@ -2411,14 +3043,14 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
     }
 
     if (chunk->cmd_start == NULL) {
-	CBLK_TRACE_LOG_FILE(1,"cmd_start is NULL");
+	CBLK_TRACE_LOG_FILE(1,"cmd_start is NULL, chunk->flags =0x%x",chunk->flags);
 	errno = EINVAL;
 	return -1;
     }
 
 
     if (cmdi == NULL) {
-	CBLK_TRACE_LOG_FILE(1,"cmdi is NULL");
+	CBLK_TRACE_LOG_FILE(1,"cmdi is NULL, chunk->flags =0x%x",chunk->flags);
 	errno = EINVAL;
 	return -1;
     }
@@ -2428,8 +3060,8 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 
 
 
-	CBLK_TRACE_LOG_FILE(1,"cmdi = %p with index %d is invalid, chunk->num_cmds = %d",
-			    cmdi,cmdi->index, chunk->num_cmds);
+	CBLK_TRACE_LOG_FILE(1,"cmdi = %p with index %d is invalid, chunk->num_cmds = %d, chunk->flags =0x%x",
+			    cmdi,cmdi->index, chunk->num_cmds,chunk->flags);
 	errno = EINVAL;
 	return -1;
 
@@ -2437,8 +3069,8 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 
     if (CFLSH_EYECATCH_CMDI(cmdi)) {
 
-	CBLK_TRACE_LOG_FILE(1,"Invalid eyecatcher cmdi = %p is invalid, chunk->num_cmds = %d",
-			    cmdi,cmdi->index, chunk->num_cmds);
+	CBLK_TRACE_LOG_FILE(1,"Invalid eyecatcher cmdi = %p is invalid, chunk->num_cmds = %d, chunk->flags =0x%x",
+			    cmdi,cmdi->index, chunk->num_cmds,chunk->flags);
 	errno = EINVAL;
 	return -1;
 
@@ -2446,12 +3078,12 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 
 
     if (cmdi->index > chunk->num_cmds) {
-	CBLK_TRACE_LOG_FILE(1,"cmdi = %p index is too large = %d, chunk->num_cmds = %d",
+	CBLK_TRACE_LOG_FILE(1,"cmdi = %p index is too large = %d, chunk->num_cmds = %d, chunk->flags =0x%x",
 			    cmdi,cmdi->index, chunk->num_cmds);
 
 
 	CBLK_TRACE_LOG_FILE(1,"user_tag = 0x%x, *user_status = %p, path_index = %d",
-			    cmdi->user_tag,cmdi->user_status,cmdi->path_index);
+			    cmdi->user_tag,cmdi->user_status,cmdi->path_index,chunk->flags);
 	errno = EINVAL;
 	return -1;
     }
@@ -2469,8 +3101,8 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 
 
 
-	CBLK_TRACE_LOG_FILE(1,"cmd = %p with index = %d, is invalid, chunk->num_cmds = %d",
-			    *cmd,cmdi->index, chunk->num_cmds);
+	CBLK_TRACE_LOG_FILE(1,"cmd = %p with index = %d, is invalid, chunk->num_cmds = %d, chunk->flags =0x%x",
+			    *cmd,cmdi->index, chunk->num_cmds,chunk->flags);
 	errno = EINVAL;
 	return -1;
 
@@ -2482,8 +3114,8 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
     
     if (pthread_rc) {
 	
-	CBLK_TRACE_LOG_FILE(1,"pthread_cond_init failed rc = %d errno= %d",
-			    pthread_rc,errno);
+	CBLK_TRACE_LOG_FILE(1,"pthread_cond_init failed rc = %d errno= %d, cmdi = %p",
+			    pthread_rc,errno,cmdi);
 	rc = -1;
 
 	return rc;
@@ -3354,6 +3986,7 @@ void cblk_open_cleanup_wait_thread(cflsh_chunk_t *chunk)
 
 void cblk_chunk_open_cleanup(cflsh_chunk_t *chunk, int cleanup_depth)
 {
+    cflsh_chunk_hash_t *p_hash = NULL;
     int i;
 
     CBLK_TRACE_LOG_FILE(5,"cleanup = %d",cleanup_depth);
@@ -3453,6 +4086,10 @@ void cblk_chunk_open_cleanup(cflsh_chunk_t *chunk, int cleanup_depth)
 	    }
 	}
 	
+	if (chunk->udid) {
+	    free(chunk->udid);
+	}
+
 	chunk->num_blocks = 0;
 	chunk->flags = 0;
 	chunk->in_use = FALSE;
@@ -3485,17 +4122,27 @@ void cblk_chunk_open_cleanup(cflsh_chunk_t *chunk, int cleanup_depth)
 
 	}
 
-	if (chunk->prev) {
-	    chunk->prev->next = chunk->next;
+	p_hash = &cflsh_blk.hash[chunk->index & CHUNK_HASH_MASK];
 
-	} else {
+	CFLASH_BLOCK_WR_RWLOCK(p_hash->lock);
 
-	    cflsh_blk.hash[chunk->index & CHUNK_HASH_MASK] = chunk->next;
+	if (p_hash->head == chunk)
+	{
+	    p_hash->head = chunk->next;
+	    if (chunk->next) {chunk->next->prev = NULL;}
+	    if (p_hash->tail == chunk) {p_hash->tail = NULL;}
 	}
-
-	if (chunk->next) {
+	else if (p_hash->tail == chunk)
+	{
+	    chunk->prev->next = NULL;
+	    p_hash->tail      = chunk->prev;
+	}
+	else
+	{
+	    chunk->prev->next = chunk->next;
 	    chunk->next->prev = chunk->prev;
 	}
+	CFLASH_BLOCK_RWUNLOCK(p_hash->lock);
 
     }
 
@@ -4755,6 +5402,7 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 {
     cflsh_chunk_t *chunk = NULL;
+    cflash_block_check_os_status_t status;
     cflsh_path_t *path;
     int reset_context_success =  TRUE;
     int detach = FALSE;
@@ -4772,6 +5420,16 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
     timeout = time(NULL) - 1;
 
     CFLASH_BLOCK_LOCK(afu->lock);
+
+    if (afu->flags & (CFLSH_AFU_HALTED|CFLSH_AFU_RECOV)) {
+
+	CBLK_TRACE_LOG_FILE(5,"skipping context reset, since AFU is halted or recovering is pending");
+
+	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
+	CFLASH_BLOCK_UNLOCK(afu->lock);
+
+	return;
+    }
 	
     if (afu->reset_time > timeout) {
 
@@ -4815,7 +5473,8 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 	
 	/*
 	 * We found at least one chunk associated with this afu.
-	 * Thus we'll reset the context and then all commands
+	 * Thus we'll reset the context by driving it from this
+	 * chunk.  After this all commands
 	 * need to be failed/resumed.
 	 */
 	
@@ -4826,10 +5485,46 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 	    /* 
 	     * Reset context failed
 	     */
-	    CBLK_TRACE_LOG_FILE(1,"reset context failed for path_index of %d",path->path_index);
 	    reset_context_success = FALSE;
 	    
-	    // TODO:?? should we do unmap detach here instead of below.
+	    /*
+	     * Check for adapter reset 
+	     */
+
+	    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
+
+	    CFLASH_BLOCK_LOCK(chunk->lock);
+
+	    status = cblk_check_os_adap_err(chunk,path_index);
+
+	    CFLASH_BLOCK_UNLOCK(chunk->lock);
+
+	    CBLK_TRACE_LOG_FILE(1,"reset context failed for path_index of %d, status = %d",path->path_index,status);
+
+	    if (status != CFLSH_BLK_CHK_OS_NO_RESET) {
+
+		/*
+		 * If some type of reset was done, then
+		 * exit here. If a reset was done then
+		 * this supersedes context reset. If reset
+		 * failed then it should have also done the
+		 * clean up and failing of all I/O for this
+		 * chunk.
+		 */
+
+		CBLK_TRACE_LOG_FILE(9,"AFU reset was done assuming context reset is unnecessary");
+    
+		return;
+
+		
+	    }
+
+	    /*
+	     * Drop thru and clean up
+	     */
+
+	    CFLASH_BLOCK_WR_RWLOCK(cflsh_blk.global_lock);
+
 	} 
 	
 	/*
@@ -5018,7 +5713,7 @@ int cblk_retry_new_path(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, int delay_ne
 
 	/*
 	 * If we have more than one path, then 
-	 * allow retry down that path.
+	 * attempt retry down alternate path.
 	 */
 
 	
@@ -5043,7 +5738,21 @@ int cblk_retry_new_path(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, int delay_ne
 		chunk->cmd_info[cmd->index].path_index = i;
 
 		CBLK_TRACE_LOG_FILE(9,"Retry path_index = %d",i);
-		rc = CFLASH_CMD_RETRY_ERR;
+
+
+		if ((chunk->path[cur_path]->afu == chunk->path[i]->afu) &&
+		    (delay_needed_same_afu)) {
+
+		    /*
+		     * If the new path has the same AFU
+		     * and the caller requested delay on
+		     * on the same AFU, then do so.
+		     */
+
+		    rc = CFLASH_CMD_DLY_RETRY_ERR;
+		} else {
+		    rc = CFLASH_CMD_RETRY_ERR;
+		}
 
 		chunk->stats.num_path_fail_overs++;
 
@@ -5054,10 +5763,49 @@ int cblk_retry_new_path(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, int delay_ne
 
 	}
 
+	if (chunk->cmd_info[cmd->index].path_index == cur_path) {
+
+	    /*
+	     * If no new paths are found, then
+	     * give retry any way on same path.
+	     */
+	     
+	    if (delay_needed_same_afu)	 {
+
+		/*
+		 * If no alternate path was found,
+		 * then only do retry down current path
+		 * if delay is needed for same AFU.
+		 */
+
+		rc = CFLASH_CMD_DLY_RETRY_ERR;
+	    } else {
+		rc = CFLASH_CMD_RETRY_ERR;
+
+
+	    }
+
+	}
+
 #endif /* AIX */
 
 
-    } 
+    } else {
+
+
+	/*
+	 * This routine is only called for situations where a 
+	 * retry might be valid. Thus at the very minimum do
+	 * the retry, but for the same path. If the caller
+	 * indicated a delay also, then do a delay retry.
+	 */
+
+	if (delay_needed_same_afu) {
+	    rc = CFLASH_CMD_DLY_RETRY_ERR;
+	} else {
+	    rc = CFLASH_CMD_RETRY_ERR;
+	}
+    }
 
 
     if ((rc == CFLASH_CMD_DLY_RETRY_ERR) ||
@@ -5076,17 +5824,7 @@ int cblk_retry_new_path(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, int delay_ne
 		  
 
 
-    } else {
-
-
-	/*
-	 * This routine is only called for situations where a 
-	 * retry might be valid. Thus at the very minimum do
-	 * the retry, but for the same path.
-	 */
-
-	rc = CFLASH_CMD_RETRY_ERR;
-    }
+    } 
 
 #else
     
@@ -5214,15 +5952,26 @@ void cblk_filemode_io(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd)
      * from cmd into p_hrrq_curr. So
      * we use a two step process.
      */
-    tmp_val = (uint32_t)cmd;
+
+    if (chunk->path[chunk->cur_path]->afu->flags & CFLSH_AFU_SQ) {
+	tmp_val = (uint32_t)&(cmd->sisl_cmd.sa);
+    } else {
+	tmp_val = (uint32_t)cmd;
+    }
     *(chunk->path[chunk->cur_path]->afu->p_hrrq_curr) = tmp_val | chunk->path[chunk->cur_path]->afu->toggle;
 #else
-    *(chunk->path[chunk->cur_path]->afu->p_hrrq_curr) = (uint64_t) cmd | chunk->path[chunk->cur_path]->afu->toggle;
+
+   if (chunk->path[chunk->cur_path]->afu->flags & CFLSH_AFU_SQ) {
+       *(chunk->path[chunk->cur_path]->afu->p_hrrq_curr) = (uint64_t)&(cmd->sisl_cmd.sa)| chunk->path[chunk->cur_path]->afu->toggle;
+   } else {
+       
+       *(chunk->path[chunk->cur_path]->afu->p_hrrq_curr) = (uint64_t) cmd | chunk->path[chunk->cur_path]->afu->toggle;
+   }
 #endif
     
     
     CBLK_TRACE_LOG_FILE(7,"*(chunk->path[chunk->cur_path].p_hrrq_curr) = 0x%llx, chunk->path[chunk->cur_path].toggle = 0x%llx, chunk->index = %d",
-			*(chunk->path[chunk->cur_path]->afu->p_hrrq_curr),chunk->path[chunk->cur_path]->afu->toggle,
+			CBLK_READ_ADDR_CHK_UE(chunk->path[chunk->cur_path]->afu->p_hrrq_curr),chunk->path[chunk->cur_path]->afu->toggle,
 			chunk->index);	
 
 }
@@ -5571,8 +6320,8 @@ void *cblk_intrpt_thread(void *data)
 	}
      
 
-	CBLK_TRACE_LOG_FILE(9,"chunk index = %d thread_flags = %d num_active_cmds = 0x%x",
-			    chunk->index,chunk->thread_flags,chunk->num_active_cmds);
+	CBLK_TRACE_LOG_FILE(9,"chunk index = %d thread_flags = %d num_active_cmds = 0x%x, num_paths = %d",
+			    chunk->index,chunk->thread_flags,chunk->num_active_cmds,chunk->num_paths);
 
 	if (chunk->thread_flags & CFLSH_CHNK_EXIT_INTRPT) {
 
@@ -5631,11 +6380,11 @@ void *cblk_intrpt_thread(void *data)
 
 	    if ((chunk->num_active_cmds) &&
 		(chunk->head_act) && 
-		!(chunk->flags & CFLSH_CHNK_HALTED) ) {
+		!(chunk->flags & (CFLSH_CHNK_HALTED|CFLSH_CHNK_RECOV_AFU))) {
 
 		/*
 		 * We need to check for dropped commands here if 
-		 * we are not in a halted state.
+		 * we are not in a halted nor AFU recovery state.
 		 * For common threads there is no effective mechanism in 
 		 * CBLK_WAIT_FOR_IO_COMPLETE to detect commmands that time-out.
 		 * So we will do that here. First find the oldest command,
@@ -5784,6 +6533,19 @@ void *cblk_intrpt_thread(void *data)
 				
 
 				CBLK_GET_INTRPT_STATUS(chunk,i);
+
+				if (chunk->flags & CFLSH_CHNK_RECOV_AFU) {
+
+				    /*
+				     * We could detect UE when reading interrupt status.
+				     * So give up on this recovery, if AFU recovery
+				     * is in progress.
+				     */
+
+				    CBLK_TRACE_LOG_FILE(5,"AFU Recovery in progress: abandon context reset chunk->index = %d, chunk->flags 0x%x",
+						    chunk->index, chunk->flags);
+				    break;
+				}
 				CFLASH_BLOCK_UNLOCK(chunk->lock);
 
 				cblk_reset_context_shared_afu(chunk->path[i]->afu);
@@ -6131,6 +6893,12 @@ void cblk_trace_log_data_ext(trace_log_ext_arg_t *ext_arg, FILE *logfp,char *fil
     va_list ap;
     struct timeb cur_time, log_time, delta_time;
     uint print_log_number;
+#ifndef TIMELEN
+#define   TIMELEN  26           /* Linux does have a define for the minium size of the a timebuf */
+				/* However linux man pages say it is 26                          */
+#endif 
+    char timebuf[TIMELEN+1];
+    time_t curtime;
 
     if (ext_arg == NULL) {
 
@@ -6182,6 +6950,9 @@ void cblk_trace_log_data_ext(trace_log_ext_arg_t *ext_arg, FILE *logfp,char *fil
          */
         fprintf(logfp,"---------------------------------------------------------------------------\n");
         fprintf(logfp,"Date for %s is %s at %s\n",__FILE__,__DATE__,__TIME__);
+
+	curtime = time(NULL);
+	fprintf(logfp,"Trace started at %s\n",ctime_r(&curtime,timebuf));
         fprintf(logfp,"Index   Sec   msec  delta dmsec      Filename            function, line ...\n");
         fprintf(logfp,"------- ----- ----- ----- ----- --------------------  ---------------------\n");
 
@@ -6262,12 +7033,16 @@ void  cblk_display_stats(cflsh_chunk_t *chunk, int verbosity)
 
 #endif
     CBLK_TRACE_LOG_FILE(verbosity,"flags                           0x%x",cflsh_blk.flags);
+    CBLK_TRACE_LOG_FILE(verbosity,"host_type                       0x%x",cflsh_blk.host_type);
     CBLK_TRACE_LOG_FILE(verbosity,"lun_id                          0x%llx",cflsh_blk.lun_id);
     CBLK_TRACE_LOG_FILE(verbosity,"next_chunk_id                   0x%llx",cflsh_blk.next_chunk_id);
     CBLK_TRACE_LOG_FILE(verbosity,"num_active_chunks               0x%x",cflsh_blk.num_active_chunks);
     CBLK_TRACE_LOG_FILE(verbosity,"num_max_active_chunks           0x%x",cflsh_blk.num_max_active_chunks);
     CBLK_TRACE_LOG_FILE(verbosity,"num_bad_chunk_ids               0x%x",cflsh_blk.num_bad_chunk_ids);
     CBLK_TRACE_LOG_FILE(verbosity,"chunk_id                        0x%llx",chunk->index);
+    if(chunk->udid) {
+	CBLK_TRACE_LOG_FILE(verbosity,"udid                            %s",chunk->udid);
+    }
     CBLK_TRACE_LOG_FILE(verbosity,"chunk_block size                0x%x",chunk->stats.block_size);
     CBLK_TRACE_LOG_FILE(verbosity,"num_paths                       0x%x",chunk->num_paths);
     CBLK_TRACE_LOG_FILE(verbosity,"primary_path_id                 0x%x",chunk->path[0]->path_id);
@@ -6326,6 +7101,9 @@ void  cblk_display_stats(cflsh_chunk_t *chunk, int verbosity)
     CBLK_TRACE_LOG_FILE(verbosity,"num_fail_detach_threads         0x%llx",chunk->stats.num_fail_detach_threads);
     CBLK_TRACE_LOG_FILE(verbosity,"num_active_threads              0x%llx",chunk->stats.num_active_threads);
     CBLK_TRACE_LOG_FILE(verbosity,"max_num_act_threads             0x%llx",chunk->stats.max_num_act_threads);
+    CBLK_TRACE_LOG_FILE(verbosity,"Avg latency                     %ld",(chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd));
+    CBLK_TRACE_LOG_FILE(verbosity,"Read latency                    %ld",chunk->rlat/chunk->rcmd);
+    CBLK_TRACE_LOG_FILE(verbosity,"Write latency                   %ld",chunk->wlat/chunk->wcmd);
 
     return;
 }
@@ -6544,7 +7322,7 @@ void  cblk_dump_debug_data(const char *reason,const char *reason_filename,const 
 
     for (i=0;i<MAX_NUM_CHUNKS_HASH; i++) {
 
-	chunk = cflsh_blk.hash[i];
+	chunk = cflsh_blk.hash[i].head;
 
 	while (chunk) {
 
@@ -6799,6 +7577,10 @@ void  cblk_dump_debug_data(const char *reason,const char *reason_filename,const 
 		fprintf(cblk_dumpfp,"                path_id           = 0x%x\n",chunk->path[j]->path_id);
 		fprintf(cblk_dumpfp,"                path_id_mask      = 0x%x\n",chunk->path[j]->path_id_mask);
 		fprintf(cblk_dumpfp,"                num_ports         = 0x%x\n",chunk->path[j]->num_ports);
+#ifndef _AIX
+		fprintf(cblk_dumpfp,"                dev_name          = %s\n",chunk->path[j]->dev_name);
+#endif /* !_AIX */
+		fprintf(cblk_dumpfp,"                fd                = %d\n",chunk->path[j]->fd);
 		fprintf(cblk_dumpfp,"                chunk             = %p",chunk->path[j]->chunk);
 		if (chunk->path[j]->chunk == chunk) {
 		    fprintf(cblk_dumpfp," (Valid)\n");
@@ -6887,6 +7669,11 @@ void  cblk_dump_debug_data(const char *reason,const char *reason_filename,const 
 	fprintf(cblk_dumpfp,"            hrrq_curr           = %p\n",afu->p_hrrq_curr);
 	fprintf(cblk_dumpfp,"            hrrq_end            = %p\n",afu->p_hrrq_end);
 	fprintf(cblk_dumpfp,"            num_rrqs            = 0x%x\n",afu->num_rrqs);
+	fprintf(cblk_dumpfp,"            size_rrq            = 0x%x\n",afu->size_rrq);
+	fprintf(cblk_dumpfp,"            sq_start            = %p\n",afu->p_sq_start);
+	fprintf(cblk_dumpfp,"            sq_curr             = %p\n",afu->p_sq_curr);
+	fprintf(cblk_dumpfp,"            sq_end              = %p\n",afu->p_sq_end);
+	fprintf(cblk_dumpfp,"            size_sq             = 0x%x\n",afu->size_sq);
 	fprintf(cblk_dumpfp,"            num_issued_cmds     = 0x%x\n",afu->num_issued_cmds);
 	fprintf(cblk_dumpfp,"            cmd_room            = 0x%"PRIx64"\n",afu->cmd_room);
 
@@ -7072,7 +7859,6 @@ int cblk_setup_sigusr1_dump(void)
  */
 void cblk_dcbz_buffer(void *buf, size_t len)
 {
-#define CBLK_DCBZ_CACHE_LINE_SZ 128
 
     ulong start_addr;
     ulong end_addr;
@@ -7107,16 +7893,18 @@ void cblk_dcbz_buffer(void *buf, size_t len)
      */
 
     while (addr < end_addr) {
+#ifndef TARGET_ARCH_x86_64
 
 	asm volatile ("dcbz 0, %0" : : "r" (addr) : "memory");
-
+#endif
 	addr += CBLK_DCBZ_CACHE_LINE_SZ;
     }
 
     /* issue sync for cache lines */
+#ifndef TARGET_ARCH_x86_64
 
     asm volatile ( "lwsync" : : ); 
-
+#endif
     return;
 }
 
@@ -7153,6 +7941,147 @@ void cblk_clear_poison_bits(void *buf, size_t len)
     return;
    
 }
+
+
+/*
+ * NAME:        cblk_query_ue
+ *
+ * FUNCTION:    Checks if UE has occurred in
+ *              the specified buffer.
+ *
+ * RETURNS:
+ *              
+ *             1 if UE found. O otherwise
+ *              
+ */
+
+int cblk_query_ue(void *buf, size_t len)
+{
+    int ue_found = FALSE;
+
+#if defined(_CBLK_UE_SAFE) && defined(_AIX)
+
+    if (ue_query(buf,len)) {
+
+	ue_found = TRUE;
+	CBLK_TRACE_LOG_FILE(9,"buf = %p ue_found = %d",buf,ue_found);
+    }
+
+#endif
+
+    return ue_found;
+   
+}
+
+/*
+ * NAME:        cblk_check_cmd_data_buf_for_ue
+ *
+ * FUNCTION:    Checks if UE has occurred in
+ *              the specified data buffer of a command.
+ *              If so then that command is failed with
+ *              ENOTRECOVERABLE.
+ *
+ * RETURNS:
+ *              
+ *             None
+ *              
+ */
+
+void cblk_check_cmd_data_buf_for_ue(cflsh_chunk_t *chunk,cflsh_cmd_mgm_t *cmd)
+{
+
+    cflsh_cmd_info_t *cmdi;
+#ifdef _COMMON_INTRPT_THREAD
+    int pthread_rc;
+#endif /* _COMMON_INTRPT_THREAD	*/
+
+
+    if (chunk == NULL) {
+
+	return;
+    }
+
+    if (cmd == NULL) {
+
+	return;
+    }
+
+    cmdi = cmd->cmdi;
+
+    if (cmdi == NULL) {
+
+	return;
+    }
+
+
+    if (cblk_query_ue(cmdi->buf,(cmdi->nblocks*CAPI_FLASH_BLOCK_SIZE))) {
+	
+	
+	/*
+	 * If this request's data buffer has a UE, then
+	 * that request needs to be failed immediately
+	 * with an errno of ENOTRECOVERABLE, since we
+	 * can not clear the data buffer because it is owned
+	 * by another command. The caller maybe able to retry 
+	 * and recover if they can get the data from some other 
+	 * place then this buffer.
+	 */
+
+
+	cmdi->status = ENOTRECOVERABLE;
+	cmdi->transfer_size = 0;
+			    
+
+	cblk_notify_mc_err(chunk,cmdi->path_index,0x20e,0,
+			   CFLSH_BLK_NOTIFY_AFU_ERROR,cmd);
+
+	CBLK_TRACE_LOG_FILE(1,"Command with UE  lba = 0x%llx flags = 0x%x, chunk->index = %d",
+			    cmd->cmdi->lba,cmd->cmdi->flags,chunk->index);
+
+		
+	/*
+	 * Fail command back.
+	 */
+		
+	cmdi->state = CFLSH_MGM_CMP;
+#ifdef _COMMON_INTRPT_THREAD
+
+	if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
+		    
+	    /*
+	     * If we are using a common interrupt thread
+	     */
+			
+	    pthread_rc = pthread_cond_signal(&(cmdi->thread_event));
+		
+	    if (pthread_rc) {
+			
+		CBLK_TRACE_LOG_FILE(5,"pthread_cond_signal failed rc = %d,errno = %d, chunk->index = %d",
+				    pthread_rc,errno,chunk->index);
+	    }
+		    
+		    
+	    /*
+	     * Signal any one waiting for any command to complete.
+	     */
+		    
+	    pthread_rc = pthread_cond_signal(&(chunk->cmd_cmplt_event));
+		    
+	    if (pthread_rc) {
+			
+		CBLK_TRACE_LOG_FILE(5,"pthread_cond_signal failed for cmd_cmplt_event rc = %d,errno = %d, chunk->index = %d",
+				    pthread_rc,errno,chunk->index);
+	    }
+	}
+		
+#endif /* _COMMON_INTRPT_THREAD	*/
+
+    }
+
+    return;
+   
+}
+
 
 
 /*
@@ -7198,14 +8127,35 @@ void cblk_clear_poison_bits(void *buf, size_t len)
 void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_paths)
 {
 
-    int i;
+    int i,j;
     scsi_cdb_t *cdb = NULL;
     cflsh_cmd_mgm_t *cmd = NULL;
-    cflsh_cmd_info_t *cmdi;
+    cflsh_cmd_info_t *cmdi, *cmdi2;
     int local_flags = 0;
     uint8_t op_code = 0;
+    ulong cmdi_start_addr;
+    ulong cmdi_end_addr;
+    ulong cmdi2_start_addr;
+    ulong cmdi2_end_addr;
 
 
+
+
+    CBLK_TRACE_LOG_FILE(9,"chunk = %p,path_index = %d, all_paths = %d",
+			chunk,path_index,all_paths);
+
+
+    /*
+     * Clear the RRQ here, since it could
+     * have poison bits. 
+     *
+     * NOTE: When the RRQ was allocated, we ensured
+     * it started and ended on cacheline boundaries.
+     * Since cblk_clear_poison_bits only clears poison
+     * bits in a cacheline this was needed.
+     */
+    
+    cblk_clear_poison_bits(chunk->path[path_index]->afu->p_hrrq_start,chunk->path[path_index]->afu->size_rrq);
 
 
     /*
@@ -7219,7 +8169,7 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
      * buffers to prevent UEs when access the read
      * data buffer. .
      */
-
+    
     for (i=0; i < chunk->num_cmds; i++) {
 	if ((chunk->cmd_info[i].in_use) &&
 	    (chunk->cmd_info[i].state == CFLSH_MGM_HALTED) &&
@@ -7267,8 +8217,8 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 	    }
 
 	    /*
-	     * Only the adapter specific area could have 
-	     * poison bits, but for simplicity (to avoid
+	     * Only the adapter specific area of a command
+	     * could have poison bits, but for simplicity (to avoid
 	     * using a an adapter specific routine to clear
 	     * the poison bits), we will just clear the whole
 	     * cmd.
@@ -7291,12 +8241,112 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 
 	    if (cmdi->flags & CFLSH_MODE_READ) {
 
-		/*
-		 * Clear read data buffer of any potential poison bits
+	        /*
+		 * Clear cache aligned portion of read data buffer of any potential poison bits
 		 */
 
 		cblk_clear_poison_bits(cmdi->buf,(cmdi->nblocks*CAPI_FLASH_BLOCK_SIZE));
+
+                if ((ulong)cmdi->buf & (CBLK_DCBZ_CACHE_LINE_SZ-1)) {
+
+
+                    /*
+                     * This data buffer is not cache aligned and 
+                     * the non-aligned portion could have UE that was not
+                     * cleared when we cleared the cache aligned portion above.
+                     * For the non-cache aligned part we need to see 
+                     * if fortunately one of the other read commands has the remainder
+                     * of this cache line and then clear the poison bits on that cache 
+                     * line. Otherwise this will be a fatal error for this request.
+                     *
+                     * NOTE: This code assumes that a cache line size is smaller than
+                     *       a disk block size. Thus at most there will be one other read
+                     *       request that shares the same cache line with the 
+                     *       beginning of this read/s buffers and one read request
+                     *       that shares the same cache line with the end of this read's
+                     *       buffer.
+                     *       
+                     */
+
+
+                    
+                    CBLK_TRACE_LOG_FILE(1,"non-aligned Read command with UE  lba = 0x%llx flags = 0x%x, chunk->index = %d",
+                                        cmdi->lba,cmd->cmdi->flags,chunk->index);
+
+                    cmdi_start_addr = (ulong)((ulong)cmdi->buf & ~(CBLK_DCBZ_CACHE_LINE_SZ-1));
+
+                    cmdi_end_addr = (ulong)(((ulong)cmdi->buf +(cmdi->nblocks*CAPI_FLASH_BLOCK_SIZE)) & ~(CBLK_DCBZ_CACHE_LINE_SZ-1));
+
+                    for (j=0; j < chunk->num_cmds; j++) {
+                        if ((chunk->cmd_info[j].in_use) &&
+                            (chunk->cmd_info[j].state == CFLSH_MGM_HALTED) &&
+			    (j != i) &&
+                            (all_paths || (chunk->cmd_info[j].path_index == path_index))) {
+			    
+                            cmdi2 = &chunk->cmd_info[j];
+
+                            if (cmdi2->flags & CFLSH_MODE_READ) {
+				
+				/*
+				 * This is also a read so that we can clear poison bits
+				 * if necessary.
+				 */
+
+				cmdi2_start_addr = (ulong)((ulong)cmdi2->buf & ~(CBLK_DCBZ_CACHE_LINE_SZ-1));
+
+				cmdi2_end_addr = (ulong)(((ulong)cmdi2->buf +(cmdi2->nblocks*CAPI_FLASH_BLOCK_SIZE)) & ~(CBLK_DCBZ_CACHE_LINE_SZ-1));
+
+				if (cmdi2_start_addr == cmdi_end_addr) {
+
+				    /*
+				     * This cacheline is starts with cmdi2's data buffer
+				     * and ends at the 1st cacheline boundary in cmdi's
+				     * data buffer. Lets clear the poison bits in it.
+				     */
+
+				    cblk_clear_poison_bits((void *)cmdi2_start_addr,CBLK_DCBZ_CACHE_LINE_SZ);
+
+				} else if (cmdi_start_addr == cmdi2_end_addr) {
+
+				    /*
+				     * This cacheline is starts with cmdi's data buffer
+				     * and ends at the 1st cacheline boundary in cmdi2's
+				     * data buffer. Lets clear the poison bits in it.
+				     */
+
+				    cblk_clear_poison_bits((void *)cmdi_start_addr,CBLK_DCBZ_CACHE_LINE_SZ);
+				}
+			    }
+			}
+			
+		    } /* inner for loop */
+		}
+
 	    }
+	    
+	    
+	    /*
+	     * According to the CAPI architecture, we should never get a UE on a host buffer
+	     * that is write only to storage and is cache aligned. UE's arise when the 
+	     * AFU can checkout a cacheline to modify it (a Read from the host perspective) and the 
+	     * CAPI link is dropped. Since a data buffer may not be cache aligned, either a read
+	     * or write request could have a data buffer that contains a cache line shared
+	     * by another command that is a read buffer. Thus that portion of the cacheline could
+	     * have a UE.  We will call the following routine to determine if this is is the case.
+	     * and fail it if so.
+	     */
+	    
+	    cblk_check_cmd_data_buf_for_ue(chunk,cmd);
+	    
+
+
+	    /*
+	     * Set new time
+	     * in command
+	     */
+
+	    cmdi->cmd_time = time(NULL);
+
 
 	    
 	}

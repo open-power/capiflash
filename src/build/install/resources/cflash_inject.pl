@@ -1,0 +1,220 @@
+#! /usr/bin/perl
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/cflash_inject.pl $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+##
+use strict;
+use warnings;
+use Fcntl;
+use Fcntl ':seek';
+use Getopt::Long qw(:config no_ignore_case);
+
+#-------------------------------------------------------------------------------
+# Variables
+#-------------------------------------------------------------------------------
+my $dev;
+my $afustr;
+my $afu=-1;
+my $port=-1;
+my $entry=0;
+my $temp=-1;
+my $wear=-1;
+my $reset;
+my $offline;
+my $parity_error;
+my $rd;
+my $wr;
+my $lba=0;
+my $status=4;
+my $clear;
+my $prthelp=0;
+my $verbose;
+my $cmd;
+my $vparm="";
+my $data;
+my $parms;
+my $opcode="0x02";
+my $perm;
+my $parm="";
+
+sub usage()
+{
+  print "\n";
+  print "Usage:                                                                               \n";
+  print "    -d or --dev    : sg dev to inject                                                \n";
+  print "    -a or --afu    : afu to inject                                                   \n";
+  print "    -p or --port   : port to inject, 0-nvme0 or 1-nvme1                              \n";
+  print "    -e or --entry  : entry to inject (up to 4 active temp/wear injects per port)     \n";
+  print "    -T or --temp   : temp to inject                                                  \n";
+  print "    -W or --wear   : Wear percentage to inject                                       \n";
+  print "    -reset         : reset NVMe port                                                 \n";
+  print "    -offline       : set NVMe port offline                                           \n";
+  print "    -parity_error  : inject parity error on a write                                  \n";
+  print "    -rd            : inject read error                                               \n";
+  print "    -wr            : inject write error                                              \n";
+  print "    -lba           : lba to inject a r/w error                                       \n";
+  print "    -s or --status : status code for r/w error inject                                \n";
+  print "    -P or --perm   : make the r/w inject for an afu/port permanent                   \n";
+  print "    -C or --clear  : clear the inject for an afu/port/entry                          \n";
+  print "    -h or --help   : Help - Print this message                                     \n\n";
+  print "  *set   sg9, to wear% 33,             cflash_inject.pl -d sg9 -W 33                 \n";
+  print "  *set   sg9, to temp  64,             cflash_inject.pl -d sg9 -T 64                 \n";
+  print "  *clear sg9, wear or temp inject      cflash_inject.pl -d sg9 -C                    \n";
+  print "  *reset sg9 NVMe port,                cflash_inject.pl -d sg9 -reset                \n";
+  print "  *set   sg9 NVMe port offline,        cflash_inject.pl -d sg9 -offline              \n";
+  print "  *set   sg9 NVMe port back online,    cflash_inject.pl -d sg9 -reset                \n";
+  print "  *set   sg9 rd err, lba 10, status 1, cflash_inject.pl -d sg9 -rd -lba 10 -status 1 \n";
+  print "  *set   sg9 wr err, lba 90, status 4, cflash_inject.pl -d sg9 -wr -lba 90 -status 4 \n";
+  print "  *perm  sg9 wr err, lba 90, status 4, cflash_inject.pl -d sg9 -wr -lba 90 -s 4 -P   \n";
+  print "  *clear sg9 wr err,                   cflash_inject.pl -d sg9 -wr -C                \n";
+  print "  *set   sg9 parity write error,       cflash_inject.pl -d sg9 -parity_error       \n\n";
+  exit 0;
+}
+
+#-------------------------------------------------------------------------------
+# Parse Options
+#-------------------------------------------------------------------------------
+if ($#ARGV<0) {usage();}
+
+if (! GetOptions ("d|dev=s"      => \$dev,
+                  "a|afu=i"      => \$afu,
+                  "p|port=i"     => \$port,
+                  "e|entry=i"    => \$entry,
+                  "T|temp=i"     => \$temp,
+                  "W|wear=i"     => \$wear,
+                  "C|clear"      => \$clear,
+                  "reset|online" => \$reset,
+                  "offline"      => \$offline,
+                  "parity_error" => \$parity_error,
+                  "rd"           => \$rd,
+                  "wr"           => \$wr,
+                  "lba=i"        => \$lba,
+                  "s|status=i"   => \$status,
+                  "C|clear"      => \$clear,
+                  "P|perm"       => \$perm,
+                  "v"            => \$verbose,
+                  "h|help"       => \$prthelp
+                  ))
+{
+  usage();
+}
+if ($ARGV[0])
+{
+  print "\nUnknown Command Line Options:\n";
+  foreach(@ARGV)
+  {
+    print "   $_\n";
+  }
+  print "\n";
+  usage();
+}
+if ($prthelp || (!$dev && ($afu==-1 || $port==-1))) {usage();}
+
+#check sudo permissions
+if (`id -u` != 0) {print "Run with sudo permissions\n"; exit 0;}
+
+#-------------------------------------------------------------------------------
+# Make stdout autoflush
+#-------------------------------------------------------------------------------
+select(STDOUT);
+$| = 1;
+
+if ($dev)
+{
+  if ($dev =~ /\/dev\//) {$dev=substr $dev,5,3;}
+  my $sgdev=`ls -d /sys/devices/pci*/*/00*/*/*/host*/target*:*:*/*:*:*:*/scsi_generic/$dev 2>/dev/null`;
+  if ($?!=0) {print "sg device ($dev) was not found\n"; exit -1;}
+  my @sgdirs=split /\//, $sgdev;
+  my $cardstr=`ls -d /sys/devices/*/*/$sgdirs[5]/cxl/card* 2>/dev/null`;
+  chomp $cardstr;
+  $afustr="/dev/cxl/afu" . substr($cardstr,-1) . ".0m";
+  my @target=split /:/, $sgdirs[9];
+  $port=$target[1];
+}
+else
+{
+  $afustr=`ls /dev/cxl/afu$afu.0m 2>/dev/null`;
+  if (length $afustr)
+  {
+    chomp $afustr;
+  }
+  else
+  {
+    print "invalid card number: $afu\n";
+    exit 0;
+  }
+}
+
+if ($verbose) {$vparm=" -v "}
+if ($perm)    {$parm=" -P "}
+
+if ($parity_error)
+{
+  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 9 $vparm"
+}
+elsif ($reset)
+{
+  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 0 $vparm"
+}
+elsif ($offline)
+{
+  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 1 $vparm"
+  
+}
+elsif (($rd || $wr) && $clear)
+{
+  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 8 $vparm"
+}
+elsif ($rd)
+{
+  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 2 -s $status -l $lba $parm $vparm"
+}
+elsif ($wr)
+{
+  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 3 -s $status -l $lba $parm $vparm"
+}
+elsif ($clear)
+{
+  $opcode="0xff";
+  $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 4 --mask 0xFFFF00FF --data 0";
+  $cmd="/opt/ibm/capikv/test/flashgt_nvme_override $parms";
+}
+elsif ($wear>=0)
+{
+  $data=sprintf("0x%.2x00", $wear);
+  $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 4 --mask 0xFFFF00FF --data $data";
+  $cmd="/opt/ibm/capikv/test/flashgt_nvme_override $parms";
+}
+elsif ($temp>=0)
+{
+  $data=sprintf("0x0%.3x00", $temp+273);
+  $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 0 --mask 0xFF0000FF --data $data";
+  $cmd="/opt/ibm/capikv/test/flashgt_nvme_override $parms";
+}
+
+system($cmd);
+if ($? != 0) {print "ERROR "}
+else         {$verbose && print "SUCCESS "}
+$verbose && print ": $cmd\n";
+

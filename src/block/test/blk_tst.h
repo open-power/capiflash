@@ -59,7 +59,7 @@ extern void *blk_fvt_comp_data_buf;
 #define MAX_NUM_THREADS 4096
 #define BLK_FVT_BUFSIZE 4096
 #define NUM_LIST_IO 500
-
+#define SYNC_IO_ONLY 0x0800000
 #define FILESZ      4096*4096*64
 
 
@@ -70,14 +70,21 @@ extern void *blk_fvt_comp_data_buf;
 #define FV_RW_COMP 	4                   
 #define FV_RW_AWAR 	5                   
 
-/* io_flags used in blk_fvt_io, to force conditions */
-#define FV_ALIGN_BUFS           0x1
-#define FV_ARESULT_BLOCKING     0x2
-#define FV_ARESULT_NEXT_TAG     0x4
-#define FV_NO_INRPT		0x8
+#define HOST_TYPE_BMC 0
+#define HOST_TYPE_VM  1
 
 #define TESTCASE_SKIP(_reason) \
     printf("[  SKIPPED ] %s\n", _reason);
+
+#define TESTCASE_SKIP_IF_FILEMODE                         \
+  do                                                      \
+  {                                                       \
+    if ((env_filemode) && (atoi(env_filemode) == 1))      \
+    {                                                     \
+      TESTCASE_SKIP("skip if BLOCK_FILEMODE_ENABLED==1"); \
+      return;                                             \
+    }                                                     \
+} while (0)
 
 #define DEBUG_0(A)                              \
     do                                          \
@@ -117,16 +124,15 @@ extern void *blk_fvt_comp_data_buf;
         {fprintf(stderr,A,B,C,D,E);fflush(stderr);} \
     } while (0)
 
-typedef struct blk_thread_status {
-     int ret;
-     int errcode;
-} blk_thread_status_t;
-
-typedef struct blk_thread_data {
-    chunk_id_t chunk_id[MAX_LUNS];
-    blk_thread_status_t status;
-    int		flags;
-    size_t	size;
+typedef struct blk_thread_data
+{
+    chunk_id_t          chunk_id[MAX_LUNS];
+    int                 num_devs;
+    int                 flags;
+    int                 tid;
+    size_t              size;
+    int                 ret;
+    int                 errcode;
 } blk_thread_data_t;
 
 
@@ -138,7 +144,7 @@ void blk_open_tst_inv_path(const char* path,int *id, int max_reqs, int *er_no, i
 
 void blk_open_tst_close ( int id);
 
-void blk_open_tst_cleanup ();
+void blk_open_tst_cleanup (int flags, int *p_ret, int *p_err);
 
 void blk_close_tst(int id, int *ret, int *er_no, int close_flag);
 
@@ -147,16 +153,17 @@ void blk_fvt_get_set_lun_size(chunk_id_t id, size_t *size, int sz_flags, int get
 void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba, size_t nblocks, int *ret, int *err, int io_flag, int open_flag);
 
 int blk_fvt_setup(int size);
+void blk_fvt_RAID0_setup(void);
 int multi_lun_setup();
 
 void blk_fvt_cmp_buf(int size, int *ret);
 void blk_get_statistics (chunk_id_t id, int flags, int *ret, int *err);
-void blk_thread_tst(int *ret, int *err);
+void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags);
 void blk_multi_luns_thread_tst(int *ret, int *err);
 void blocking_io_tst (chunk_id_t id, int *ret, int *err);
-void user_tag_io_tst (chunk_id_t id, int *ret, int *err);
-void io_perf_tst (chunk_id_t id, int *ret, int *err);
-int fork_and_clone(int *ret, int *err, int mode);
+void user_tag_io_tst (chunk_id_t id, int *ret, int *err, int flags);
+void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags);
+int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags);
 int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode);
 int fork_and_clone_my_test(int *ret, int *err, int pmode, int cmode);
 void blk_fvt_intrp_io_tst(chunk_id_t id, int testflag, int open_flag, int *ret, int *err); 

@@ -33,6 +33,11 @@ extern pid_t ppid;
 extern bool afu_reset;
 extern bool long_run_enable;
 extern char cflash_path[MC_PATHLEN];
+
+#ifndef _AIX
+extern int manEEHonoff;
+#endif
+
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static __u64 chunks[]={ 4,8,16,32,24,16,20,2,12,1 };
 static int imLastContext = 0;
@@ -312,11 +317,12 @@ int test_spio_direct_virtual()
         printf("LONG_RUN enabled...\n");
         count = 10;
     }
+
     cfdisk = get_flash_disks(fldisks, FDISKS_ALL);
     if (cfdisk < 2)
     {
-        fprintf(stderr,"Must have 2 flash disks..\n");
-        return -1;
+        TESTCASE_SKIP("Must have 2 flash disks..");
+        return 0;
     }
 
     while (count-- >0)
@@ -395,7 +401,7 @@ int create_ctx_process(char *dev, dev64_t devno, __u64 chunk)
     pthread_t intr_thread;
     //__u64 flags;
     int i;
-
+   
     rc = ctx_init2(p_ctx, dev, DK_AF_ASSIGN_AFU, devno);
     CHECK_RC(rc, "Context init failed");
     // interrupt handler per context
@@ -432,6 +438,15 @@ int max_ctx_max_res(int cmd)
     struct ctx myctx;
     struct ctx *p_ctx=&myctx;
     int max_p = MAX_OPENS; // we can change MAX_OPEN Value in cflash_tests.h
+
+#ifndef _AIX
+    /* By default max_p will be set to BML max user context value */
+    if ( host_type == CFLASH_HOST_PHYP )
+    {
+        max_p = MAX_OPENS_PVM ;
+    }
+#endif
+
     memset(p_ctx, 0, sizeof(struct ctx));
     __u64 chunk = 0;
     __u64 lba;
@@ -525,10 +540,12 @@ int do_attach_detach(char *dev, dev64_t devno, __u16 lun_type)
         if (LUN_VIRTUAL == lun_type)
         {
             chunk = rand()%16;
+            debug("%d: initial chunk size=%ld \n",pid,chunk);
             //create 0 vlun size & later call resize ioctl
             rc = create_resource(p_ctx, chunk, DK_UVF_ALL_PATHS, lun_type);
             CHECK_RC(rc, "create LUN_VIRTUAL failed");
             chunk = rand()%32;
+            debug("%d: chunk before vlun_resize=%ld \n",pid,chunk);
             nlba = chunk * p_ctx->chunk_size;
             rc = vlun_resize(p_ctx, nlba);
             CHECK_RC(rc, "vlun_resize failed");
@@ -558,9 +575,18 @@ int test_spio_attach_detach(int cmd)
     cfdisk = get_flash_disks(disks, FDISKS_ALL);
     if (cfdisk < 2)
     {
-        fprintf(stderr,"Must have 2 flash disks..\n");
-        return -1;
+        TESTCASE_SKIP("Must have 2 flash disks..");
+        return 0;
     }
+
+#ifndef _AIX
+    if( diskSizeCheck( cflash_path , RECO_DISK_SIZE ))
+    {
+       TESTCASE_SKIP("DISK SIZE is less than required \n");
+       return 0;
+    }
+#endif
+    
     if (fork() == 0)
     {
         //child process
@@ -760,7 +786,6 @@ int create_res_hndl_afu_reset(bool do_recover, bool last)
 #else
     rc = do_poll_eeh(p_ctx);
 #endif
-    g_error=0; //reset any prev error might caught while EEH
     if ( noIOP == NULL )
     {
         pthread_join(ioThreadId, NULL);
@@ -791,6 +816,7 @@ int create_res_hndl_afu_reset(bool do_recover, bool last)
         p_ctx->hint = DK_HINT_SENSE;
 #endif
         fflush(stdout);
+        g_error=0; //reset any prev error might caught while EEH
         ctx_reinit(p_ctx);
 #ifdef _AIX
         p_ctx->hint=DK_HINT_SENSE;
@@ -852,6 +878,7 @@ end:
     sleep(5); // Don't let child exit to keep max ctx alive
     rc |= ctx_close(p_ctx);
     CHECK_RC(rc,"ctx close or close_res failed\n");
+    rc |= g_error ; // if g_error is set here inform caller 
     return rc;
 }
 
@@ -867,6 +894,13 @@ int max_ctx_rcvr_except_last_one()
     char tmpBuff[MAXBUFF];
     char cmdToRun[MAXBUFF];
     const char *configCmdP = "echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes";
+
+    if (turnOffTestCase("PVM") && manEEHonoff == 0)
+    {
+        TESTCASE_SKIP("Test case not supported in PowerVM env");
+        return 0;
+    }
+
 #endif
     system("ipcrm -Q 0x1234 >/dev/null 2>&1");
 
@@ -892,9 +926,12 @@ int max_ctx_rcvr_except_last_one()
 #ifdef _AIX
     printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
 #else
-    char * manualEehP   = getenv("MANUAL_EEH");
 
-    if ( NULL == manualEehP )
+    if (manEEHonoff != 0)
+    {
+         printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
+    } 
+    else 
     {
         printf("%d:.....MAIN: doing  EEH now .......\n",getpid());
 
@@ -909,6 +946,7 @@ int max_ctx_rcvr_except_last_one()
         {
             g_error = -1;
             fprintf(stderr,"%d: Failed in %s \n",pid,configCmdP);
+            exit(1);
         }
 
         debug("%d ---------- Command : %s----------------\n",pid,cmdToRun);
@@ -917,13 +955,10 @@ int max_ctx_rcvr_except_last_one()
         {
             g_error = -1;
             fprintf(stderr,"%d: Failed in %s \n",pid,cmdToRun);
+            exit(1);
         }
 
 
-    }
-    else
-    {
-        printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
     }
 #endif
 
@@ -952,7 +987,7 @@ int max_ctx_rcvr_except_last_one()
         rc = create_res_hndl_afu_reset(true, true);
         exit(rc);
     }
-    rc = wait4all();
+    rc = wait4allOnlyRC();
     printf("%d: rc for wait4all(): %d\n", getpid(), rc);
     system("ipcrm -Q 0x1234");
     return rc;
@@ -1056,6 +1091,13 @@ int max_ctx_rcvr_last_one_no_rcvr()
     char tmpBuff[MAXBUFF];
     char cmdToRun[MAXBUFF];
     const char *configCmdP = "echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes";
+
+    if (turnOffTestCase("PVM") &&  manEEHonoff == 0)
+    {
+        TESTCASE_SKIP("Test case not supported in PowerVM env");
+        return 0;
+    }
+
 #endif
 
     for (i = 0; i < max_p-1; i++)
@@ -1089,8 +1131,11 @@ int max_ctx_rcvr_last_one_no_rcvr()
 #ifdef _AIX
     printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
 #else
-    char * manualEehP   = getenv("MANUAL_EEH");
-    if ( NULL != manualEehP )
+    if( manEEHonoff != 0)
+    {
+        printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
+    }
+    else
     {
         printf("%d:.....MAIN: doing  EEH now .......\n",getpid());
         rc = diskToPCIslotConv(cflash_path, tmpBuff );
@@ -1104,6 +1149,7 @@ int max_ctx_rcvr_last_one_no_rcvr()
         {
             g_error = -1;
             fprintf(stderr,"%d: Failed in %s \n",pid,configCmdP);
+            exit(1);
         }
 
         printf("%d ---------- Command : %s----------------\n",pid,cmdToRun);
@@ -1113,16 +1159,13 @@ int max_ctx_rcvr_last_one_no_rcvr()
         {
             g_error = -1;
             fprintf(stderr,"%d: Failed in %s \n",pid,cmdToRun);
+            exit(1);
         }
 
     }
-    else
-    {
-        printf("%d:.....MAIN: BOSS do EEH now manually.......\n",getpid());
-    }
 #endif
 
-    rc = wait4all();
+    rc = wait4allOnlyRC();
     printf("%d: rc for wait4all(): %d\n", pid, rc);
     return rc;
 }
@@ -1144,6 +1187,14 @@ int test_clone_ioctl(int cmd)
     uint64_t RES_CLOSED=-1;
     int cl_index[5]={ 1,7,10,12,15 };
     pid = getpid();
+
+#ifndef _AIX
+    if( diskSizeCheck( cflash_path , 128 ))
+    {
+       TESTCASE_SKIP("DISK SIZE is less than required \n");
+       return 0;
+    }
+#endif
     rc =ctx_init(p_ctx);
     CHECK_RC(rc, "Context init failed");
     pthread_create(&thread, NULL, ctx_rrq_rx, p_ctx);
@@ -1282,28 +1333,37 @@ int max_ctx_cross_limit()
     struct ctx myctx;
     struct ctx *p_ctx=&myctx;
     pid = getpid();
-	int max_p = MAX_OPENS;
-	//int max_p = 1;
-	for (i=0; i<max_p;i++)
-	{
-		if (0==fork())
-		{
-			pid=getpid();
-			rc =ctx_init(p_ctx);
-			sleep(10);
-			exit(rc);
-		}
-	}
-	sleep(5);
-	rc=ctx_init(p_ctx);
-	if(rc){
-		fprintf(stderr,"%d:expectd to fail....\n",pid);
-		g_error=0;
-		rc = 0;
-	}
-	else rc =10;
-	rc = wait4all();
-	return rc;
+    int max_p = MAX_OPENS;
+
+#ifndef _AIX
+    /* By default max_p will be set to BML max user context value */
+    if ( host_type == CFLASH_HOST_PHYP )
+    {
+        max_p = MAX_OPENS_PVM ;
+    }
+#endif
+    //int max_p = 1;
+    for (i=0; i<max_p;i++)
+    {
+        if (0==fork())
+        {
+           pid=getpid();
+           rc =ctx_init(p_ctx);
+           sleep(10);
+           exit(rc);
+        }
+    }
+    sleep(5);
+    rc=ctx_init(p_ctx);
+    if(rc)
+    {
+      fprintf(stderr,"%d:expectd to fail....\n",pid);
+      g_error=0;
+      rc = 0;
+    }
+    else rc =10;
+    rc = wait4all();
+    return rc;
 }
 
 int max_ctx_on_plun(int cmd)
@@ -1315,6 +1375,15 @@ int max_ctx_on_plun(int cmd)
     pid = getpid();
     pthread_t thread;
     int max_p = MAX_OPENS;
+
+#ifndef _AIX
+    /* By default max_p will be set to BML max user context value */
+    if ( host_type == CFLASH_HOST_PHYP )
+    {
+        max_p = MAX_OPENS_PVM ;
+    }
+#endif
+
     for (i=0; i<max_p;i++)
     {
         if (0==fork())
@@ -1367,6 +1436,14 @@ int max_vlun_on_a_ctx()
     struct ctx myctx;
     struct ctx *p_ctx=&myctx;
     pid = getpid();
+#ifndef _AIX   
+    if( diskSizeCheck( cflash_path , RECO_DISK_SIZE ))
+    {
+       TESTCASE_SKIP("DISK SIZE is less than required \n");
+       return 0;
+    }
+#endif
+
     rc=ctx_init(p_ctx);
     __u64 vluns[MAX_VLUNS];
     for (i=0;i<MAX_VLUNS;i++)

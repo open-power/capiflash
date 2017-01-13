@@ -34,17 +34,47 @@
 #include "tag.h"
 #include "queue.h"
 #include "sq.h"
+#include "ut.h"
 
 #define PT_OFF  0
 #define PT_IDLE 1
 #define PT_RUN  2
 #define PT_EXIT 3
 
+#define ARK_VERB_FN "/root/kv_verbosity"
+
 #define DIVCEIL(_x, _y)  (((_x) / (_y)) + (((_x) % (_y)) ? 0 : 1))
+
+#define UPDATE_LAT(park, prcb, _lat)                                           \
+do                                                                             \
+{                                                                              \
+    if (prcb->cmd == K_SET)                                                    \
+    {                                                                          \
+        park->set_opsT += 1;                                                   \
+        park->set_latT += _lat;                                                \
+    }                                                                          \
+    else if (prcb->cmd == K_GET)                                               \
+    {                                                                          \
+        park->get_opsT += 1;                                                   \
+        park->get_latT += _lat;                                                \
+    }                                                                          \
+    else if (prcb->cmd == K_EXI)                                               \
+    {                                                                          \
+        park->exi_opsT += 1;                                                   \
+        park->exi_latT += _lat;                                                \
+    }                                                                          \
+    else if (prcb->cmd == K_DEL)                                               \
+    {                                                                          \
+        park->del_opsT += 1;                                                   \
+        park->del_latT += _lat;                                                \
+    }                                                                          \
+}                                                                              \
+while (0);
 
 // Stats to collect on number of K/V ops
 // and IOs
-typedef struct ark_stats {
+typedef struct ark_stats
+{
   volatile uint64_t ops_cnt;
   volatile uint64_t io_cnt;
   volatile uint64_t kv_cnt;
@@ -102,16 +132,21 @@ typedef struct p_ark
 
 #define ARK_VERBOSE_SIZE_DEF  1048576
 #define ARK_VERBOSE_BSIZE_DEF    4096
-#define ARK_VERBOSE_HASH_DEF  1048576
+#define ARK_VERBOSE_HASH_DEF   200000
 #define ARK_VERBOSE_VLIMIT_DEF    256
 #define ARK_VERBOSE_BLKBITS_DEF    34
 #define ARK_VERBOSE_GROW_DEF     1024
 #define ARK_VERBOSE_NTHRDS_DEF      1
 
-#define ARK_MAX_ASYNC_OPS         128
-#define ARK_MAX_TASK_OPS           48
+#define ARK_MIN_NASYNCS           128
+#define ARK_MAX_NASYNCS           512
+#define ARK_MIN_BASYNCS          1024
+#define ARK_MAX_TASK_OPS           64
+#define ARK_MAX_QUEUE            8196
+#define ARK_MIN_VB                256
 
-typedef struct _ark {
+typedef struct _ark
+{
   uint64_t flags;
   uint32_t persload;
   uint64_t pers_cs_bytes;    // amt required for only the Control Structures
@@ -127,9 +162,6 @@ typedef struct _ark {
   uint64_t blkused;
   uint64_t nasyncs;
   uint64_t ntasks;
-
-  ark_stats_t      pers_stats;
-
   uint32_t holds;
 
   int nthrds;
@@ -143,8 +175,8 @@ typedef struct _ark {
 
   pthread_mutex_t mainmutex;
 
-  hash_t *ht; // hashtable
-  BL *bl; // block lists
+  hash_t          *ht; // hashtable
+  BL              *bl; // block lists
   struct _ea      *ea; // in memory store space
   struct _rcb     *rcbs;
   struct _tcb     *tcbs;
@@ -154,15 +186,31 @@ typedef struct _ark {
   struct _tags    *rtags;
   struct _tags    *ttags;
 
+  uint32_t         issT;
+  uint64_t         QDT;
+  uint64_t         QDN;
+  uint64_t         set_latT;
+  uint64_t         get_latT;
+  uint64_t         exi_latT;
+  uint64_t         del_latT;
+  uint64_t         set_opsT;
+  uint64_t         get_opsT;
+  uint64_t         exi_opsT;
+  uint64_t         del_opsT;
+  double           ns_per_tick;
+  ark_stats_t      pers_stats;
+
 } _ARK;
 
 #define _ARC _ARK
 
-typedef struct _scb {
+typedef struct _scb
+{
   pthread_t        pooltid;
   queue_t         *rqueue;
   queue_t         *tqueue;
-  queue_t         *ioqueue;
+  queue_t         *scheduleQ;
+  queue_t         *harvestQ;
   int32_t          poolstate;
   int32_t          rlast;
   int32_t          dogc;
@@ -173,7 +221,8 @@ typedef struct _scb {
 } scb_t;
 
 // pool thread gets its id and the database struct
-typedef struct _pt {
+typedef struct _pt
+{
   int id;
   _ARK *ark;
 } PT;
@@ -217,13 +266,15 @@ typedef struct _rcb {
   int32_t     sthrd;
   int32_t     cmd;
   int32_t     stat;
+  uint64_t    stime;
 
   void        (*cb)(int errcode, uint64_t dt,int64_t res);
   pthread_cond_t  acond;
   pthread_mutex_t alock;
 } rcb_t;
 
-typedef struct _ari {
+typedef struct _ari
+{
   _ARK     *ark;
   int64_t  hpos;
   int64_t  key;
@@ -256,7 +307,8 @@ typedef struct _ari {
 #define ARK_NEXT_START       20
 
 // operation 
-typedef struct _tcb {
+typedef struct _tcb
+{
   int32_t         rtag;
   int32_t         ttag;
   int32_t         state;
@@ -264,14 +316,14 @@ typedef struct _tcb {
 
   uint64_t        inblen;
   uint64_t        oublen;
-  BTP             inb; // input bucket space - aligned
+  BTP             inb;      // input bucket space - aligned
   BTP             inb_orig; // input bucket space
-  BTP             oub; // output bucket space - aligned
+  BTP             oub;      // output bucket space - aligned
   BTP             oub_orig; // output bucket space
   uint64_t        vbsize;
-  uint8_t        *vb; // value buffer space - aligned
-  uint8_t        *vb_orig; // value buffer space
-  uint8_t        *vval; // value buffer space
+  uint8_t        *vb;       // value buffer space - aligned
+  uint8_t        *vb_orig;  // value buffer space
+  uint8_t        *vval;     // value buffer space
   uint64_t        vblkcnt;
   int64_t         vblk;
   uint64_t        hpos;
@@ -296,7 +348,11 @@ typedef struct _iocb
   int32_t         tag;
   uint32_t        issT;
   uint32_t        cmpT;
+  uint32_t        rd;
+  uint32_t        lat;
+  uint64_t        stime;
   uint32_t        hmissN;
+  uint32_t        aflags;
   uint32_t        io_error;
   uint32_t        io_done;
 } iocb_t;

@@ -276,7 +276,7 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 	}
 
 
-	path = cblk_get_path(chunk,0,chunk_type,chunk->num_cmds,&in_use, share); 
+	path = cblk_get_path(chunk,0,NULL,chunk_type,chunk->num_cmds,&in_use, share); 
 
 
 	if (path == NULL) {
@@ -1850,14 +1850,14 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
  *              chunk - Chunk the cmd is associated.
  *
  * RETURNS:
- *              None
+ *              status
  *              
  *              
  */
-void cblk_check_os_adap_err(cflsh_chunk_t *chunk,int path_index)
+cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk,int path_index)
 {
     int rc = 0;
-
+    cflash_block_check_os_status_t status = CFLSH_BLK_CHK_OS_NO_RESET;
 
     
     chunk->stats.num_capi_adap_chck_err++;
@@ -1876,7 +1876,7 @@ void cblk_check_os_adap_err(cflsh_chunk_t *chunk,int path_index)
 
     cblk_notify_mc_err(chunk,path_index,0x403,0,CFLSH_BLK_NOTIFY_AFU_FREEZE,NULL);
 
-    return;
+    return status;
 }
 
 /*

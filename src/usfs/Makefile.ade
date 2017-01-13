@@ -1,0 +1,81 @@
+# @(#)86  1.4  src/bos/usr/ccs/lib/libcflsh_block/Makefile, sysxcflashblock, bos720, o2016_07A2 2/16/16 12:03:22
+# IBM_PROLOG_BEGIN_TAG 
+# This is an automatically generated prolog. 
+#  
+# bos720 src/bos/usr/ccs/lib/libcflsh_block/Makefile 1.4 
+#  
+/* IBM Data Engine for NoSQL - Power Systems Edition User Library Project */
+/*                                                                        */
+/* Contributors Listed Below - COPYRIGHT 2015                             */
+/* [+] International Business Machines Corp.                              */
+/*                                                                        */
+/*                                                                        */
+/* Licensed under the Apache License, Version 2.0 (the "License");        */
+/* you may not use this file except in compliance with the License.       */
+/* You may obtain a copy of the License at                                */
+/*                                                                        */
+/*     http://www.apache.org/licenses/LICENSE-2.0                         */
+/*                                                                        */
+/* Unless required by applicable law or agreed to in writing, software    */
+/* distributed under the License is distributed on an "AS IS" BASIS,      */
+/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
+/* implied. See the License for the specific language governing           */
+/* permissions and limitations under the License.                         */
+/*                                                                        */
+/* IBM_PROLOG_END_TAG                                                     */
+# COMPONENT_NAME: (syscflashusfs)
+#
+# FUNCTIONS:
+#  ADE Makefile
+#
+# ORIGINS: 27
+#
+
+
+CFLAGS          += -qcpluscmt              #allow C++ style comments
+CFLAGS          += -Dinline=__inline       #alloc inline functions
+CFLAGS  	+= -qlist -qsource         #Create listings
+#CFLAGS          += -qattr=full             #includes attribute listing for all identifiers
+
+# Information on: no explicit return values from non-void function;
+# redundant unsigned comparisons; constants; conversions; inconsistent
+# declarations; inconsistent enumerations; language-level effects;
+# variable names truncated by the compiler.
+
+CFLAGS          += -D__FULL_PROTO -DINFULLPROTO -qinfo=pro -qproto
+CFLAGS          += -qinfo=ret -qinfo=cmp -qinfo=cns -qinfo=cnv
+CFLAGS          += -qinfo=dcl -qinfo=enu -qinfo=lan -qinfo=tru
+CFLAGS          += -qinfo=eff -qinfo=ini -qinfo=inl -qinfo=ord
+#CFLAGS          += -qinfo=par
+CFLAGS          += -DTARGET_ARCH_PPC64BE   #User POWER Big Endian
+#CFLAGS          += -D_MASTER_LOCK
+
+
+#disable optimization
+CC_OPT_LEVEL     =
+
+VPATH           +=./common
+INCFLAGS        += -I./common
+
+EXPORTS   = -bE:libcflsh_usfs.exp
+
+SHARED_LIBRARIES = libcflsh_usfs.a
+
+SHARED_OFILES = \
+	cflsh_usfs.o \
+	cflsh_usfs_utils.o \
+	cflsh_usfs_disk.o \
+	cflsh_usfs_inode.o \
+	cflsh_usfs_client.o \
+	cflsh_usfs_wrapper.o
+
+SHARED64_OFILES = ${SHARED_OFILES:.o=.64o}
+
+LIBS             = -lc -lpthreads -lcflsh_block
+
+EXPLIB_TARGETS   = export_libcflsh_usfs.a
+
+ILIST            = libcflsh_usfs.a
+IDIR             = /usr/lib/
+
+.include <${RULES_MK}>

@@ -69,9 +69,18 @@ IMAGEH="${_RESOURCEDIR}/1410*"
 all:
 	rm -rf ${INSTALL_ROOT}
 	${MAKE} cflash cflash-test cflashimage
-	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${PKGDIR}
 
-cflash:
+LIC_FILES := $(notdir $(shell ls ${_RESOURCEDIR}/license/*.txt 2>/dev/null))
+
+${LIC_FILES}:
+	@mkdir -p ${_LIC_DIR}
+ifeq ($(UNAME),AIX)
+	${INSTALL} ${_RESOURCEDIR}/license/$@ ${_LIC_DIR}
+else
+	${INSTALL} -m 644 ${_RESOURCEDIR}/license/$@ ${_LIC_DIR}
+endif
+
+cflash: ${LIC_FILES}
 	@mkdir -p ${_BIN_DIR}
 	@mkdir -p ${_ETC_DIR}
 	@mkdir -p ${_LIB_DIR}
@@ -158,6 +167,7 @@ else
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxl.rules ${_UDEV_RULES_DIR}
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxlflash.rules ${_UDEV_RULES_DIR}
 	
+	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc.debug ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc.cleardebug ${_ETC_DIR}
 endif
@@ -177,9 +187,6 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_async.c ${_EXAMPLES_DIR}
 	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_sync.c ${_EXAMPLES_DIR}
 	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_persist.c ${_EXAMPLES_DIR}
-
-	@#Licenses
-	${INSTALL} ${_RESOURCEDIR}/license/*.txt ${_LIC_DIR}
 else
 	${INSTALL} -m 644 ${ROOTPATH}/src/block/test/blockio.c ${_EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/block/test/blocklistio.c ${_EXAMPLES_DIR}
@@ -187,9 +194,6 @@ else
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_async.c ${_EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_sync.c ${_EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_persist.c ${_EXAMPLES_DIR}
-
-	@#Licenses
-	${INSTALL} -m 644 ${_RESOURCEDIR}/license/*.txt ${_LIC_DIR}
 
 	@#SystemD Daemons
 	${INSTALL} -m 644 ${_RESOURCEDIR}/cxlfd.service ${_SYSTEMD_DIR}
@@ -201,8 +205,15 @@ endif
 	@#Version tags and useful info
 	echo "${GITREVISION}" > ${INSTALL_ROOT}/version.txt
 
-cflash-test:	
 
+MAN3_FILES := afu.h.3 cxl.h.3 capiblock.h.3 libcxl.h.3 arkdb.h.3 ark.h.3 cflash_tools_user.h.3
+${MAN3_FILES}:
+	@mkdir -p ${_MAN_DIR}
+	@if [[ -e ${_DOCSRCDIR}/man/man3/$@ ]]; \
+    then echo ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR};\
+              ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR}; fi
+
+cflash-test: ${MAN3_FILES}
 	@#TEST ONLY CONTENT - DO NOT SHIP
 	@mkdir -p ${_TEST_DIR}
 	@mkdir -p ${_TEST_DATA_DIR}
@@ -258,34 +269,23 @@ else
 	${INSTALL} -s ${_RESOURCEDIR}/flashgt_nvme_override ${_TEST_DIR}
 endif
 
-ifeq ($(UNAME),AIX)
-	@#Manpages - this is highly repetative
-else
-	@#seems like it could become its own make rule / recipe...
-	${INSTALL} ${_DOCSRCDIR}/man/man3/afu.h.3 ${_MAN_DIR}
-	${INSTALL} ${_DOCSRCDIR}/man/man3/cxl.h.3 ${_MAN_DIR}
-	${INSTALL} ${_DOCSRCDIR}/man/man3/capiblock.h.3 ${_MAN_DIR}
-	${INSTALL} ${_DOCSRCDIR}/man/man3/libcxl.h.3 ${_MAN_DIR}
-	${INSTALL} ${_DOCSRCDIR}/man/man3/arkdb.h.3 ${_MAN_DIR}
-	${INSTALL} ${_DOCSRCDIR}/man/man3/ark.h.3 ${_MAN_DIR}
-	${INSTALL} ${_DOCSRCDIR}/man/man3/cflash_tools_user.h.3 ${_MAN_DIR}
-	@#compress manpages in destination
-	gzip -f ${_MAN_DIR}/*.h.3
+
+FW_FILES := $(notdir $(shell ls ${_RESOURCEDIR}/BTV*)) $(notdir $(shell ls ${_RESOURCEDIR}/1410*))
+
+${FW_FILES}:
+	@mkdir -p ${_AFU_IMAGES_DIR}
+	@if [[ -e ${_RESOURCEDIR}/$@ ]];\
+     then echo ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR};\
+               ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; fi
+ifneq ($(UNAME),AIX)
+	@if [[ -e ${_RESOURCEDIR}/$@ ]];\
+     then cd ${_AFU_IMAGES_DIR}; /usr/bin/md5sum $@ >> afu_fw.md5sum; fi
 endif
 
-cflashimage:
+cflashimage: ${FW_FILES}
 	@mkdir -p ${_AFU_IMAGES_DIR}
-#install if image PAPR header is promoted
-ifneq ("$(wildcard ${_RESOURCEDIR}/1410*)","")
-	${INSTALL} ${_RESOURCEDIR}/1410* ${_AFU_IMAGES_DIR}
-	${INSTALL} ${_RESOURCEDIR}/BTV* ${_AFU_IMAGES_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cxlffdc ${AFU_ROOT}
 ifneq ($(UNAME),AIX)
-	cd ${_AFU_IMAGES_DIR}; /usr/bin/md5sum 1410* > afu_fw.md5sum; /usr/bin/md5sum *.bin >> afu_fw.md5sum
-endif
-endif
-ifeq ($(UNAME),AIX) 
-# need to have a valid ffdc mechanism for AIX...
-else #Linux only
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_dump ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_status ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/flashgt_temp ${AFU_ROOT}
@@ -299,17 +299,10 @@ else #Linux only
 	${INSTALL} ${_RESOURCEDIR}/cflash_stick.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_perfcheck.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/blacklist-cxlflash.conf ${AFU_ROOT}
-	${INSTALL} ${_RESOURCEDIR}/cxlffdc ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/flash_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/reload_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/psl_trace_dump ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cxl_flash_vm ${AFU_ROOT}
-
-#install if image without header is promoted
-ifneq ("$(wildcard ${_RESOURCEDIR}/corsa*)","")
-	${INSTALL} ${_RESOURCEDIR}/corsa* ${_AFU_IMAGES_DIR}
-endif
-
 endif
 
 include ${ROOTPATH}/config.mk

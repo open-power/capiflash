@@ -25,26 +25,31 @@
 
 SHELL=/bin/bash
 
+build:
+	${MAKE} cleanall
+	${MAKE} -j10 dep
+	${MAKE} -j10 code_pass
+	${MAKE} -j10 test
+	${MAKE} docs
+	${MAKE} packaging
+
 ship:
-	${MAKE} dep
-	${MAKE} code_pass
+	${MAKE} -j10 dep
+	${MAKE} -j10 code_pass
 	@if [[ $(notdir $(PWD)) = test ]]; then ${MAKE} test; fi
 
-docs: src/build/doxygen/doxygen.conf
-	rm -rf obj/doxygen/*
-	doxygen src/build/doxygen/doxygen.conf
-
 tests:
-	${MAKE} ship
-	${MAKE} test
+	${MAKE} -j10 ship
+	${MAKE} -j10 test
 
 run_fvt:
-	${MAKE} tests
+	${MAKE} -j10 tests
 	${MAKE} fvt
 
 run_unit:
-	${MAKE} tests
+	${MAKE} -j10 tests
 	${MAKE} unit
+
 
 #needed to provide linker rpath hints for installed code
 DEFAULT_LIB_INSTALL_PATH = /opt/ibm/capikv/lib
@@ -142,7 +147,7 @@ COMMONFLAGS += -O3
 endif
 
 #add support for the rev ID header
-GITREVISION:=$(shell git rev-list HEAD | wc -l)-$(shell git rev-parse --short HEAD)
+GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
 CUSTOMFLAGS += -DGITREVISION='"${GITREVISION}"'
 
 #if ALLOW_WARNINGS is NOT defined, we assume we are compiling production code
@@ -377,11 +382,16 @@ fvt:       ${SUBDIRS:.d=.fvt}
 unit:      ${SUBDIRS:.d=.unit}
 beam:      ${SUBDIRS:.d=.beamdir} ${BEAMOBJS}
 
+docs: ${ROOTPATH}/src/build/doxygen/doxygen.conf
+	@rm -rf ${ROOTPATH}/obj/doxygen/*
+	@cd ${ROOTPATH}; doxygen src/build/doxygen/doxygen.conf
+
 install:
 	rm -rf ${PKGDIR}/install_root/*
 	cd ${ROOTPATH}/src/build/install && ${MAKE}
 
 packaging:
+	${MAKE} install
 	cd ${ROOTPATH}/src/build/packaging && ${MAKE}
 
 cscope:

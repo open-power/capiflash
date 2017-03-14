@@ -16,7 +16,7 @@
 
 # Points to the root of Google Test, relative to where this file is.
 # Remember to tweak this if you move this file.
-GTEST_DIR =$(ROOTPATH)/${GTESTDIR}
+GTEST_DIR =${GTESTDIR}
 
 UNAME=$(shell uname)
 
@@ -24,7 +24,7 @@ UNAME=$(shell uname)
 # Set Google Test's header directory as a system directory, such that
 # the compiler doesn't generate warnings in Google Test headers.
 ifeq ($(UNAME),Linux)
-CPPFLAGS += -isystem $(GTEST_DIR)/include
+CPPFLAGS += -isystem $(GTESTINC)
 else
 CPPFLAGS += -DOLD_ANSIC_AIX_VERSION -I $(GTEST_DIR)/include
 endif
@@ -36,8 +36,7 @@ endif
 
 # All Google Test headers.  Usually you shouldn't change this
 # definition.
-GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
-                $(GTEST_DIR)/include/gtest/internal/*.h
+GTEST_HEADERS = $(GTESTINC)/gtest/internal/*.h
 
 
 # Builds gtest.a and gtest_main.a.

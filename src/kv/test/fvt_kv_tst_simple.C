@@ -38,7 +38,10 @@ extern "C"
 #include <errno.h>
 #include <iv.h>
 #include <bl.h>
+#include <bt.h>
+#include <am.h>
 #include <ark.h>
+#include <arkdb_trace.h>
 }
 
 /**
@@ -49,27 +52,31 @@ extern "C"
 TEST(FVT_KV_GOOD_PATH, SIMPLE_validate_kv_utils)
 {
     int32_t i    = 0;
+    int32_t loop = 0;
     int32_t FLEN = 1000;
     int32_t MLEN = 1000;
     void   *null = NULL;
 
-    kv_t *db_f = (kv_t*)kv_db_create_fixed(FLEN, 64, 4);
-    ASSERT_TRUE(db_f != NULL);
-
-    kv_t *db_m = (kv_t*)kv_db_create_mixed(MLEN, 128, 64);
-    ASSERT_TRUE(db_m != NULL);
-
-    for (i=0; i<FLEN; i++)
+    for (loop=0; loop<100; loop++)
     {
-        ASSERT_NE(null, kv_db_find(db_f, FLEN, db_f[i].key, db_f[i].klen));
-    }
+        kv_t *db_f = (kv_t*)kv_db_create_fixed(FLEN, 256, 4);
+        ASSERT_TRUE(db_f != NULL);
 
-    for (i=0; i<MLEN; i++)
-    {
-        ASSERT_NE(null, kv_db_find(db_m, MLEN, db_m[i].key, db_m[i].klen));
+        kv_t *db_m = (kv_t*)kv_db_create_mixed(MLEN, 1024, 64);
+        ASSERT_TRUE(db_m != NULL);
+
+        for (i=0; i<FLEN; i++)
+        {
+            ASSERT_NE(null, kv_db_find(db_f, FLEN, db_f[i].key, db_f[i].klen));
+        }
+
+        for (i=0; i<MLEN; i++)
+        {
+            ASSERT_NE(null, kv_db_find(db_m, MLEN, db_m[i].key, db_m[i].klen));
+        }
+        kv_db_destroy(db_f, FLEN);
+        kv_db_destroy(db_m, MLEN);
     }
-    kv_db_destroy(db_f, FLEN);
-    kv_db_destroy(db_m, MLEN);
 }
 
 /**
@@ -114,9 +121,10 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_iv)
  ******************************************************************************/
 TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
 {
-    uint64_t n  = 233;
-    uint64_t w  = 17;
-    BL      *bl = NULL;
+    uint64_t       n  = 20000;
+    uint64_t       w  = ARK_VERBOSE_BLKBITS_DEF;
+    BL            *bl = NULL;
+    ark_io_list_t *aiol=NULL;
 
     ASSERT_TRUE(bl_init_chain_link(bl) == 1);
     ASSERT_TRUE(bl_reserve(bl,1) < 0);
@@ -125,14 +133,194 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
     ASSERT_TRUE(bl_left(bl) < 0);
     ASSERT_TRUE(bl_len(bl,1) == 0);
     ASSERT_TRUE(bl_next(bl,1) < 0);
-    ASSERT_TRUE(bl_chain(bl,1,1) == 0);
+    ASSERT_TRUE(bl_chain(bl,1,10) == 0);
+    ASSERT_TRUE(bl_rechain(&aiol,bl,1,1,1) != 0);
     ASSERT_TRUE(bl_chain_blocks(bl,1,1) == 0);
-    bl_check_take(bl, 1);
 
     bl = bl_new(n, w);
     ASSERT_TRUE(NULL != bl);
 
+    ASSERT_EQ(bl_init_chain_link(bl), 0);
+    ASSERT_EQ(bl_left(bl), 10000);
+    ASSERT_EQ(bl_reserve(bl,1), 0);
+    ASSERT_EQ(bl_take(bl,1), 2);
+    ASSERT_EQ(bl_drop(bl,2),1);
+    ASSERT_EQ(bl_take(bl,2), 2);
+    ASSERT_EQ(bl_len(bl,2), 2);
+    ASSERT_EQ(bl_next(bl,2), 3);
+    ASSERT_EQ(bl_drop(bl,2),2);
+    ASSERT_EQ(bl_take(bl,10), 2);
+    ASSERT_EQ(bl_len(bl,2), 10);
+    aiol = bl_chain(bl,2,10);
+    ASSERT_TRUE(aiol != NULL);
+    ASSERT_EQ(bl_drop(bl,2),10);
+    ASSERT_EQ(bl_take(bl,20), 2);
+    ASSERT_EQ(bl_len(bl,2), 20);
+    ASSERT_EQ(bl_rechain(&aiol,bl,2,20,10), 0);
+
+    am_free(aiol);
     bl_delete(bl);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   test IV functions
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_bt)
+{
+    BT      *bt1;
+    BT      *bt2;
+    BT      *bt1_orig;
+    BT      *bt2_orig;
+    uint8_t  key4[5] = {"key4"};
+    uint8_t  key5[6] = {"key55"};
+    uint8_t  key6[7] = {"key666"};
+    uint8_t  key7[8] = {"key7777"};
+    uint8_t  val4[5] = {"vala"};
+    uint8_t  val5[6] = {"valbb"};
+    uint8_t  val6[7] = {"valccc"};
+    uint8_t  val7[8] = {"valdddd"};
+    uint8_t  val9[10]= {"blknumber"};
+    uint8_t  buf[11];
+    uint64_t oldvdf;
+    uint64_t oldvlen;
+
+    bt1 = bt_new(128, 8, sizeof(uint64_t), &bt1_orig);
+    ASSERT_TRUE(NULL != bt1);
+    bt2 = bt_new(128, 8, sizeof(uint64_t), &bt2_orig);
+    ASSERT_TRUE(NULL != bt2);
+
+    /* insert head */
+    ASSERT_EQ(1, bt_set      (bt2, bt1, 4, key4, 4, val4, &oldvdf, &oldvlen));
+    ASSERT_EQ(4, bt_exists   (bt2,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt2,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+
+    /* insert head with 1 existing */
+    ASSERT_EQ(1, bt_set      (bt1, bt2, 5, key5, 5, val5, &oldvdf, &oldvlen));
+    ASSERT_EQ(5, bt_exists   (bt1,      5, key5));
+    ASSERT_EQ(5, bt_get      (bt1,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val5,buf,5));
+    ASSERT_EQ(4, bt_exists   (bt1,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt1,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+
+    /* insert head with 2 existing */
+    ASSERT_EQ(1, bt_set      (bt2, bt1, 6, key6, 6, val6, &oldvdf, &oldvlen));
+    ASSERT_EQ(6, bt_exists   (bt2,      6, key6));
+    ASSERT_EQ(6, bt_get      (bt2,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val6,buf,6));
+    ASSERT_EQ(4, bt_exists   (bt2,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt2,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+    ASSERT_EQ(5, bt_exists   (bt2,      5, key5));
+    ASSERT_EQ(5, bt_get      (bt2,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val5,buf,5));
+
+    /* replace value of 1st key with larger size > vdf */
+    ASSERT_EQ(0, bt_set      (bt1, bt2, 6, key6, 9, val9, &oldvdf, &oldvlen));
+    ASSERT_EQ(9, bt_exists   (bt1,      6, key6));
+    ASSERT_EQ(9, bt_get      (bt1,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val9,buf,8));
+    ASSERT_EQ(4, bt_exists   (bt1,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt1,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+    ASSERT_EQ(5, bt_exists   (bt1,      5, key5));
+    ASSERT_EQ(5, bt_get      (bt1,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val5,buf,5));
+
+    /* replace value of 1st key with smaller size < vdf */
+    ASSERT_EQ(0, bt_set      (bt2, bt1, 6, key6, 6, val6, &oldvdf, &oldvlen));
+    ASSERT_EQ(6, bt_exists   (bt2,      6, key6));
+    ASSERT_EQ(6, bt_get      (bt2,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val6,buf,6));
+    ASSERT_EQ(4, bt_exists   (bt2,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt2,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+    ASSERT_EQ(5, bt_exists   (bt2,      5, key5));
+    ASSERT_EQ(5, bt_get      (bt2,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val5,buf,5));
+
+    /* delete middle */
+    ASSERT_EQ(5, bt_del      (bt1, bt2, 5, key5));
+    ASSERT_EQ(-1,bt_exists   (bt1,      5, key5));
+    ASSERT_EQ(-1,bt_get      (bt1,      5, key5, buf));
+    ASSERT_EQ(6, bt_exists   (bt1,      6, key6));
+    ASSERT_EQ(6, bt_get      (bt1,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val6,buf,6));
+    ASSERT_EQ(4, bt_exists   (bt1,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt1,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+
+    /* delete tail */
+    ASSERT_EQ(4, bt_del      (bt2, bt1, 4, key4));
+    ASSERT_EQ(-1,bt_exists   (bt2,      4, key4));
+    ASSERT_EQ(-1,bt_get      (bt2,      4, key4, buf));
+    ASSERT_EQ(6, bt_exists   (bt2,      6, key6));
+    ASSERT_EQ(6, bt_get      (bt2,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val6,buf,6));
+
+    /* delete head */
+    ASSERT_EQ(6, bt_del      (bt1, bt2, 6, key6));
+    ASSERT_EQ(-1,bt_exists   (bt1,      6, key6));
+    ASSERT_EQ(-1,bt_get      (bt1,      6, key6, buf));
+
+    /* insert head */
+    ASSERT_EQ(1, bt_set      (bt2, bt1, 4, key4, 4, val4, &oldvdf, &oldvlen));
+    ASSERT_EQ(4, bt_exists   (bt2,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt2,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+
+    /* insert head with 1 existing */
+    ASSERT_EQ(1, bt_set      (bt1, bt2, 5, key5, 5, val5, &oldvdf, &oldvlen));
+    ASSERT_EQ(5, bt_exists   (bt1,      5, key5));
+    ASSERT_EQ(5, bt_get      (bt1,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val5,buf,5));
+    ASSERT_EQ(4, bt_exists   (bt1,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt1,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+
+    /* insert head with 2 existing */
+    ASSERT_EQ(1, bt_set      (bt2, bt1, 6, key6, 6, val6, &oldvdf, &oldvlen));
+    ASSERT_EQ(6, bt_exists   (bt2,      6, key6));
+    ASSERT_EQ(6, bt_get      (bt2,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val6,buf,6));
+    ASSERT_EQ(4, bt_exists   (bt2,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt2,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+    ASSERT_EQ(5, bt_exists   (bt2,      5, key5));
+    ASSERT_EQ(5, bt_get      (bt2,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val5,buf,5));
+
+    /* replace value of middle key with > vdf */
+    ASSERT_EQ(0, bt_set      (bt1, bt2, 5, key5, 9, val9, &oldvdf, &oldvlen));
+    ASSERT_EQ(9, bt_exists   (bt1,      5, key5));
+    ASSERT_EQ(9, bt_get      (bt1,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val9,buf,8));
+    ASSERT_EQ(6, bt_exists   (bt1,      6, key6));
+    ASSERT_EQ(6, bt_get      (bt1,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val6,buf,6));
+    ASSERT_EQ(4, bt_exists   (bt1,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt1,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+
+    ASSERT_EQ(1, bt_set      (bt2, bt1, 7, key7, 7, val7, &oldvdf, &oldvlen));
+    ASSERT_EQ(7, bt_exists   (bt2,      7, key7));
+    ASSERT_EQ(7, bt_get      (bt2,      7, key7, buf));
+    ASSERT_EQ(0, memcmp(val7,buf,7));
+    ASSERT_EQ(4, bt_exists   (bt2,      4, key4));
+    ASSERT_EQ(4, bt_get      (bt2,      4, key4, buf));
+    ASSERT_EQ(0, memcmp(val4,buf,4));
+    ASSERT_EQ(9, bt_exists   (bt2,      5, key5));
+    ASSERT_EQ(9, bt_get      (bt2,      5, key5, buf));
+    ASSERT_EQ(0, memcmp(val9,buf,8));
+    ASSERT_EQ(6, bt_exists   (bt2,      6, key6));
+    ASSERT_EQ(6, bt_get      (bt2,      6, key6, buf));
+    ASSERT_EQ(0, memcmp(val6,buf,6));
+
+    bt_delete(bt1_orig);
+    bt_delete(bt2_orig);
 }
 
 /**
@@ -505,6 +693,94 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_REP_FIXED_256x4096)
  * \brief
  *   add variable length key/value to ark, query them, replace them, verify
  ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_REP_MIXED)
+{
+    ARK     *ark      = NULL;
+    uint32_t klen     = 3;
+    uint32_t vlen     = 10;
+    int      idx      = 10;
+    int64_t  res      = 0;
+    char     key[4]   = "abc";
+    char     val[4096] = {0};
+    char     buf[4096] = {0};
+
+    ARK_CREATE;
+
+    GEN_VAL(val, idx, vlen);
+    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, memcmp(val,buf,vlen));
+
+    /* replace with a different value */
+    idx = 15;
+    GEN_VAL(val, idx, vlen);
+    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, memcmp(val,buf,vlen));
+
+    /* replace with a bigger different value */
+    idx  = 20;
+    vlen = 20;
+    GEN_VAL(val, idx, vlen);
+    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, memcmp(val,buf,vlen));
+
+    /* replace with >vdf bigger different value */
+    idx  = 4096;
+    vlen = 4096;
+    GEN_VAL(val, idx, vlen);
+    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, memcmp(val,buf,vlen));
+
+    /* replace with a smaller different value */
+    idx  = 256;
+    vlen = 256;
+    GEN_VAL(val, idx, vlen);
+    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, memcmp(val,buf,vlen));
+
+    /* replace with a smaller different value */
+    idx  = 4;
+    vlen = 4;
+    GEN_VAL(val, idx, vlen);
+    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, memcmp(val,buf,vlen));
+
+    /* replace with a bigger different value */
+    idx  = 256;
+    klen = 256;
+    vlen = 4096;
+    GEN_VAL(val, idx, vlen);
+    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    EXPECT_EQ(vlen, res);
+    EXPECT_EQ(0, memcmp(val,buf,vlen));
+
+    ARK_DELETE;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   add variable length key/value to ark, query them, replace them, verify
+ ******************************************************************************/
 TEST(FVT_KV_GOOD_PATH, SIMPLE_REP_MIXED_3x2)
 {
     ARK     *ark   = NULL;
@@ -821,39 +1097,182 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_first_next_MIXED_256x4)
  ******************************************************************************/
 TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 {
-    ARK     *ark  = NULL;
-    kv_t    *db   = NULL;
-    uint64_t ret  = 0;
-    uint64_t num  = 0;
-    int32_t  LEN  = 1000;
-    int      rc   = 0;
+    ARK     *ark        = NULL;
+    _ARK    *park       = NULL;
+    uint64_t zero       = 0;
+    uint64_t ret        = 0;
+    int64_t  res        = 0;
+    uint64_t min        = 0;
+    uint64_t max        = 0;
+    uint64_t bs         = 0;
+    uint64_t kl         = 0;
+    uint64_t vl         = 0;
+    uint32_t LEN        = 1000;
+    uint8_t  key[1000]  = {0};
+    uint8_t  val[10000] = {0};
+    char    *dev        = getenv("FVT_DEV");
 
-    ARK_CREATE;
+#ifdef _AIX
+    LEN=100;
+#endif
 
-    db = (kv_t*)kv_db_create_fixed(LEN, 64, 1);
-    ASSERT_TRUE(db != NULL);
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    10,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_EA_BLK_ASYNC_CMDS,
+                                    ARK_KV_VIRTUAL_LUN));
+    park = (_ARK *)ark;
 
-    fvt_kv_utils_load (ark, db, LEN);
-    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+    kl=16; vl=32;
+    fvt_kv_utils_sload       (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_sdel        (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, 0, kl, LEN);
 
-    /* alloc:5246976 */
-    rc = ark_allocated(ark, &ret);
-    EXPECT_EQ(0, rc);
-    num = 5100000; EXPECT_LT(num, ret);
-    num = 5300000; EXPECT_GT(num, ret);
-    /* inuse:4091904 */
-    rc = ark_inuse(ark, &ret);
-    EXPECT_EQ(0, rc);
-    num = 3800000; EXPECT_LT(num, ret);
-    num = 4200000; EXPECT_GT(num, ret);
-    /* actual:67000 */
-    rc = ark_actual(ark, &ret);
-    EXPECT_EQ(0, rc);
-    num = 66000; EXPECT_LT(num,  ret);
-    num = 68000; EXPECT_GT(num, ret);
+    /* empty */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
 
-    fvt_kv_utils_del(ark, db, LEN);
-    kv_db_destroy(db, LEN);
+    kl=4096; vl=8000;
+    fvt_kv_utils_sload       (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_sdel        (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, 0, kl, LEN);
+
+    /* empty */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
+
+    kl=3745; vl=251;
+    fvt_kv_utils_sload       (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_sdel        (ark, 0, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, 0, kl, LEN);
+
+    /* empty */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
+
+    /* add k/v */
+    kl=10; vl=20;
+    GEN_VAL(key, 0, kl);
+    GEN_VAL(val, 0, vl);
+    max  = BT_SZ + kl + vl + BT_KV_LEN_SZ;
+    min  = max*3/4;
+    bs   = park->bsize;
+    EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    EXPECT_GT(ret, min);
+    EXPECT_LE(ret, max);
+
+    /* del k/v */
+    max=0;
+    EXPECT_EQ(0, ark_del      (ark, kl, key, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
+
+    /* add k/v */
+    kl=100; vl=200;
+    GEN_VAL(key, 1, kl);
+    GEN_VAL(val, 1, vl);
+    max  = BT_SZ + kl + vl + BT_KV_LEN_SZ;
+    min  = max*3/4;
+    bs   = park->bsize;
+    EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    EXPECT_GT(ret, min);
+    EXPECT_LE(ret, max);
+
+    /* add 2nd k/v */
+    kl=150; vl=2000;
+    GEN_VAL(key, 2, kl);
+    GEN_VAL(val, 2, vl);
+    max += BT_SZ + kl + vl + BT_KV_LEN_SZ;
+    min  = max*3/4;
+    bs  += 2*park->bsize;
+    EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    EXPECT_GT(ret, min);
+    EXPECT_LE(ret, max);
+
+    /* add 3rd k/v */
+    kl=200; vl=250;
+    GEN_VAL(key, 3, kl);
+    GEN_VAL(val, 3, vl);
+    max += BT_SZ + kl + vl + BT_KV_LEN_SZ;
+    min  = max*3/4;
+    bs  += park->bsize;
+    EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    EXPECT_GT(ret, min);
+    EXPECT_LE(ret, max);
+
+    /* rep 2nd k/v, VDF->INLINE */
+    kl=150; vl=10;
+    GEN_VAL(key, 2, kl);
+    GEN_VAL(val, 2, vl);
+    max -= 2000 - VDF_SZ;
+    max += vl;
+    min  = max*3/4;
+    bs  -= park->bsize;
+    EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    EXPECT_GT(ret, min);
+    EXPECT_LE(ret, max);
+
+    /* rep 2nd k/v, INLINE->VDF */
+    kl=150; vl=9000;
+    GEN_VAL(key, 2, kl);
+    GEN_VAL(val, 2, vl);
+    max += vl + VDF_SZ;
+    max -= 10;
+    min  = max*3/4;
+    bs  += 3*park->bsize;
+    EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    EXPECT_GT(ret, min);
+    EXPECT_LE(ret, max);
+
+    /* rep 3rd k/v INLINE->INLINE*/
+    kl=200; vl=20;
+    GEN_VAL(key, 3, kl);
+    GEN_VAL(val, 3, vl);
+    max += vl - 250;
+    min  = max*3/4;
+    EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
+    EXPECT_EQ(res, (int64_t)vl);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    EXPECT_GT(ret, min);
+    EXPECT_LE(ret, max);
+
     ARK_DELETE;
 }
 
@@ -866,19 +1285,24 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_smallkv)
     ARK     *ark  = NULL;
     kv_t    *db   = NULL;
     int32_t  LEN  = 4000;
+    int      klen = 16;
     int      vlen = 32;
     char    *dev  = getenv("FVT_DEV");
 
-    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
-                                        ARK_VERBOSE_SIZE_DEF,
-                                        ARK_VERBOSE_BSIZE_DEF,
-                                        14,
-                                        ARK_VERBOSE_NTHRDS_DEF,
-                                        ARK_MAX_NASYNCS,
-                                        ARK_EA_BLK_ASYNC_CMDS,
-                                        ARK_KV_VIRTUAL_LUN));
+#ifdef _AIX
+    LEN=2000;
+#endif
 
-    db = (kv_t*)kv_db_create_fixed(LEN, 16, vlen);
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    64,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_EA_BLK_ASYNC_CMDS,
+                                    ARK_KV_VIRTUAL_LUN));
+
+    db = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
     ASSERT_TRUE(db != NULL);
 
     fvt_kv_utils_load (ark, db, LEN);
@@ -898,24 +1322,29 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_smallkv)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list)
+TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_bigkv)
 {
     ARK     *ark  = NULL;
     kv_t    *db   = NULL;
-    int32_t  LEN  = 500;
-    int      vlen = 5000;
+    int32_t  LEN  = 5000;
+    int      klen = 512;
+    int      vlen = 512;
     char    *dev  = getenv("FVT_DEV");
 
-    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
-                                        ARK_VERBOSE_SIZE_DEF,
-                                        ARK_VERBOSE_BSIZE_DEF,
-                                        4,
-                                        ARK_VERBOSE_NTHRDS_DEF,
-                                        ARK_MAX_NASYNCS,
-                                        ARK_EA_BLK_ASYNC_CMDS,
-                                        ARK_KV_VIRTUAL_LUN));
+#ifdef _AIX
+    LEN=2000;
+#endif
 
-    db = (kv_t*)kv_db_create_fixed(LEN, 4096, 5000);
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    16,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_EA_BLK_ASYNC_CMDS,
+                                    ARK_KV_VIRTUAL_LUN));
+
+    db = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
     ASSERT_TRUE(db != NULL);
 
     fvt_kv_utils_load (ark, db, LEN);
@@ -923,5 +1352,58 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list)
     fvt_kv_utils_del  (ark, db, LEN);
 
     kv_db_destroy(db, LEN);
+    ARK_DELETE;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_cleanup_task_memory)
+{
+    ARK     *ark   = NULL;
+    int32_t  LEN   = 3000;
+    int      klen1 = 17;
+    int      vlen1 = 31;
+    int      klen2 = 23;
+    int      vlen2 = 9382;
+    int      i     = 0;
+    int      loops = 6;
+    char    *dev   = getenv("FVT_DEV");
+
+#ifdef _AIX
+    LEN=400;
+#endif
+
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    4,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_EA_BLK_ASYNC_CMDS,
+                                    ARK_KV_VIRTUAL_LUN));
+
+    if (dev != NULL) {loops=3;}
+
+    for (i=0; i<loops; i++)
+    {
+        fvt_kv_utils_sload       (ark, 0, klen1, vlen1, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+        fvt_kv_utils_squery      (ark, 0, klen1, vlen1, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+        fvt_kv_utils_sload       (ark, 0, klen2, vlen2, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+        fvt_kv_utils_squery      (ark, 0, klen2, vlen2, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+        fvt_kv_utils_sdel        (ark, 0, klen2, vlen2, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+        fvt_kv_utils_squery_empty(ark, 0, klen2, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+        fvt_kv_utils_sdel        (ark, 0, klen1, vlen1, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+        fvt_kv_utils_squery_empty(ark, 0, klen1, LEN);
+        usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
+    }
     ARK_DELETE;
 }

@@ -22,29 +22,44 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
+
+#this application originates in surelock-afu/bringup/src and must be shipped for FFDC gathering
+
+.NOTPARALLEL:
+
 UNAME=$(shell uname)
 
 # Where to find user code.(Relative path(from the makefile) preferred for portability)
 ROOTPATH = ../../..
+USER_DIR = .
+SUBDIRS  =
+TESTDIR  = ${ROOTPATH}/obj/tests
+EXPFLAGS = -bexpall
 
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-include ${ROOTPATH}/config.mk
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
+LIBPATHS = -L${ROOTPATH}/img
+LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 
-#this application originates in surelock-afu/bringup/src and must be shipped for FFDC gathering
-ifeq ($(UNAME),AIX) # need to have a valid ffdc mechanism for AIX...
-else #Linux only
-test: ${TESTDIR}/cxl_afu_dump ${TESTDIR}/cxl_afu_inject ${TESTDIR}/cxl_afu_status
-${TESTDIR}/cxl_afu_dump:
-	mkdir -p ${TESTDIR}
-	gcc -m64 -I . -I${ROOTPATH}/src/include -L${ROOTPATH}/img -lpthread -o ${TESTDIR}/cxl_afu_dump -O0 afu.c capi_dev_nodes.c cxl_afu_dump2.c -lcxl
+ifneq ($(UNAME),AIX)
 
-${TESTDIR}/cxl_afu_inject:
-	mkdir -p ${TESTDIR}
-	gcc -m64 -I . -I${ROOTPATH}/src/include -L${ROOTPATH}/img -lpthread -o ${TESTDIR}/cxl_afu_inject -O0 afu.c capi_dev_nodes.c cxl_afu_inject.c -lcxl
+ifneq ($(TARGET_PLATFORM),x86_64)
 
-${TESTDIR}/cxl_afu_status:
-	mkdir -p ${TESTDIR}
-	gcc -m64 -I . -I${ROOTPATH}/src/include -L${ROOTPATH}/img -lpthread -o ${TESTDIR}/cxl_afu_status -O0 cxl_afu_status.c -lcxl
+BTESTS    = cxl_afu_status cxl_afu_dump cxl_afu_inject
+BIN_TESTS = $(addprefix ${TESTDIR}/, ${BTESTS})
+LINKLIBS += -lpthread -ludev -lafu -lcxl
+OBJS      = afu.o capi_dev_nodes.o
+
 endif
+
+endif
+
+CFLAGS = -D__FVT__ -Wno-unused-result \
+         -I$(ROOTPATH)/src/common     \
+         -I$(ROOTPATH)/src/test/ffdc
+
+VPATH += ${ROOTPATH}/src/test/ffdc
+
+include ${ROOTPATH}/config.mk

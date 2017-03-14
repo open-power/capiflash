@@ -36,6 +36,7 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
+#include <arkdb_trace.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -185,7 +186,7 @@ kv_db_exists_twice(kv_t *db, uint32_t num_keys, kv_t *e)
         if (2 == found)
         {
             assert(0 < db[i].klen);
-            KV_TRC(pFT, "DUP(klen:%d key:%p):",db[i].klen, e->key);
+            KV_TRC(pAT, "DUP(klen:%d key:%p):",db[i].klen, e->key);
             return TRUE;
         }
     }
@@ -265,7 +266,7 @@ kv_db_create_fixed(uint32_t num, uint32_t key_size, uint32_t value_size)
     }
     rc = db;
 
-    KV_TRC(pFT, "CREATE_FIXED: %p %dx%dx%d, rc=%p",
+    KV_TRC(pAT, "CREATE_FIXED: %p %dx%dx%d, rc=%p",
             db, key_size, value_size, num, rc);
     return rc;
 }
@@ -343,7 +344,7 @@ kv_db_create_mixed(uint32_t num, uint32_t key_max, uint32_t value_max)
     }
     rc = db;
 
-    KV_TRC(pFT, "CREATE_MIXED: %p %dx%dx%d, i:%d rc=%p",
+    KV_TRC(pAT, "CREATE_MIXED: %p %dx%dx%d, i:%d rc=%p",
             db,key_max,value_max,num,i,rc);
     return rc;
 }
@@ -370,7 +371,7 @@ uint32_t kv_db_fixed_regen_values(kv_t *db, uint32_t num, uint32_t vlen)
         fill_rand(db[i].value, vlen);
     }
 
-    KV_TRC_IO(pFT, "REGEN_FIXED: %p %dx%d, rc=%d", db, vlen, num, rc);
+    KV_TRC_IO(pAT, "REGEN_FIXED: %p %dx%d, rc=%d", db, vlen, num, rc);
     return rc;
 }
 
@@ -409,7 +410,7 @@ uint32_t kv_db_mixed_regen_values(kv_t *db, uint32_t num, uint32_t value_max)
         fill_rand(db[i].value, vlen);
     }
 
-    KV_TRC_IO(pFT, "REGEN_MIXED: %p %dx%d, rc=%d", db, value_max, num, rc);
+    KV_TRC_IO(pAT, "REGEN_MIXED: %p %dx%d, rc=%d", db, value_max, num, rc);
     return rc;
 }
 
@@ -431,7 +432,7 @@ kv_db_destroy(kv_t *db, uint32_t num_keys)
     }
 
     free(db);
-    KV_TRC(pFT, "DB_DESTROY: %p #keys=%d", db, num_keys);
+    KV_TRC(pAT, "DB_DESTROY: %p #keys=%d", db, num_keys);
 }
 
 /*******************************************************************************

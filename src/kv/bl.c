@@ -25,10 +25,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include "am.h"
-#include "ea.h"
-#include "bl.h"
+
+#include <am.h>
+#include <ea.h>
+#include <bl.h>
 #include <arkdb_trace.h>
+
 #include <errno.h>
 
 /**
@@ -81,7 +83,7 @@ int bl_init_chain_link(BL *bl)
 
     rc = (bl->top == bl->n);
 
-    KV_TRC(pAT, "CHAIN_NEW n:%ld top:%ld count:%ld hd:%ld availN:%ld "
+    KV_TRC(pAT, "CHN_NEW n:%ld top:%ld count:%ld hd:%ld availN:%ld "
                 "chainN:%ld chain_exception:%ld rc:%d",
             bl->n, bl->top, bl->count, bl->head, availN, chainN, chain_end, rc);
 exception:
@@ -123,7 +125,7 @@ BL *bl_new(int64_t n, int w)
     bl->w     = w;
     pthread_rwlock_init(&(bl->iv_rwlock), NULL);
 
-    KV_TRC(pAT, "NEW bl:%p list:%p n:%ld count:%ld w:%ld",
+    KV_TRC(pAT, "BL_NEW  bl:%p list:%p n:%ld count:%ld w:%ld",
            bl, bl->list, bl->n, bl->count, bl->w);
 
 exception:
@@ -165,7 +167,7 @@ int bl_reserve(BL *bl, uint64_t resN)
     bl->count = 0;
     rc        = 0;
 
-    KV_TRC(pAT, "CHAIN_RESERVE bl:%p resN:%ld count:%ld hd:%ld",
+    KV_TRC(pAT, "CHN_RES bl:%p resN:%ld count:%ld hd:%ld",
                bl, resN, bl->count, bl->head);
 exception:
     return rc;
@@ -177,7 +179,7 @@ exception:
  ******************************************************************************/
 void bl_delete(BL *bl)
 {
-  KV_TRC(pAT, "DELETE bl:%p", bl);
+  KV_TRC(pAT, "DELETE  bl:%p", bl);
   if (!bl) return;
   iv_delete(bl->list);
   pthread_rwlock_destroy(&(bl->iv_rwlock));
@@ -220,7 +222,7 @@ BL *bl_resize(BL *bl, int64_t n, int w)
   }
   bl->n = n;
 
-  KV_TRC(pAT, "RESIZE bl:%p b4:%ld n:%ld count:%ld",
+  KV_TRC(pAT, "RESIZE  bl:%p b4:%ld n:%ld count:%ld",
          bl, b4, bl->n, bl->count);
 
 exception:
@@ -298,7 +300,7 @@ void bl_check_take(BL *bl, int64_t n)
     // if we need blocks and we have uninitialized blocks, init them
     if (n > bl->count && avail)
     {
-        KV_TRC(pAT, "CHAIN_NEEDED bl:%p n:%ld bl->n:%ld top:%ld count:%ld "
+        KV_TRC(pAT, "CHN_ADD bl:%p n:%ld bl->n:%ld top:%ld count:%ld "
                     "hd:%ld ",
                     bl, n, bl->n, bl->top, bl->count, bl->head);
 
@@ -370,7 +372,7 @@ int64_t bl_take(BL *bl, int64_t n)
     bl->count -= n;
 
 
-    KV_TRC_DBG(pAT, "CHAIN_TAKE bl:%p n:%ld ret_hd:%ld count:%ld top:%ld "
+    KV_TRC_DBG(pAT, "CHN_TKE bl:%p n:%ld ret_hd:%ld count:%ld top:%ld "
                      "hd:%ld",
                      bl, n, hd, bl->count, bl->top, bl->head);
 exception:
@@ -424,7 +426,7 @@ int64_t bl_drop(BL *bl, int64_t b)
     bl->hold = b;
   }
 
-  KV_TRC_DBG(pAT, "CHAIN_DROP bl:%p b:%ld tl_b:%ld len_b:%ld "
+  KV_TRC_DBG(pAT, "CHN_DRP bl:%p b:%ld tl_b:%ld len_b:%ld "
                   "cnt:%ld hold:%ld top:%ld hd:%ld",
                   bl, b, i, n, bl->count, bl->hold, bl->top, bl->head);
 exception:
@@ -550,10 +552,38 @@ int64_t bl_next(BL *bl, int64_t b)
  *******************************************************************************
  * \brief
  ******************************************************************************/
+int bl_iochain(ark_io_list_t *aiol, BL *bl, int64_t b)
+{
+  int rc = 0;
+  int i  = 0;
+
+  pthread_rwlock_rdlock(&(bl->iv_rwlock));
+
+  while (b > 0)
+  {
+      aiol[i].blkno     = b;
+      aiol[i].a_tag.tag = -1;
+      if ((b=iv_get(bl->list, b)) < 0)
+      {
+          KV_TRC_FFDC(pAT, "invalid chain index:%ld", b);
+          rc = -1;
+          goto exception;
+      }
+      i++;
+  }
+
+exception:
+  pthread_rwlock_unlock(&(bl->iv_rwlock));
+  return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len)
 {
   ark_io_list_t *bl_array = NULL;
-  int            i        = 0;
 
   if (!bl)
   {
@@ -561,30 +591,53 @@ ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len)
       return NULL;
   }
 
-  pthread_rwlock_rdlock(&(bl->iv_rwlock));
-
-  if (bl != NULL)
+  bl_array = (ark_io_list_t *)am_malloc(sizeof(ark_io_list_t) * len);
+  if (bl_array)
   {
-    bl_array = (ark_io_list_t *)am_malloc(sizeof(ark_io_list_t) * len);
-    if (bl_array != NULL)
-    {
-      while (0 < b) {
-        bl_array[i].blkno = b;
-        bl_array[i].a_tag.tag = -1;
-        if ((b=iv_get(bl->list, b)) < 0)
-        {
-            KV_TRC_FFDC(pAT, "invalid chain index:%ld", b);
-            bl_array = NULL;
-            goto exception;
-        }
-        i++;
+      if (bl_iochain(bl_array, bl, b))
+      {
+          am_free(bl_array);
+          bl_array = NULL;
       }
-    }
   }
 
-exception:
-  pthread_rwlock_unlock(&(bl->iv_rwlock));
   return bl_array;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int bl_rechain(ark_io_list_t **aiol,
+               BL             *bl,
+               int64_t         b,
+               int64_t         n,
+               int64_t         o)
+{
+  int rc   = 0;
+  int size = sizeof(ark_io_list_t);
+
+  if (!bl)
+  {
+      KV_TRC_FFDC(pAT, "NULL bl:%p aiol:%p", bl, aiol);
+      return -1;
+  }
+
+  /* if old size is 0, malloc for the first time */
+  if (o==0)
+  {
+      if (!(*aiol=(ark_io_list_t *)am_malloc(size*n))) {rc=-2; goto exception;}
+  }
+  else if (n > o)
+  {
+      KV_TRC_DBG(pAT, "BL_RECH bl:%p b:%ld new:%ld old:%ld", bl, b, n, o);
+      if (!(*aiol=am_realloc(*aiol, size*n))) {rc=-3; goto exception;}
+  }
+
+  rc = bl_iochain(*aiol, bl, b);
+
+exception:
+  return rc;
 }
 
 /**

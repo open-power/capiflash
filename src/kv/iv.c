@@ -40,8 +40,8 @@
  *******************************************************************************
  * \brief
  ******************************************************************************/
-IV *iv_new(uint64_t n, uint64_t m) {
-
+IV *iv_new(uint64_t n, uint64_t m)
+{
   uint64_t bits  = n * m;
   uint64_t words = divup(bits, 64);
   uint64_t bytes = sizeof(IV) + words * sizeof(uint64_t);
@@ -50,7 +50,7 @@ IV *iv_new(uint64_t n, uint64_t m) {
   if (iv == NULL)
   {
     errno = ENOMEM;
-    KV_TRC_FFDC(pAT, "FFDC: n %"PRIu64" m %"PRIu64", errno = %d", n, m, errno);
+    KV_TRC_FFDC(pAT, "FFDC: n %ld m %ld, errno = %d", n, m, errno);
   }
   else
   {
@@ -72,17 +72,19 @@ IV *iv_new(uint64_t n, uint64_t m) {
  *******************************************************************************
  * \brief
  ******************************************************************************/
-IV *iv_resize(IV *piv, uint64_t n, uint64_t m) {
-
+IV *iv_resize(IV *piv, uint64_t n, uint64_t m)
+{
   uint64_t bits  = n * m;
   uint64_t words = divup(bits, 64);
   uint64_t bytes = sizeof(IV) + words * sizeof(uint64_t);
+
+  KV_TRC_DBG(pAT, "IV_RSZ1 iv %p n %ld m %ld", piv, n, m);
 
   IV *iv = am_realloc(piv,bytes);
   if (iv == NULL)
   {
     errno = ENOMEM;
-    KV_TRC_FFDC(pAT, "FFDC: iv %p n %"PRIu64" m %"PRIu64", errno = %d", piv, n, m, errno);
+    KV_TRC_FFDC(pAT, "FFDC: iv %p n %ld m %ld, errno = %d", piv, n, m, errno);
   }
   else
   {
@@ -96,7 +98,7 @@ IV *iv_resize(IV *piv, uint64_t n, uint64_t m) {
     iv->bar    = 64 - m;
   }
 
-  KV_TRC_DBG(pAT, "iv %p n %"PRIu64" m %"PRIu64"", piv, n, m);
+  KV_TRC_DBG(pAT, "IV_RSZ2 iv %p n %ld m %ld", piv, n, m);
   return iv;
 }
 

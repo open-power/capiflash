@@ -46,7 +46,7 @@ err_rc=0
 
 if [[ $ubuntu ]]
 then
-  OS_VER=16.04.1
+  OS_VER=16.04
   K_VER=4.4.0-36.55
   K_VER_GRUB=4.4.0-36-generic
 elif [[ $redhat ]]
@@ -67,12 +67,19 @@ then
   fi
 
   EXISTS_OS_VER=$(lsb_release -a 2>&1|grep -v LSB|grep Description|awk '{print $3}')
-  if [[ ! $EXISTS_OS_VER =~ $OS_VER ]]
+  n1=$(echo $EXISTS_OS_VER|awk -F. '{print $1}')
+  n2=$(echo $EXISTS_OS_VER|awk -F. '{print $2}')
+  if [[ ! $EXISTS_OS_VER =~ $OS_VER && ! $EXISTS_OS_VER =~ 17.04 ]]
   then
-    err_rc=1
-    echo "ERROR:     OS:            Installed($EXISTS_OS_VER) != Required($OS_VER)"
+    if [[ $n1 -lt 16 || ($n1 -eq 16 && $n2 -lt 4) ]]
+    then
+      err_rc=1
+      echo "ERROR:     OS:            Installed($EXISTS_OS_VER) => Required($OS_VER)"
+    else
+      echo "INFO:      OS:            Installed($EXISTS_OS_VER) => Recommended($OS_VER)"
+    fi
   else
-    echo "INFO:      OS:            $EXISTS_OS_VER"
+    echo   "INFO:      OS:            $EXISTS_OS_VER"
   fi
 
   if [[ ! -z $1 ]]; then K_VER=$1; fi
@@ -108,26 +115,49 @@ then
     echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) Required($CF_VER)"
   fi
 
-  EXISTS_K_VER=$(dpkg -l|grep linux-image)
-  if [[ ! $EXISTS_K_VER =~ $K_VER ]]
+  EXISTS_K_VER=$(dpkg -l |grep $(uname -a|awk '{print $3}')|grep linux-image|grep -v extra|awk '{print $3}')
+  n1=$(echo $EXISTS_K_VER|awk -F. '{print $1}')
+  n2=$(echo $EXISTS_K_VER|awk -F. '{print $2}')
+  n3=$(echo $EXISTS_K_VER|awk -F. '{print $3}'|awk -F- '{print $1}')
+  n4=$(echo $EXISTS_K_VER|awk -F- '{print $2}'|awk -F. '{print $1}')
+  n5=$(echo $EXISTS_K_VER|awk -F- '{print $2}'|awk -F. '{print $2}')
+  if [[ ($n1 -lt 4) ||
+        ($n1 -eq 4 && $n2 -lt 4) ||
+        ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -lt 36) ||
+        ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -eq 36 && $n5 -lt 55) ]]
   then
-    err_rc=5
-    echo "ERROR:     Kernel:        Booted($(uname -a|awk '{print $3}')) != Required($K_VER)"
+    if [[ ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -gt 36) ||
+          ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -eq 36 && $n5 -gt 55) ]]
+    then
+      echo "INFO:      Kernel:        $EXISTS_K_VER"
+    else
+      err_rc=5
+      echo "ERROR:     Kernel:        Booted($EXISTS_K_VER) => Required($K_VER) or newer"
+    fi
   else
-    echo "INFO:      Kernel:        $K_VER"
+    echo   "INFO:      Kernel:        $EXISTS_K_VER"
   fi
 
   EXISTS_GRUB_VER=$(grep initrd /boot/grub/grub.cfg|head -1|awk -Finitrd.img- '{print $2}')
-  if [[ ! $EXISTS_GRUB_VER =~ $K_VER_GRUB ]]
+  n1=$(echo $EXISTS_GRUB_VER|awk -F. '{print $1}')
+  n2=$(echo $EXISTS_GRUB_VER|awk -F. '{print $2}')
+  n3=$(echo $EXISTS_GRUB_VER|awk -F. '{print $3}'|awk -F- '{print $1}')
+  n4=$(echo $EXISTS_GRUB_VER|awk -F- '{print $2}'|awk -F. '{print $1}')
+  if [[ ($n1 -lt 4) ||
+        ($n1 -eq 4 && $n2 -lt 4) ||
+        ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -lt 36) ]]
   then
-    err_rc=6
-    echo "ERROR:     Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
+    if [[ ! ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -gt 36) ]]
+    then
+      err_rc=6
+      echo "ERROR:     Grub:          grub.cfg($EXISTS_GRUB_VER) => Required($K_VER_GRUB) or newer"
+    fi
   fi
 
  if [[ ! -z $EXISTS_CF_IMAGE_VER ]]
  then
     IFS=$'\n'
-    adaps=($(capi_flash.pl -l))
+    adaps=($(capi_flash.pl -l 2>/dev/null))
     unset IFS
     for line in "${adaps[@]}"
     do
@@ -176,7 +206,7 @@ then
   if [[ ! $EXISTS_OS_VER =~ $OS_VER ]]
   then
     err_rc=1
-    echo "ERROR:     OS:            Installed($EXISTS_OS_VER) != Required($OS_VER)"
+    echo "WARNING:   OS:            Installed($EXISTS_OS_VER) != Required($OS_VER)"
   else
     echo "INFO:      OS:            $EXISTS_OS_VER"
   fi
@@ -218,7 +248,7 @@ then
   if [[ ! $EXISTS_K_VER =~ $K_VER ]]
   then
     err_rc=5
-    echo "ERROR:     Kernel:        Booted($(uname -a|awk '{print $3}')) != Required($K_VER)"
+    echo "WARNING:   Kernel:        Booted($(uname -a|awk '{print $3}')) != Required($K_VER)"
   else
     echo "INFO:      Kernel:        $K_VER"
   fi
@@ -227,13 +257,13 @@ then
   if [[ ! $EXISTS_GRUB_VER =~ $K_VER_GRUB ]]
   then
     err_rc=6
-    echo "ERROR:     Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
+    echo "WARNING:   Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
   fi
 
   if [[ ! -z $EXISTS_CF_IMAGE_VER ]]
   then
     IFS=$'\n'
-    adaps=($(capi_flash.pl -l))
+    adaps=($(capi_flash.pl -l 2>/dev/null))
     unset IFS
     for line in "${adaps[@]}"
     do

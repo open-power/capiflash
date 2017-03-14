@@ -26,22 +26,25 @@
 SHELL=/bin/bash
 
 ship:
-	${MAKE} code_pass
-	@if [[ $(notdir $(PWD)) = test ]]; then ${MAKE} test; fi
+	${MAKE} -j10 code_pass
+	${MAKE} -j10 test
 
 docs:
 	@echo "WARNING: Skipping docs step"
 
+build:
+	${MAKE} ship
+	${MAKE} packaging
+
 tests:
 	${MAKE} ship
-	${MAKE} test
 
 run_fvt:
-	${MAKE} tests
+	${MAKE} ship
 	${MAKE} fvt
 
 run_unit:
-	${MAKE} tests
+	${MAKE} ship
 	${MAKE} unit
 
 #generate VPATH based on these dirs.
@@ -67,7 +70,7 @@ GENDIR  = ${ROOTPATH}/obj/genfiles
 IMGDIR  = ${ROOTPATH}/img
 PKGDIR  = ${ROOTPATH}/pkg
 
-GTESTDIR = src/test/framework/googletest/googletest
+GTESTDIR = ${ROOTPATH}/src/test/framework/gtest-1.7.0
 GTESTINC = ${GTESTDIR}/include
 
 ifdef MODULE
@@ -429,10 +432,10 @@ beam:      ${SUBDIRS:.d=.beamdir} ${BEAMOBJS}
 install:
 	rm -rf ${PKGDIR}/install_root/*
 	cd ${ROOTPATH}/src/build/install && ${MAKE}
-#	@echo "WARNING: Skipping install phase"
+
 packaging:
+	${MAKE} install
 	cd ${ROOTPATH}/src/build/packaging && ${MAKE}
-#	@echo "WARNING: Skipping packaging phase"
 
 cscope:
 	@mkdir -p ${ROOTPATH}/obj/cscope

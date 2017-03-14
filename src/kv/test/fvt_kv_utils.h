@@ -38,6 +38,59 @@
 /**
  *******************************************************************************
  * \brief
+ *   load seed generated key/values into the ark using ark_set
+ ******************************************************************************/
+void fvt_kv_utils_sload(ARK     *ark,
+                        uint32_t seed,
+                        uint32_t klen,
+                        uint32_t vlen,
+                        uint32_t LEN);
+/**
+ *******************************************************************************
+ * \brief
+ *   query seed generated key/values in the ark using ark_get/ark_exists
+ ******************************************************************************/
+void fvt_kv_utils_squery(ARK     *ark,
+                         uint32_t seed,
+                         uint32_t klen,
+                         uint32_t vlen,
+                         uint32_t LEN);
+/**
+ *******************************************************************************
+ * \brief
+ *   query seed generated key/values in the ark using ark_get/ark_exists
+ ******************************************************************************/
+void fvt_kv_utils_squery_empty(ARK     *ark,
+                               uint32_t seed,
+                               uint32_t klen,
+                               uint32_t LEN);
+
+/**
+ *******************************************************************************
+ * \brief
+ *   delete seed generated key/values from the ark using ark_del
+ ******************************************************************************/
+void fvt_kv_utils_sdel(ARK     *ark,
+                       uint32_t seed,
+                       uint32_t klen,
+                       uint32_t vlen,
+                       uint32_t LEN);
+
+/**
+ *******************************************************************************
+ * \brief
+ *   create db, set, get, exists, del, destroy seed generated key/values
+ ******************************************************************************/
+void fvt_kv_utils_SGD_SLOOP(ARK     *ark,
+                           uint32_t seed,
+                           uint32_t klen,
+                           uint32_t vlen,
+                           uint32_t len,
+                           uint32_t secs);
+
+/**
+ *******************************************************************************
+ * \brief
  *   load all the db key/values into the ark using ark_set
  ******************************************************************************/
 void fvt_kv_utils_load(ARK *ark, kv_t *db, uint32_t LEN);

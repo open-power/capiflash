@@ -2331,8 +2331,6 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 	    chunk->path[path_index]->path_id = prim_path_id;
 
 	    chunk->path[path_index]->path_id_mask |= 1 << prim_path_id;
-		
-	    chunk->path[path_index]->num_ports++;
 
 	    if (chunk->path[path_index]->num_ports == 0) {
 
@@ -2344,6 +2342,8 @@ int  cblk_chunk_attach_process_map (cflsh_chunk_t *chunk, int mode, int *cleanup
 		    return -1;
 		}
 	    }
+		
+	    chunk->path[path_index]->num_ports++;
 
 	    CBLK_TRACE_LOG_FILE(9,"Assigned path_id  = %d and path_index = %d",
 				chunk->path[path_index]->path_id, path_index);
@@ -2543,11 +2543,26 @@ void  cblk_chunk_detach_path (cflsh_chunk_t *chunk, int path_index,int force)
 
 	if (rc) {
 	
-	    CBLK_TRACE_LOG_FILE(1,"DK_CAPI_DETACH failed with rc = %d, errno = %d, return_flags = 0x%llx, chunk_id = %d",
-				rc,errno,disk_detach.return_flags,chunk->index, chunk->flags);
+	    CBLK_TRACE_LOG_FILE(1,"DK_CAPI_DETACH failed with rc = %d, errno = %d, return_flags = 0x%llx, chunk_id = %d, chunk->flags = 0x%x",
+				rc,errno,disk_detach.return_flags,chunk->index, chunk->flags,
+				chunk->path[path_index]->afu->contxt_id);
 
-	    CBLK_TRACE_LOG_FILE(1,"DK_CAPI_DETACH failed (cont) chunk->in_use = %d, chunk->dev_name = %s, path_index = %d",
-				chunk->in_use, chunk->dev_name,path_index);
+	    CBLK_TRACE_LOG_FILE(1,"DK_CAPI_DETACH failed (cont) chunk->in_use = %d, chunk->dev_name = %s, path_index = %d,  contxt_id = 0x%llx",
+				chunk->in_use, chunk->dev_name,path_index,
+				chunk->path[path_index]->afu->contxt_id);
+	
+	
+	}  else {
+
+
+	
+	    CBLK_TRACE_LOG_FILE(9,"DK_CAPI_DETACH success withchunk_id = %d, chunk->flags = 0x%x",
+				chunk->index, chunk->flags,
+				chunk->path[path_index]->afu->contxt_id);
+
+	    CBLK_TRACE_LOG_FILE(8,"DK_CAPI_DETACH success (cont) chunk->in_use = %d, chunk->dev_name = %s, path_index = %d,  contxt_id = 0x%llx",
+				chunk->in_use, chunk->dev_name,path_index,
+				chunk->path[path_index]->afu->contxt_id);
 	
 	
 	}
@@ -3098,7 +3113,7 @@ int  cblk_chunk_get_mc_device_resources(cflsh_chunk_t *chunk,
 	if (disk_virtual.return_flags & DK_CXLFLASH_ALL_PORTS_ACTIVE) {
 
 	    /*
-	     * Both ports on this AFU are in use
+	     * Multiple ports on this AFU are used for this virtual lun.
 	     */
 
 	    chunk->path[chunk->cur_path]->num_ports++;
@@ -3756,9 +3771,22 @@ void  cblk_chunk_free_mc_device_resources_path(cflsh_chunk_t *chunk, int path_in
 
     if (rc) {
 	
-	CBLK_TRACE_LOG_FILE(1,"DK_CAPI_RELEASE e failed with rc = %d, errno = %d, return_flags = 0x%llx",
-			    rc, errno,disk_release.return_flags);
+	CBLK_TRACE_LOG_FILE(1,"DK_CAPI_RELEASE failed with rc = %d, errno = %d, return_flags = 0x%llx, contxt_id = 0x%llx",
+			    rc, errno,disk_release.return_flags,
+			    chunk->path[path_index]->afu->contxt_id);
+
+	CBLK_TRACE_LOG_FILE(1,"DK_CAPI_RELEASE failed with rsrc_hndl = 0x%llx, chunk->index = %d",
+			    chunk->path[path_index]->sisl.resrc_handle,
+			    chunk->index);
 	return;
+    } else {
+
+	CBLK_TRACE_LOG_FILE(9,"DK_CAPI_RELEASE success rsrc_hndl = 0x%llx, chunk->index = %d, contxt_id = 0x%llx",
+			    chunk->path[path_index]->sisl.resrc_handle,
+			    chunk->index,
+			    chunk->path[path_index]->afu->contxt_id);
+
+
     }
 
 
@@ -3832,7 +3860,7 @@ cflash_cmd_err_t cblk_process_nonafu_intrpt_cxl_events(cflsh_chunk_t *chunk,int 
 {
     int rc = CFLASH_CMD_FATAL_ERR;
     uint64_t intrpt_status;
-
+    cflash_block_check_os_status_t reset_status = CFLSH_BLK_CHK_OS_NO_RESET;
 
     errno = EIO;
 
@@ -3868,7 +3896,7 @@ cflash_cmd_err_t cblk_process_nonafu_intrpt_cxl_events(cflsh_chunk_t *chunk,int 
 	CBLK_TRACE_LOG_FILE(6,"cmd_start = 0x%llx",(uint64_t)chunk->cmd_start);
 	CBLK_TRACE_LOG_FILE(6,"cmd_end = 0x%llx",(uint64_t)chunk->cmd_end);
 
-	intrpt_status = CBLK_GET_INTRPT_STATUS(chunk,path_index);
+	intrpt_status = CBLK_GET_INTRPT_STATUS(chunk,path_index,&reset_status);
 	CBLK_TRACE_LOG_FILE(6,"intrpt_status = 0x%llx",intrpt_status);
 
 	CBLK_TRACE_LOG_FILE(6,"num_active_cmds = 0x%x\n",chunk->num_active_cmds);
@@ -4206,6 +4234,13 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 		    rc = EIO;
 		
 		    chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+
+		    /*
+		     * Clear halted state so that subsequent commands
+		     * do not hang, but are failed immediately.
+		     */
+
+		    chunk->flags &= ~CFLSH_CHNK_HALTED;
 		
 		    /*
 		     * Issue reset context to fail any active I/O.
@@ -4264,6 +4299,14 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 		rc = EIO;
 		
 		chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+
+
+		/*
+		 * Clear halted state so that subsequent commands
+		 * do not hang, but are failed immediately.
+		 */
+
+		chunk->flags &= ~CFLSH_CHNK_HALTED;
 		
 		/*
 		 * Issue reset context to fail any active I/O.
@@ -4359,7 +4402,7 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
     int process_bytes  = 0;
     uint8_t read_buf[CAPI_FLASH_BLOCK_SIZE];
     struct cxl_event *cxl_event = (struct cxl_event *)read_buf;
-
+    cflash_block_check_os_status_t reset_status;
  
 #ifndef BLOCK_FILEMODE_ENABLED
 
@@ -4448,7 +4491,21 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 
 	    CBLK_TRACE_LOG_FILE(7,"possible UE rcovery cmd = 0x%llx",(uint64_t)*cmd);
 
-	    cblk_check_os_adap_err(chunk,path_index);
+	    reset_status = cblk_check_os_adap_err(chunk,path_index);
+
+	    if ((reset_status != CFLSH_BLK_CHK_OS_NO_RESET) &&
+		(reset_status != CFLSH_BLK_CHK_OS_RESET_FAIL)) {
+
+
+		/*
+		 * If adapter reset succeeded, is pending or is indeterminant,
+		 * then return good completion here to allow this state machine
+		 * to proceed. Otherwise fail this, with the existing errno.
+		 */
+		errno = 0;
+
+		return 0;
+	    }
 	}
 
 	return (-1);
@@ -4604,7 +4661,12 @@ void cblk_check_os_adap_err_failure_cleanup(cflsh_chunk_t *chunk, cflsh_afu_t *a
     chunk->flags |= CFLSH_CHUNK_FAIL_IO;
 
 
+    /*
+     * Clear halted state so that subsequent commands
+     * do not hang, but are failed immediately.
+     */
 
+    chunk->flags &= ~CFLSH_CHNK_HALTED;
 
     cblk_chunk_free_mc_device_resources(chunk);
 
@@ -4646,6 +4708,14 @@ void cblk_check_os_adap_err_failure_cleanup(cflsh_chunk_t *chunk, cflsh_afu_t *a
 
 
 	tmp_chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+
+
+	/*
+	 * Clear halted state so that subsequent commands
+	 * do not hang, but are failed immediately.
+	 */
+
+	tmp_chunk->flags &= ~CFLSH_CHNK_HALTED;
 
 	cblk_fail_all_cmds(tmp_chunk);
 
@@ -4722,8 +4792,13 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 	 * to do here.
 	 */
 
-	CBLK_TRACE_LOG_FILE(9,"AFU recovery is already active, for chunk->index = %d, chunk->dev_name = %s, path_index = %d,chunk->flags = 0x%x",
-			chunk->index,chunk->dev_name,path_index,chunk->flags);
+	CBLK_TRACE_LOG_FILE(9,"AFU recovery is already active, for chunk->index = %d, chunk->dev_name = %s, path_index = %d,chunk->flags = 0x%x,afu->flags = 0x%x",
+			    chunk->index,chunk->dev_name,path_index,chunk->flags,chunk->path[path_index]->afu->flags);
+
+	
+	CBLK_TRACE_LOG_FILE(9,"num_active_cmds = %d, pid = 0x%llx",
+			    chunk->num_active_cmds,(uint64_t)cflsh_blk.caller_pid);
+
 	return CFLSH_BLK_CHK_OS_RESET_PEND;
 
     } else {
@@ -4929,6 +5004,10 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 	     * The ioctl succeeded and an AFU reset has been done.
 	     * We need to process the updated information from this
 	     */
+
+	    CBLK_TRACE_LOG_FILE(9,"DK_CAPI_RECOVER reattached old afu->contxt_id = 0x%llx, new_adap_fd = %d",
+				chunk->path[path_index]->afu->contxt_id,chunk->path[path_index]->afu->poll_fd);
+
 
 
 	    status = CFLSH_BLK_CHK_OS_RESET_SUCC;
@@ -5202,6 +5281,14 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 
 
 
+	} else {
+
+
+	    CBLK_TRACE_LOG_FILE(9,"DK_CAPI_RECOVER succeeded but no reattach afu->contxt_id = 0x%llx, new_adap_fd = %d",
+				chunk->path[path_index]->afu->contxt_id,chunk->path[path_index]->afu->poll_fd);
+
+
+
 	}
 
 
@@ -5223,6 +5310,9 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 
     path = afu->head_path;
 	
+    CBLK_TRACE_LOG_FILE(9,"resume AFU events for afu->contxt_id = 0x%llx, adap_fd = %d",
+			afu->contxt_id,afu->poll_fd);
+
     CFLASH_BLOCK_UNLOCK(afu->lock);
 
 
@@ -5293,6 +5383,9 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
     
     chunk->flags &= ~CFLSH_CHNK_RECOV_AFU;
 
+    CBLK_TRACE_LOG_FILE(9,"exiting routine for  afu->contxt_id = 0x%llx, pid = 0x%llx",
+			chunk->path[path_index]->afu->contxt_id,
+			(uint64_t)cflsh_blk.caller_pid);
 
     return status;
 }
@@ -5787,6 +5880,13 @@ int cblk_verify_mc_lun(cflsh_chunk_t *chunk,  cflash_block_notify_reason_t reaso
 
 	
 	chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+
+	/*
+	 * Clear halted state so that subsequent commands
+	 * do not hang, but are failed immediately.
+	 */
+
+	chunk->flags &= ~CFLSH_CHNK_HALTED;
 
 
 	/*

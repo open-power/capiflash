@@ -48,6 +48,10 @@ uint64_t ioq_rdy              = 0b00000100;
 uint64_t cntrl_rdy            = 0b00000010;
 uint64_t link_training_cmplt  = 0b00000001;
 uint64_t nvme_port_online     = 0b00001111;
+uint64_t _13_14               = 0b110000000000000;
+uint64_t IiP                  = 0b100000000000000;
+uint64_t LTiP                 = 0b010000000000000;
+uint64_t no_rec               = 0b000000000000000;
 
 /**
 ********************************************************************************
@@ -87,12 +91,11 @@ void show_port(uint32_t port)
 
     printf("\n");
 
-    if      (status2&0b10000000000000000)printf("   user reset indication\n");
-    if      (status2&0b1000000000000000) printf("   core phy link down\n");
-    //if      (status2&0b110000000000000)  printf("");
-    else if (status2&0b100000000000000)  printf("   link up, init in process\n");
-    else if (status2&0b0100000000000000) printf("   link train in progress\n");
-    else                                 printf("   no receivers\n");
+    if      (status2&0b10000000000000000) printf("   user reset indication\n");
+    if      (status2&0b01000000000000000) printf("   core phy link down\n");
+    if      ((status2&_13_14)==IiP)       printf("   init in process\n");
+    else if ((status2&_13_14)==LTiP)      printf("   link train in progress\n");
+    else if ((status2&_13_14)==no_rec)    printf("   no receivers\n");
 
     addr=base+FC_MTIP_STATUS;
     cxl_mmio_read64(afu, addr,(__u64 *)&r);
@@ -111,14 +114,14 @@ void show_port(uint32_t port)
 
     addr=base+FC_STATUS;
     cxl_mmio_read64(afu, addr,(__u64 *)&r);
-    if      (!r&link_training_cmplt)     printf("   link train failed\n");
-    else if (!r&cntrl_rdy)               printf("   NVMe controller not rdy\n");
-    else if (!r&ioq_rdy)                 printf("   ioq not ready\n");
-    else if (!r&pcie_init_cmplt)         printf("   pcie_init failed\n");
+    if      (!(r&link_training_cmplt))   printf("   link train failed\n");
+    else if (!(r&cntrl_rdy))             printf("   NVMe controller not rdy\n");
+    else if (!(r&ioq_rdy))               printf("   ioq not ready\n");
+    else if (!(r&pcie_init_cmplt))       printf("   pcie_init failed\n");
     if      (r&0b100000)                 printf("   shutdown complete\n");
     if      (r&0b10000)                  printf("   shutdown active\n");
-    if      (!r&compq_empty)             printf("   compq not empty\n");
-    if      (!r&subq_empty)              printf("   subq not empty\n");
+    if      (!(r&compq_empty))           printf("   compq not empty\n");
+    if      (!(r&subq_empty))            printf("   subq not empty\n");
 
     addr=base+FC_CNT_LINKERR;
     cxl_mmio_read64(afu, addr,(__u64 *)&r);

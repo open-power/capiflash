@@ -35,7 +35,7 @@
 extern "C"
 {
 #include <fvt_kv.h>
-#include <kv_utils_db.h>
+#include <arkdb_trace.h>
 }
 
 /**
@@ -249,11 +249,9 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
     uint32_t        i        = 0;
     uint32_t        ctxt_i   = 0;
     uint32_t        pth_i    = 0;
-    uint32_t        klen     = 140;
     uint32_t        tot_pth  = num_ctxt * num_pth;
     set_get_args_t  pth_args[tot_pth];
     ARK            *ark[num_ctxt];
-    kv_t           *db[num_pth];
     struct timeval  stop, start;
     uint64_t        ops      = 0;
     uint64_t        ios      = 0;
@@ -266,11 +264,6 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
 
     memset(pth_args, 0, sizeof(set_get_args_t) * tot_pth);
 
-    /* alloc one set of db's, to be used for each context */
-    for (i=0; i<num_pth; i++)
-    {
-        db[i] = (kv_t*)kv_db_create_fixed(LEN, klen+i, vlen+i);
-    }
     /* alloc one ark for each context */
     for (ctxt_i=0; ctxt_i<num_ctxt; ctxt_i++)
     {
@@ -293,11 +286,16 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
     i      = 0;
     while (i < tot_pth)
     {
+        pth_args[i].key  = (char*)malloc(KLEN);
+        pth_args[i].val  = (char*)malloc(vlen);
+        pth_args[i].gval = (char*)malloc(vlen);
         pth_args[i].ark  = ark[ctxt_i];
-        pth_args[i].db   = db[pth_i];
-        pth_args[i].vlen = vlen+pth_i;
+        pth_args[i].n    = i*LEN;
+        pth_args[i].vlen = vlen;
         pth_args[i].LEN  = LEN;
         pth_args[i].secs = secs;
+        KV_TRC(pAT, "START   n:%d vl:%d LEN:%d",
+                    pth_args[i].n, pth_args[i].vlen, pth_args[i].LEN);
         run_SGD(pth_args+i);
         ++pth_i;
         ++i;
@@ -309,10 +307,13 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
         }
     }
     printf("SYNC %dx%dx%d ctxt:%d pth:%d npool:%d ",
-                     klen, vlen, LEN, num_ctxt, num_pth, npool); fflush(stdout);
+            KLEN,vlen, LEN, num_ctxt, num_pth, npool); fflush(stdout);
     for (i=0; i<tot_pth; i++)
     {
         wait(pth_args+i);
+        if (pth_args[i].key)  {free(pth_args[i].key);}
+        if (pth_args[i].val)  {free(pth_args[i].val);}
+        if (pth_args[i].gval) {free(pth_args[i].gval);}
     }
 
     /* stop timer */
@@ -328,10 +329,6 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
         *p_ops += (uint32_t)ops;
         *p_ios += (uint32_t)ios;
         EXPECT_EQ(0, ark_delete(ark[i]));
-    }
-    for (i=0; i<num_pth; i++)
-    {
-        kv_db_destroy(db[i], LEN);
     }
     *p_ops = *p_ops / secs;
     *p_ios = *p_ios / secs;
@@ -356,7 +353,6 @@ void Sync_pth::run_multi_ctxt_rd(uint32_t  num_ctxt,
     uint32_t        tot_pth  = num_ctxt * num_pth;
     set_get_args_t  pth_args[tot_pth];
     ARK            *ark[num_ctxt];
-    kv_t           *db[num_pth];
     struct timeval  stop, start;
     uint64_t        ops      = 0;
     uint64_t        ios      = 0;
@@ -371,11 +367,6 @@ void Sync_pth::run_multi_ctxt_rd(uint32_t  num_ctxt,
 
     memset(pth_args, 0, sizeof(set_get_args_t) * tot_pth);
 
-    /* alloc one set of db's, to be used for each context */
-    for (i=0; i<num_pth; i++)
-    {
-        db[i] = (kv_t*)kv_db_create_fixed(LEN, klen+i, vlen+i);
-    }
     /* alloc one ark for each context */
     for (ctxt_i=0; ctxt_i<num_ctxt; ctxt_i++)
     {
@@ -399,7 +390,7 @@ void Sync_pth::run_multi_ctxt_rd(uint32_t  num_ctxt,
     while (i < tot_pth)
     {
         pth_args[i].ark  = ark[ctxt_i];
-        pth_args[i].db   = db[pth_i];
+        pth_args[i].n    = i*LEN;
         pth_args[i].vlen = vlen+pth_i;
         pth_args[i].LEN  = LEN;
         pth_args[i].secs = secs;
@@ -434,10 +425,6 @@ void Sync_pth::run_multi_ctxt_rd(uint32_t  num_ctxt,
         t_ios += (uint32_t)ios;
         EXPECT_EQ(0, ark_delete(ark[i]));
     }
-    for (i=0; i<num_pth; i++)
-    {
-        kv_db_destroy(db[i], LEN);
-    }
     t_ops = t_ops / secs;
     t_ios = t_ios / secs;
     printf("op/s:%d io/s:%d secs:%d\n", t_ops, t_ios, secs);
@@ -461,7 +448,6 @@ void Sync_pth::run_multi_ctxt_wr(uint32_t  num_ctxt,
     uint32_t        tot_pth  = num_ctxt * num_pth;
     set_get_args_t  pth_args[tot_pth];
     ARK            *ark[num_ctxt];
-    kv_t           *db[num_pth];
     struct timeval  stop, start;
     uint64_t        ops      = 0;
     uint64_t        ios      = 0;
@@ -476,11 +462,6 @@ void Sync_pth::run_multi_ctxt_wr(uint32_t  num_ctxt,
 
     memset(pth_args, 0, sizeof(set_get_args_t) * tot_pth);
 
-    /* alloc one set of db's, to be used for each context */
-    for (i=0; i<num_pth; i++)
-    {
-        db[i] = (kv_t*)kv_db_create_fixed(LEN, klen+i, vlen+i);
-    }
     /* alloc one ark for each context */
     for (ctxt_i=0; ctxt_i<num_ctxt; ctxt_i++)
     {
@@ -504,7 +485,7 @@ void Sync_pth::run_multi_ctxt_wr(uint32_t  num_ctxt,
     while (i < tot_pth)
     {
         pth_args[i].ark  = ark[ctxt_i];
-        pth_args[i].db   = db[pth_i];
+        pth_args[i].n    = i*LEN;
         pth_args[i].vlen = vlen+pth_i;
         pth_args[i].LEN  = LEN;
         pth_args[i].secs = secs;
@@ -538,10 +519,6 @@ void Sync_pth::run_multi_ctxt_wr(uint32_t  num_ctxt,
         t_ops += (uint32_t)ops;
         t_ios += (uint32_t)ios;
         EXPECT_EQ(0, ark_delete(ark[i]));
-    }
-    for (i=0; i<num_pth; i++)
-    {
-        kv_db_destroy(db[i], LEN);
     }
     t_ops = t_ops / secs;
     t_ios = t_ios / secs;

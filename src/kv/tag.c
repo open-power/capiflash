@@ -26,15 +26,20 @@
 #include <stdio.h>
 #include "tag.h"
 #include "am.h"
+#include <arkdb_trace.h>
 #include <errno.h>
 
-tags_t *tag_new(uint32_t n) {
+tags_t* tag_new(uint32_t n)
+{
   int i;
   tags_t *tags = am_malloc(sizeof(tags_t) + n * sizeof(int32_t));
+
   tags->n = n;
   tags->c = n;
   pthread_mutex_init(&(tags->l), NULL);
-  for(i=0; i<n; i++) tags->s[i] = i;
+  for(i=0; i<n; i++) {tags->s[i] = i;}
+
+  KV_TRC_EXT3(pAT, "NEWTAG  tags:%p n:%d", tags, tags->c);
   return tags;
 }
 
@@ -45,27 +50,28 @@ void tag_free(tags_t *tags)
   return;
 }
 
-int tag_unbury(tags_t *tags, int32_t *tag) {
+int tag_unbury(tags_t *tags, int32_t *tag)
+{
   int ret = 0;
+
   pthread_mutex_lock(&(tags->l));
-  if (tags->c==0){
-    ret = EAGAIN;
-  }
-  else{
-    *tag = tags->s[--(tags->c)];
-  }
+  if (tags->c==0) {ret = EAGAIN;}
+  else            {*tag = tags->s[--(tags->c)];}
   pthread_mutex_unlock(&(tags->l));
+
+  KV_TRC_EXT3(pAT, "GETTAG  tags:%p c:%d tag:%d ret:%d", tags,tags->c,*tag,ret);
   return ret;
 }
 
-int tag_bury(tags_t *tags, int32_t tag) {
+int tag_bury(tags_t *tags, int32_t tag)
+{
   int ret = 0;
+
   pthread_mutex_lock(&(tags->l));
-  if (tags->c == tags->n){
-    ret = ENOSPC;
-  }
-  else
-    tags->s[tags->c++] = tag;
+  if (tags->c == tags->n) {ret = ENOSPC;}
+  else                    {tags->s[tags->c++] = tag;}
   pthread_mutex_unlock(&(tags->l));
+
+  KV_TRC_EXT3(pAT, "PUTTAG  tags:%p c:%d tag:%d ret:%d", tags, tags->c,tag,ret);
   return ret;
 }

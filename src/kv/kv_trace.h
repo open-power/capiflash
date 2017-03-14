@@ -29,16 +29,19 @@
  *   definitions for a kv trace facility
  * \details
  *   export KV_CFLAGS=-DKV_TRC_DISABLE before building to disable the trace
- *   export KV_TRC_VERBOSITY=4 for maximum tracing
+ *   export KV_TRC_VERBOSITY=9 for maximum tracing
  *
- *   OFF         KV_TRC_VERBOSITY == 0
- *   KV_TRC_FFDC KV_TRC_VERBOSITY <= 1
- *   KV_TRC      KV_TRC_VERBOSITY <= 2
- *   KV_TRC_PERF KV_TRC_VERBOSITY <= 3
- *   KV_TRC_IO   KV_TRC_VERBOSITY <= 4
- *   KV_TRC_DBG  KV_TRC_VERBOSITY <= 5
- *   KV_TRC_DBG6 KV_TRC_VERBOSITY <= 6
- *   KV_TRC_DBG7 KV_TRC_VERBOSITY <= 7
+ *   OFF          KV_TRC_VERBOSITY == 0
+ *   KV_TRC_FFDC  KV_TRC_VERBOSITY <= 1
+ *   KV_TRC_PERF1 KV_TRC_VERBOSITY <= 2
+ *   KV_TRC_PERF2 KV_TRC_VERBOSITY <= 3
+ *   KV_TRC       KV_TRC_VERBOSITY <= 4
+ *   KV_TRC_IO    KV_TRC_VERBOSITY <= 5
+ *   KV_TRC_DBG   KV_TRC_VERBOSITY <= 6
+ *   KV_TRC_EXT1  KV_TRC_VERBOSITY <= 7
+ *   KV_TRC_EXT2  KV_TRC_VERBOSITY <= 8
+ *   KV_TRC_EXT3  KV_TRC_VERBOSITY <= 9
+ *   KV_TRC_HEX
  * \ingroup
  ******************************************************************************/
 #ifndef _H_KV_TRACE_LOG
@@ -205,7 +208,7 @@ do                                                                             \
     _delta_time.time    = _log_time.time    - _pKT->last_time.time;            \
     _delta_time.millitm = _log_time.millitm - _pKT->last_time.millitm;         \
                                                                                \
-    fprintf(_pKT->logfp,"  %-9d %-6d %5d.%05d %5d.%05d ",                      \
+    fprintf(_pKT->logfp,"  %-6d %-6d %3d.%03d %3d.%05d ",                      \
             pid,                                                               \
             _pKT->log_number,                                                  \
             (int)_log_time.time,                                               \
@@ -214,7 +217,7 @@ do                                                                             \
             _delta_time.millitm);                                              \
                                                                                \
     snprintf(_str, STRLEN, _fmt, ##__VA_ARGS__);                               \
-    fprintf(_pKT->logfp," %5d:%-25s %-25s %s\n",                               \
+    fprintf(_pKT->logfp," %4d:%-25s %-25s %s\n",                               \
             __LINE__,__FILE__,__FUNCTION__,_str);                              \
     fflush(_pKT->logfp);                                                       \
                                                                                \
@@ -223,6 +226,27 @@ do                                                                             \
                                                                                \
     pthread_mutex_unlock(&_pKT->lock);                                         \
 } while (0)
+
+/* _v  - verbosity
+ * _s  - string to prepend
+ * _hx - array of uint8_t to dump as hex
+ * _l  - length in bytes to dump
+ */
+#define KV_TRC_HEX(_pKT, _v, _s, _hx, _l)                                      \
+        do                                                                     \
+        {                                                                      \
+            if (_pKT && _pKT->verbosity >= _v)                                 \
+            {                                                                  \
+                char     buf[512]={0};                                         \
+                uint8_t *hxd=(uint8_t*)_hx;                                    \
+                char    *pb=buf+strlen(_s);                                    \
+                uint32_t i;                                                    \
+                sprintf(buf, "%s", (char*)_s);                                 \
+                for (i=0; i<(uint32_t)(_l>64?64:_l); i++)                      \
+                    {sprintf(pb+(i*2), "%02x",hxd[i]);}                        \
+                KV_TRACE_LOG_DATA(_pKT, "%s", buf);                            \
+            }                                                                  \
+        } while (0)
 
 #define KV_TRC_FFDC(_pKT, msg, ...)                                            \
         do                                                                     \
@@ -242,7 +266,7 @@ do                                                                             \
             }                                                                  \
         } while (0)
 
-#define KV_TRC_PERF2(_pKT, msg, ...)                                                 \
+#define KV_TRC_PERF2(_pKT, msg, ...)                                           \
         do                                                                     \
         {                                                                      \
             if (_pKT && _pKT->verbosity >= 3)                                  \
@@ -307,10 +331,15 @@ do                                                                             \
 #else
 #define KV_TRC_OPEN(_pKT, _fn_in)
 #define KV_TRC_CLOSE(_pKT)
-#define KV_TRC_FFDC(_pKT, _fmt, ...)
-#define KV_TRC(_pKT, _fmt, ...)
-#define KV_TRC_IO(_pKT, _fmt, ...)
-#define KV_TRC_DBG(_pKT, _fmt, ...)
+#define KV_TRC_FFDC(_pKT, msg, ...)
+#define KV_TRC_PERF1(_pKT, msg, ...)
+#define KV_TRC_PERF2(_pKT, msg, ...)
+#define KV_TRC(_pKT, msg, ...)
+#define KV_TRC_IO(_pKT, msg, ...)
+#define KV_TRC_DBG(_pKT, msg, ...)
+#define KV_TRC_EXT1(_pKT, msg, ...)
+#define KV_TRC_EXT2(_pKT, msg, ...)
+#define KV_TRC_EXT3(_pKT, msg, ...)
 #endif
 
 #endif

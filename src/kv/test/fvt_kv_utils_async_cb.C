@@ -35,6 +35,7 @@
 extern "C"
 {
 #include <fvt_kv.h>
+#include <arkdb_trace.h>
 #include <fvt_kv_utils_async_cb.h>
 #include <kv_utils_db.h>
 #include <kv_inject.h>
@@ -133,17 +134,17 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
 
     if (pCB == NULL)
     {
-        KV_TRC_FFDC(pFT, "FFDC: pCB NULL");
+        KV_TRC_FFDC(pAT, "FFDC: pCB NULL");
         return;
     }
     if (pCB->b_mark != B_MARK)
     {
-        KV_TRC_FFDC(pFT, "FFDC: B_MARK FAILURE %p: %lx", pCB, pCB->b_mark);
+        KV_TRC_FFDC(pAT, "FFDC: B_MARK FAILURE %p: %lx", pCB, pCB->b_mark);
         return;
     }
     if (pCB->e_mark != E_MARK)
     {
-        KV_TRC_FFDC(pFT, "FFDC: E_MARK FAILURE %p: %lx", pCB, pCB->e_mark);
+        KV_TRC_FFDC(pAT, "FFDC: E_MARK FAILURE %p: %lx", pCB, pCB->e_mark);
         return;
     }
     if (EBUSY == errcode) {kv_async_q_retry(pCB); goto done;}
@@ -158,11 +159,19 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
 
     if (pCB->flags & KV_ASYNC_CB_SET)
     {
-        KV_TRC_IO(pFT, "KV_ASYNC_CB_SET, %p %d %d", pCB, pCB->len_i, pCB->len);
         if (0   != errcode)    printf("ark_set failed, errcode=%d\n", errcode);
         if (tag != pCB->tag)   printf("ark_set bad tag\n");
-        if (res != p_kv->vlen) printf("ark_set bad vlen\n");
-        if (IS_GTEST) {        EXPECT_EQ(res, p_kv->vlen);}
+        if (res != p_kv->vlen)
+        {
+            printf("ark_set bad res:%ld != vlen:%d\n", res, p_kv->vlen);
+            KV_TRC_FFDC(pAT, "KV_ASYNC_CB_SET: FFDC: %p %d %d "
+                             "(res:%ld != vlen:%d)",
+                        pCB, pCB->len_i, pCB->len, res, p_kv->vlen);
+        }
+        if (IS_GTEST) {EXPECT_EQ(res, p_kv->vlen);}
+
+        KV_TRC_IO(pAT, "KV_ASYNC_CB_SET, %p %d %d vlen:%d",
+                  pCB, pCB->len_i, pCB->len, p_kv->vlen);
 
         /* end of db len sequence, move to next step */
         if (pCB->len_i == pCB->len)
@@ -186,11 +195,20 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
     {
         uint32_t miscompare = memcmp(p_kv->value, pCB->gvalue, p_kv->vlen);
 
-        KV_TRC_IO(pFT, "KV_ASYNC_CB_GET, %p %d %d", pCB, pCB->len_i, pCB->len);
         if (0   != errcode)    printf("ark_get failed, errcode=%d\n", errcode);
         if (tag != pCB->tag)   printf("ark_get bad tag\n");
-        if (res != p_kv->vlen) printf("ark_get bad vlen\n");
-        if (IS_GTEST) {        EXPECT_TRUE(0 == miscompare);}
+        if (res != p_kv->vlen)
+        {
+            printf("ark_get bad res:%ld != vlen:%d\n",
+                                      res, p_kv->vlen);
+            KV_TRC_FFDC(pAT, "KV_ASYNC_CB_GET: FFDC: %p %d %d "
+                             "(res:%ld != vlen:%d)",
+                        pCB, pCB->len_i, pCB->len, res, p_kv->vlen);
+        }
+        if (IS_GTEST) {EXPECT_TRUE(0 == miscompare);}
+
+        KV_TRC_IO(pAT, "KV_ASYNC_CB_GET, %p %d %d vlen:%d",
+                  pCB, pCB->len_i, pCB->len, p_kv->vlen);
 
         /* end of db len sequence, move to next step */
         if (pCB->len_i == pCB->len)
@@ -212,7 +230,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
     }
     else if (pCB->flags & KV_ASYNC_CB_EXISTS)
     {
-        KV_TRC_IO(pFT, "KV_ASYNC_CB_EXISTS, %p %d %d", pCB, pCB->len_i, pCB->len);
+        KV_TRC_IO(pAT, "KV_ASYNC_CB_EXISTS, %p %d %d", pCB, pCB->len_i, pCB->len);
         if (0   != errcode)    printf("ark_exists failed,errcode=%d\n",errcode);
         if (tag != pCB->tag)   printf("ark_exists bad tag\n");
         if (res != p_kv->vlen) printf("ark_exists bad vlen\n");
@@ -244,7 +262,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
                 if (0 != pCB->regen(pCB->db, pCB->len, pCB->regen_len))
                 {
                     printf("regen failure, fatal\n");
-                    KV_TRC_FFDC(pFT, "FFDC: regen failure");
+                    KV_TRC_FFDC(pAT, "FFDC: regen failure");
                     memset(pCB, 0, sizeof(async_CB_t));
                     goto done;
                 }
@@ -263,7 +281,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
     }
     else if (pCB->flags & KV_ASYNC_CB_DEL)
     {
-        KV_TRC_IO(pFT, "KV_ASYNC_CB_DEL, %p i:%d len:%d", pCB, pCB->len_i,pCB->len);
+        KV_TRC_IO(pAT, "KV_ASYNC_CB_DEL, %p i:%d len:%d", pCB, pCB->len_i,pCB->len);
         if (0   != errcode)    printf("ark_del failed, errcode=%d\n",errcode);
         if (tag != pCB->tag)   printf("ark_del bad tag\n");
         if (res != p_kv->vlen) printf("ark_del bad vlen\n");
@@ -280,10 +298,10 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
                 }
                 if (pCB->gvalue) free(pCB->gvalue);
                 memset(pCB, 0, sizeof(async_CB_t));
-                KV_TRC_IO(pFT, "LOOP_DONE: %p", pCB);
+                KV_TRC_IO(pAT, "LOOP_DONE: %p", pCB);
                 goto done;
             }
-            KV_TRC_IO(pFT, "NEXT_LOOP, %p", pCB);
+            KV_TRC_IO(pAT, "NEXT_LOOP, %p", pCB);
             pCB->flags &= ~KV_ASYNC_CB_DEL;
             pCB->flags |= KV_ASYNC_CB_SET;
             pCB->len_i  = 0;
@@ -312,7 +330,7 @@ static void kv_async_SET_KEY(async_CB_t *pCB)
     uint64_t tag = (uint64_t)pCB;
     int32_t  rc  = 0;
 
-    KV_TRC_IO(pFT, "SET_KEY: %p, %p %lx %d", pCB, pCB->db, tag, pCB->len_i);
+    KV_TRC_IO(pAT, "SET_KEY: %p, %p %lx %d", pCB, pCB->db, tag, pCB->len_i);
 
     pCB->tag = tag;
 
@@ -342,7 +360,7 @@ static void kv_async_GET_KEY(async_CB_t *pCB)
     uint64_t tag = (uint64_t)pCB;
     int32_t  rc  = 0;
 
-    KV_TRC_IO(pFT, "GET_KEY: %p, %" PRIx64 " %d", pCB, tag, pCB->len_i);
+    KV_TRC_IO(pAT, "GET_KEY: %p, %" PRIx64 " %d", pCB, tag, pCB->len_i);
 
     pCB->tag = tag;
 
@@ -373,7 +391,7 @@ static void kv_async_EXISTS_KEY(async_CB_t *pCB)
     uint64_t tag = (uint64_t)pCB;
     int32_t  rc  = 0;
 
-    KV_TRC_DBG(pFT, "EXI_KEY: %p, %" PRIx64 "", pCB, tag);
+    KV_TRC_DBG(pAT, "EXI_KEY: %p, %" PRIx64 "", pCB, tag);
 
     pCB->tag = tag;
 
@@ -401,7 +419,7 @@ static void kv_async_DEL_KEY(async_CB_t *pCB)
     uint64_t tag = (uint64_t)pCB;
     int32_t  rc  = 0;
 
-    KV_TRC_DBG(pFT, "DEL_KEY: %p, %" PRIx64 "", pCB, tag);
+    KV_TRC_DBG(pAT, "DEL_KEY: %p, %" PRIx64 "", pCB, tag);
 
     pCB->tag = tag;
 
@@ -428,7 +446,7 @@ static void kv_async_q_retry(async_CB_t *pCB)
 {
     uint32_t new_flags = pCB->flags;
 
-    KV_TRC_DBG(pFT, "Q_RETRY %p", pCB);
+    KV_TRC_DBG(pAT, "Q_RETRY %p", pCB);
     new_flags &= ~KV_ASYNC_CB_RUNNING;
     new_flags |=  KV_ASYNC_CB_QUEUED;
     pCB->flags = new_flags;
@@ -444,7 +462,7 @@ static void kv_async_perf_done(async_CB_t *pCB)
 
     if (pCB->flags & KV_ASYNC_CB_SHUTDOWN)
     {
-        KV_TRC(pFT, "shutdown %p %d", pCB, pCB->perf_loops);
+        KV_TRC(pAT, "shutdown %p %d", pCB, pCB->perf_loops);
 
         pCB->flags &= ~(KV_ASYNC_CB_SET        |
                         KV_ASYNC_CB_GET        |
@@ -482,7 +500,7 @@ void kv_async_init_ctxt_perf(uint32_t ctxt, uint32_t npool, uint32_t secs)
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;
     pCT->secs   = secs;
-    KV_TRC(pFT, "init_ctxt ctxt:%d ark:%p secs:%d", ctxt, pCT->ark, pCT->secs);
+    KV_TRC(pAT, "init_ctxt ctxt:%d ark:%p secs:%d", ctxt, pCT->ark, pCT->secs);
 }
 
 /**
@@ -510,7 +528,7 @@ void kv_async_init_ctxt(uint32_t ctxt, uint32_t secs)
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;
     pCT->secs   = secs;
-    KV_TRC(pFT, "init_ctxt ctxt:%d ark:%p secs:%d", ctxt, pCT->ark, pCT->secs);
+    KV_TRC(pAT, "init_ctxt ctxt:%d ark:%p secs:%d", ctxt, pCT->ark, pCT->secs);
 }
 
 /**
@@ -541,7 +559,7 @@ void kv_async_init_ctxt_starve(uint32_t ctxt,
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;
     pCT->secs   = secs;
-    KV_TRC(pFT, "init_ctxt_starve ctxt:%d ark:%p secs:%d",
+    KV_TRC(pAT, "init_ctxt_starve ctxt:%d ark:%p secs:%d",
            ctxt, pCT->ark, pCT->secs);
 }
 
@@ -580,7 +598,7 @@ void kv_async_set_job(uint32_t  flags,
     pCB->b_mark    = B_MARK;
     pCB->e_mark    = E_MARK;
 
-    KV_TRC(pFT, "CREATE_JOB: ctxt:%d ark:%p %s:   pCB:%p flags:%X",
+    KV_TRC(pAT, "CREATE_JOB: ctxt:%d ark:%p %s:   pCB:%p flags:%X",
        ctxt, pCT->ark, type, pCB, pCB->flags);
 }
 
@@ -598,7 +616,7 @@ void kv_async_init_job(uint32_t  flags,
     kv_t *db = (kv_t*)kv_db_create_fixed(len, klen, vlen);
     ASSERT_TRUE(NULL != db);
 
-    KV_TRC(pFT, "CREATE_JOB FIXED %dx%dx%d", klen, vlen, len);
+    KV_TRC(pAT, "CREATE_JOB FIXED %dx%dx%d", klen, vlen, len);
 
     kv_async_set_job(flags|KV_ASYNC_CB_GTEST, ctxt, job, db, vlen, len);
 }
@@ -643,15 +661,15 @@ void kv_async_job_perf(uint32_t jobs, uint32_t klen, uint32_t vlen,uint32_t len)
 
     /* do writes */
     (void)ark_stats(kv_async_get_ark(ASYNC_SINGLE_CONTEXT), &ops, &ios);
-    KV_TRC(pFT, "PERF wr: ops:%ld ios:%ld", ops, ios);
+    KV_TRC(pAT, "PERF wr: ops:%ld ios:%ld", ops, ios);
     gettimeofday(&start, NULL);
     kv_async_run_jobs();        /* run write jobs */
-    KV_TRC(pFT, "writes done");
+    KV_TRC(pAT, "writes done");
     gettimeofday(&stop, NULL);
     wr_us += (stop.tv_sec*mil  + stop.tv_usec) -
              (start.tv_sec*mil + start.tv_usec);
     (void)ark_stats(kv_async_get_ark(ASYNC_SINGLE_CONTEXT),&post_ops,&post_ios);
-    KV_TRC(pFT, "PERF wr: ops:%ld ios:%ld", post_ops, post_ios);
+    KV_TRC(pAT, "PERF wr: ops:%ld ios:%ld", post_ops, post_ios);
     wr_ops += post_ops - ops;
     wr_ios += post_ios - ios;
 
@@ -675,15 +693,15 @@ void kv_async_job_perf(uint32_t jobs, uint32_t klen, uint32_t vlen,uint32_t len)
     pCTs->flags |= KV_ASYNC_CT_RUNNING;
 
     (void)ark_stats(kv_async_get_ark(0), &ops, &ios);
-    KV_TRC(pFT, "PERF rd: ops:%ld ios:%ld", ops, ios);
+    KV_TRC(pAT, "PERF rd: ops:%ld ios:%ld", ops, ios);
     gettimeofday(&start, NULL);
     kv_async_run_jobs();        /* run read jobs */
     gettimeofday(&stop, NULL);
-    KV_TRC(pFT, "reads done");
+    KV_TRC(pAT, "reads done");
     rd_us += (stop.tv_sec*mil  + stop.tv_usec) -
              (start.tv_sec*mil + start.tv_usec);
     (void)ark_stats(kv_async_get_ark(0), &post_ops, &post_ios);
-    KV_TRC(pFT, "PERF rd: ops:%ld ios:%ld", post_ops, post_ios);
+    KV_TRC(pAT, "PERF rd: ops:%ld ios:%ld", post_ops, post_ios);
     rd_ops += post_ops - ops;
     rd_ios += post_ios - ios;
 
@@ -869,6 +887,27 @@ void kv_async_init_job_BIG_BLOCKS(uint32_t ctxt)
  *******************************************************************************
  * \brief
  ******************************************************************************/
+void kv_async_init_job_LARGE_BLOCKS(uint32_t ctxt)
+{
+    uint32_t i=0;
+
+    for (i=0; i<10; i++)
+    {
+        if (i%4 == 0)
+        {
+            kv_async_init_job(KV_ASYNC_CB_SGD, ctxt, i, i+2, KV_250K, 16);
+        }
+        else
+        {
+            kv_async_init_job(KV_ASYNC_CB_REPLACE, ctxt, i, i+2, KV_64K, 16);
+        }
+    }
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 void kv_async_init_ark_io(uint32_t num_ctxt,
                           uint32_t jobs,
                           uint32_t vlen,
@@ -895,7 +934,7 @@ void kv_async_init_ark_io(uint32_t num_ctxt,
         {
             kv_async_set_job(KV_ASYNC_CB_SGD | KV_ASYNC_CB_MULTI_CTXT_IO,
                              ctxt, job, db[job], vlen, LEN);
-            KV_TRC(pFT, "CREATE_JOB FIXED %dx%dx%d", klen+job, vlen, LEN);
+            KV_TRC(pAT, "CREATE_JOB FIXED %dx%dx%d", klen+job, vlen, LEN);
         }
     }
     printf("> "); fflush(stdout);
@@ -953,7 +992,7 @@ void kv_async_init_ctxt_io(uint32_t num_ctxt,
                              KV_ASYNC_CB_MULTI_CTXT_IO |
                              KV_ASYNC_CB_GTEST,
                              ctxt, job, db[job], vlen, LEN);
-            KV_TRC(pFT, "CREATE_JOB FIXED %dx%dx%d", klen+job, vlen, LEN);
+            KV_TRC(pAT, "CREATE_JOB FIXED %dx%dx%d", klen+job, vlen, LEN);
         }
     }
     printf("> "); fflush(stdout);
@@ -991,7 +1030,7 @@ uint32_t kv_async_init_perf_io(uint32_t num_ctxt,
                              KV_ASYNC_CB_MULTI_CTXT_IO |
                              KV_ASYNC_CB_GTEST,
                              ctxt, job, db[job], vlen, LEN);
-            KV_TRC(pFT, "CREATE_JOB FIXED %dx%dx%d", klen+job, vlen, LEN);
+            KV_TRC(pAT, "CREATE_JOB FIXED %dx%dx%d", klen+job, vlen, LEN);
         }
     }
     printf("> "); fflush(stdout);
@@ -1012,22 +1051,22 @@ static void kv_async_dispatch(async_CB_t *pCB)
 
     if (pCB->flags & KV_ASYNC_CB_SET)
     {
-        KV_TRC_IO(pFT, "DISPATCH: SET: %p", pCB);
+        KV_TRC_IO(pAT, "DISPATCH: SET: %p", pCB);
         kv_async_SET_KEY(pCB);
     }
     else if (pCB->flags & KV_ASYNC_CB_GET)
     {
-        KV_TRC_IO(pFT, "DISPATCH: GET: %p", pCB);
+        KV_TRC_IO(pAT, "DISPATCH: GET: %p", pCB);
         kv_async_GET_KEY(pCB);
     }
     else if (pCB->flags & KV_ASYNC_CB_EXISTS)
     {
-        KV_TRC_IO(pFT, "DISPATCH: EXI: %p", pCB);
+        KV_TRC_IO(pAT, "DISPATCH: EXI: %p", pCB);
         kv_async_EXISTS_KEY(pCB);
     }
     else if (pCB->flags & KV_ASYNC_CB_DEL)
     {
-        KV_TRC_IO(pFT, "DISPATCH: DEL: %p", pCB);
+        KV_TRC_IO(pAT, "DISPATCH: DEL: %p", pCB);
         kv_async_DEL_KEY(pCB);
     }
     else
@@ -1048,7 +1087,7 @@ uint32_t kv_async_dispatch_jobs(uint32_t ctxt)
 
     if (ctxt < 0 || ctxt > KV_ASYNC_MAX_CONTEXTS)
     {
-        KV_TRC_FFDC(pFT, "FFDC %x", ctxt);
+        KV_TRC_FFDC(pAT, "FFDC %x", ctxt);
         return FALSE;
     }
 
@@ -1089,7 +1128,7 @@ void kv_async_run_jobs(void)
     uint32_t    tios         = 0;
     uint32_t    perf         = 0;
 
-    KV_TRC(pFT, "ASYNC START: 0 minutes");
+    KV_TRC(pAT, "ASYNC START: 0 minutes");
 
     if (!(pCTs->pCBs->flags & KV_ASYNC_CB_RUNNING)) start = time(0);
     next = log_interval;
@@ -1100,7 +1139,7 @@ void kv_async_run_jobs(void)
 
         if (elapse > next)
         {
-            KV_TRC(pFT, "ASYNC RUNNING: %d elapsed minutes", elapse/60);
+            KV_TRC(pAT, "ASYNC RUNNING: %d elapsed minutes", elapse/60);
             next += log_interval;
         }
 
@@ -1114,7 +1153,7 @@ void kv_async_run_jobs(void)
             {
                 pCTs[i].flags &= ~KV_ASYNC_CT_RUNNING;
                 pCTs[i].flags |=  KV_ASYNC_CT_DONE;
-                KV_TRC(pFT, "ASYNC DONE ctxt %d %x", i, pCTs[i].flags);
+                KV_TRC(pAT, "ASYNC DONE ctxt %d %x", i, pCTs[i].flags);
                 continue;
             }
             else
@@ -1127,7 +1166,7 @@ void kv_async_run_jobs(void)
             if (elapse >= inject &&
                 pCTs[i].flags & KV_ASYNC_CT_ERROR_INJECT)
             {
-                KV_TRC_FFDC(pFT, "FFDC: INJECT ERRORS %d", inject);
+                KV_TRC_FFDC(pAT, "FFDC: INJECT ERRORS %d", inject);
                 if (inject)
                 {
                     KV_INJECT_SCHD_READ_ERROR;
@@ -1152,7 +1191,7 @@ void kv_async_run_jobs(void)
                         (!(pCB->flags & KV_ASYNC_CB_SHUTDOWN)) )
                     {
                         pCB->flags |=  KV_ASYNC_CB_SHUTDOWN;
-                        KV_TRC_IO(pFT, "SHUTDOWN pCB %p (%d >= %d)", pCB, elapse, pCTs[i].secs);
+                        KV_TRC_IO(pAT, "SHUTDOWN pCB %p (%d >= %d)", pCB, elapse, pCTs[i].secs);
                     }
                 }
             }
@@ -1164,13 +1203,13 @@ void kv_async_run_jobs(void)
     stop = time(0);
     secs = stop - start;
 
-    KV_TRC(pFT, "ASYNC RUNNING DONE: %d minutes", elapse/60);
+    KV_TRC(pAT, "ASYNC RUNNING DONE: %d minutes", elapse/60);
 
     /* log cleanup, since the first ark_delete closes the log file */
     for (i=0; i<KV_ASYNC_MAX_CONTEXTS; i++)
     {
         if (pCTs[i].flags & KV_ASYNC_CT_DONE)
-            KV_TRC(pFT, "ASYNC CLEANUP: ctxt:%d ark:%p", i, pCTs[i].ark);
+            KV_TRC(pAT, "ASYNC CLEANUP: ctxt:%d ark:%p", i, pCTs[i].ark);
     }
 
     /* check for MULTI_CTXT_IO, destroy common kv dbs */
@@ -1199,7 +1238,7 @@ void kv_async_run_jobs(void)
         (void)ark_stats(pCTs[i].ark, &ops, &ios);
         tops += (uint32_t)ops;
         tios += (uint32_t)ios;
-        KV_TRC(pFT, "PERF ark%p ops:%ld ios:%ld",
+        KV_TRC(pAT, "PERF ark%p ops:%ld ios:%ld",
                pCTs[i].ark, ops, ios);
 
         EXPECT_EQ(0, ark_delete(pCTs[i].ark));
@@ -1210,7 +1249,7 @@ void kv_async_run_jobs(void)
         tops = tops / secs;
         tios = tios / secs;
         printf("op/s:%d io/s:%d secs:%d\n", tops, tios, secs);
-        KV_TRC(pFT, "PERF op/s:%d io/s:%d secs:%d",
+        KV_TRC(pAT, "PERF op/s:%d io/s:%d secs:%d",
                 tops, tios, secs);
     }
 }
@@ -1264,7 +1303,7 @@ ARK* kv_async_get_ark(uint32_t ctxt)
 
     if (ctxt < 0 || ctxt > KV_ASYNC_MAX_CONTEXTS)
     {
-        KV_TRC_FFDC(pFT, "FFDC %x", ctxt);
+        KV_TRC_FFDC(pAT, "FFDC %x", ctxt);
         return FALSE;
     }
 

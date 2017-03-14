@@ -228,7 +228,7 @@ int ea_async_io_harvest(_ARK   *_arkp,
 
       if (check_harv_error_injects(iocbp->op)) {arc=-1;}
 
-      if (arc == 0)
+      if (arc == 0 && iocbp->issT > iocbp->cmpT)
       {
           KV_TRC_DBG(pAT,"IO:     tid:%d ttag:%3d a_tag:%4d issT:%3d cmpT:%3d "
                          "nblks:%3ld blkno:%5ld hrvst:%d WAIT_NOT_CMP",
@@ -236,10 +236,12 @@ int ea_async_io_harvest(_ARK   *_arkp,
                          iocbp->issT, iocbp->cmpT, iocbp->nblks,
                          iocbp->blist[i].blkno, hrvst);
           ++iocbp->hmissN;
-          continue;
+          break;
       }
 
       ++iocbp->cmpT; --_arkp->issT;
+
+      iocbp->lat = UDELTA(iocbp->stime, _arkp->ns_per_tick);
 
       if (arc < 0)
       {
@@ -254,24 +256,11 @@ int ea_async_io_harvest(_ARK   *_arkp,
       else
       {
           iocbp->hmissN=0;
-          if (iocbp->nblks==1)
-          {
-              /* log per cmd latency if 1 blk io */
-              iocbp->lat=UDELTA(iocbp->stime, _arkp->ns_per_tick);
-              KV_TRC_PERF2(pAT,"IO_CMP: tid:%d ttag:%3d a_tag:%4d issT:%3d "
-                               "cmpT:%3d nblks:%3ld blkno:%5ld rd:%d lat:%d",
-                               tid, iocbp->tag, iocbp->blist[i].a_tag.tag,
-                               iocbp->issT, iocbp->cmpT, iocbp->nblks,
-                               iocbp->blist[i].blkno, iocbp->rd, iocbp->lat);
-          }
-          else
-          {
-              KV_TRC_IO(pAT,"IO_CMP: tid:%d ttag:%3d a_tag:%4d issT:%3d "
-                            "cmpT:%3d nblks:%3ld blkno:%5ld rd:%d",
-                            tid, iocbp->tag, iocbp->blist[i].a_tag.tag,
-                            iocbp->issT, iocbp->cmpT, iocbp->nblks,
-                            iocbp->blist[i].blkno, iocbp->rd);
-          }
+          KV_TRC(pAT,"IO_CMP: tid:%d ttag:%3d a_tag:%4d issT:%3d "
+                      "cmpT:%3d nblks:%3ld blkno:%5ld rd:%d lat:%d",
+                      tid, iocbp->tag, iocbp->blist[i].a_tag.tag,
+                      iocbp->issT, iocbp->cmpT, iocbp->nblks,
+                      iocbp->blist[i].blkno, iocbp->rd, iocbp->lat);
       }
 
       iocbp->blist[i].a_tag.tag = -1; // mark as harvested
@@ -286,7 +275,6 @@ int ea_async_io_harvest(_ARK   *_arkp,
           iorcbp->res    = -1;
           iorcbp->rc     = iocbp->io_error;
           iotcbp->state  = ARK_CMD_DONE;
-          am_free(iocbp->blist);
           KV_TRC_FFDC(pAT, "IO:     tid:%d ttag:%3d ERROR_DONE rc:%d",
                       tid, iocbp->tag, iorcbp->rc);
       }
@@ -303,7 +291,6 @@ int ea_async_io_harvest(_ARK   *_arkp,
   else if (iocbp->cmpT == iocbp->nblks)
   {
       rc=TRUE;
-      am_free(iocbp->blist);
       iotcbp->state = iocbp->io_done;
       KV_TRC_IO(pAT, "IO_END: tid:%d ttag:%3d SUCCESS cmpT:%d",
                 tid, iocbp->tag, iocbp->cmpT);
@@ -332,35 +319,4 @@ int ea_async_io_harvest(_ARK   *_arkp,
                 tid, iocbp->tag, hrvst, iocbp->issT, iocbp->cmpT, iocbp->nblks);
   }
   return rc;
-}
-
-/**
- *******************************************************************************
- * \brief
- *  init iocb struct for IO
- ******************************************************************************/
-void ea_async_io_init(_ARK *_arkp, int op, void *addr, ark_io_list_t *blist,
-                      int64_t nblks, int start, int32_t tag, int32_t io_done)
-{
-  iocb_t *iocbp  = &(_arkp->iocbs[tag]);
-  tcb_t  *iotcbp = &(_arkp->tcbs[tag]);
-
-  iotcbp->state   = ARK_IO_SCHEDULE;
-  iocbp->ea       = _arkp->ea;
-  iocbp->op       = op;
-  iocbp->addr     = addr;
-  iocbp->blist    = blist;
-  iocbp->nblks    = nblks;
-  iocbp->start    = start;
-  iocbp->issT     = 0;
-  iocbp->cmpT     = 0;
-  iocbp->rd       = 0;
-  iocbp->lat      = 0;
-  iocbp->hmissN   = 0;
-  iocbp->aflags   = CBLK_GROUP_RAID0;
-  iocbp->io_error = 0;
-  iocbp->io_done  = io_done;
-  iocbp->tag      = tag;
-
-  return;
 }

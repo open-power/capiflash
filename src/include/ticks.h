@@ -35,6 +35,17 @@ static __inline__ ticks getticks(void);
 /**
  *******************************************************************************
  * \brief
+ * microseconds delta of current ticks and sticks
+ ******************************************************************************/
+static __inline__ ticks NCALC(ticks sticks, ticks eticks, double ns)
+{
+    if (eticks<=sticks) {return 0;}
+    else                {return ((eticks-sticks) * ns);}
+}
+
+/**
+ *******************************************************************************
+ * \brief
  * seconds delta of current ticks and sticks
  ******************************************************************************/
 static __inline__ uint32_t SDELTA(ticks sticks, double ns)

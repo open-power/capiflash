@@ -898,7 +898,7 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
     }
 
     *cmd_index = cmd->index;
-    cmd->stime = getticks();
+    chunk->cmd_info[cmd->index].stime = getticks();
 
     if (flags & CBLK_ARW_USER_STATUS_FLAG) {
 	    

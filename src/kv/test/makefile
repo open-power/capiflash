@@ -43,7 +43,7 @@ VPATH   += ..
 
 BTESTS=_tst_ark _tst_kv_utils _tst_persist test_perf \
        res_pers run_kv_async run_kv_sync run_kv_async_multi \
-       run_kv_benchmark run_kv_persist
+       run_kv_benchmark run_kv_persist kv_perf
 
 BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
 
@@ -122,9 +122,9 @@ run_err_OFILES = fvt_kv_tst_errors.o fvt_kv_utils.o kv_utils_db.o \
 include ${ROOTPATH}/config.mk
 
 CFLAGS += \
-   -D__FVT__ -D__STDC_FORMAT_MACROS\
+   -D__FVT__ -D__STDC_FORMAT_MACROS \
    -I$(ROOTPATH)/src/kv \
-   -I$(ROOTPATH)/${GTESTINC} \
+   -I${GTESTINC} \
    $(KV_CFLAGS)
 
 CXXFLAGS+=$(CFLAGS)

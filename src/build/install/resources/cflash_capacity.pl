@@ -28,13 +28,14 @@ use strict;
 use warnings;
 use Fcntl;
 use Fcntl ':seek';
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 
 #-------------------------------------------------------------------------------
 # Variables
 my $type="0601";
 my $devices="";
 my $size;
+my $superpipe;
 my $tsize=0;
 my $prthelp=0;
 my $verbose;
@@ -42,9 +43,11 @@ my $verbose;
 sub usage()
 {
   print "\n";
-  print "Usage: cflash_capacity.pl [-t type]    \n";
-  print "    -t or --type   : Type to list                             \n";
-  print "    -h or --help   : Help - Print this message                \n";
+  print "Usage: cflash_capacity.pl [-t type]                         \n";
+  print "    -t or --type      : Type to list                        \n";
+  print "    -S or --superpipe : use only devs in superpipe mode     \n";
+  print "    -v                : verbose output                      \n";
+  print "    -h or --help      : Help - Print this message           \n";
   print "\n  ex: cflash_devices.pl -t 0601                           \n\n";
   exit 0;
 }
@@ -52,9 +55,10 @@ sub usage()
 #-------------------------------------------------------------------------------
 # Parse Options
 #-------------------------------------------------------------------------------
-if (! GetOptions ("t|type=s"   => \$type,
-                  "v"          => \$verbose,
-                  "h|help!"    => \$prthelp
+if (! GetOptions ("t|type=s"    => \$type,
+                  "S|superpipe" => \$superpipe,
+                  "v"           => \$verbose,
+                  "h|help!"     => \$prthelp
                   ))
 {
   usage();
@@ -83,6 +87,7 @@ $| = 1;
 my @cards = `lspci |grep $type`;
 my $cmd="";
 my $sym;
+my $nsq;
 
 for my $cardN (@cards)
 {
@@ -101,16 +106,33 @@ for my $cardN (@cards)
   for (my $i=0; $i<2; $i++)
   {
     if ($i == 1 && $type =~ /04cf/) {next;}
-    my @Adev=`ls -d /sys/devices/*/*/$Acard[0]/*/*/host*/target*:$i:*/*:*:*:*/block/*|awk -F/ '{print \$13}' 2>/dev/null`;
+    my @Adev=`ls -d /sys/devices/*/*/$Acard[0]/*/*/host*/target*:$i:*/*:*:*:*/block/* 2>/dev/null |awk -F/ '{print \$13}'`;
     if ($? != 0) {next;}
     foreach my $dev (@Adev)
     {
       chomp $dev;
-      $size=`fdisk -l /dev/$dev |grep "Disk /dev"|awk '{print \$3}'|awk -F. '{print \$1}'`;
-      $sym=`fdisk -l /dev/$dev |grep "Disk /dev"|awk '{print \$4}'`;
+      $size=`fdisk -l /dev/$dev 2>/dev/null|grep "Disk /dev"|awk '{print \$3}'|awk -F. '{print \$1}'`;
+      $sym=`fdisk -l /dev/$dev 2>/dev/null|grep "Disk /dev"|awk '{print \$4}'`;
       chomp $size;
+      if ($size eq "") {$size=0;}
       if ($sym =~ /TiB/) {$size *= 1000;}
-      $verbose && print "/dev/$dev: $size\n";
+
+      my $pdev=`/opt/ibm/capikv/bin/cxlfstatus|grep $dev|awk '{print \$1}'`;
+      my $spdev=`/opt/ibm/capikv/bin/cxlfstatus|grep $dev|grep superpipe`;
+      chomp $spdev; chomp $pdev;
+      if ($superpipe && !($spdev =~ /superpipe/)) {next;}
+
+      if ($verbose)
+      {
+        printf("/dev/%s %d    ",$pdev, $size);
+        if ($type =~ /0601/)
+        {
+          $nsq=`/opt/ibm/capikv/afu/flashgt_nvme_nsq --port $i /dev/cxl/$afu`;
+          chomp $nsq;
+          printf("    $nsq");
+        }
+        printf("\n");
+      }
       $tsize+=$size;
     }
   }

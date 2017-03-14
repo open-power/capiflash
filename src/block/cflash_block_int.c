@@ -1979,6 +1979,8 @@ int cblk_update_afu_type(cflsh_afu_t *afu,cflsh_block_chunk_type_t type)
 	     */
 
 	
+	    CBLK_TRACE_LOG_FILE(9,"switching to SQ mode");
+
 	    if (cblk_alloc_sq_afu(afu,afu->num_rrqs)) {
 
 
@@ -5089,8 +5091,7 @@ void cblk_halt_all_cmds(cflsh_chunk_t *chunk, int path_index, int all_paths)
 	
 	for (i=0; i < chunk->num_cmds; i++) {
 	    if ((chunk->cmd_info[i].in_use) &&
-		((chunk->cmd_info[i].state == CFLSH_MGM_PENDFREE) ||
-		 (chunk->cmd_info[i].state == CFLSH_MGM_WAIT_CMP)) &&
+		 (chunk->cmd_info[i].state == CFLSH_MGM_WAIT_CMP) &&
 		(all_paths || (chunk->cmd_info[i].path_index == path_index))) {
 		
 		/*
@@ -5349,7 +5350,48 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 		
 	} /* for */
 	
-    }
+    } /* if num_active_cmds */
+
+
+    /*
+     * It is possible some commands were in the process of being issued, but
+     * went to sleep because of this halted state. In that case, the command
+     * will have a state of CFLSH_MGM_PENDFREE. Since the recovery operation,
+     * may have taken considerable time, we need to set the initial cmd_time 
+     * to now to avoid them being prematurely timed out. In addition, if
+     * this halt/resume was due to an adapter reset, the context ID may
+     * have also changed. So we need to update that as well.
+     */
+
+    
+    for (i=0; i < chunk->num_cmds; i++) {
+	if ((chunk->cmd_info[i].in_use) &&
+	    (chunk->cmd_info[i].state == CFLSH_MGM_PENDFREE) &&
+	    (all_paths || (chunk->cmd_info[i].path_index == path_index))) {
+		
+	    /*
+	     * cmd_info and cmd_start array entries
+	     * with the same index correspond to the
+	     * same command.
+	     */
+
+	    cmd = &chunk->cmd_start[i];
+
+	    cmdi = &chunk->cmd_info[i];
+
+	    cmdi->cmd_time = time(NULL);
+		    
+	    if (CBLK_UPDATE_PATH_ADAP_CMD(chunk,cmd,0)) {
+
+		CBLK_TRACE_LOG_FILE(1,"CBLK_UPDATE_PATH_ADAP_CMD failed");
+
+
+	    }
+
+		
+	}
+	    
+    } /* for */    
 
     // TOD0:?? What about reseting one AFU and using the other?
 
@@ -5583,6 +5625,13 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 		cblk_notify_mc_err(chunk,path_index,0x200,0, CFLSH_BLK_NOTIFY_AFU_ERROR,NULL);
 
 		chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+
+		/*
+		 * Clear halted state so that subsequent commands
+		 * do not hang, but are failed immediately.
+		 */
+
+		chunk->flags &= ~CFLSH_CHNK_HALTED;
 		
 		cblk_chunk_free_mc_device_resources(chunk);
 		
@@ -6233,6 +6282,7 @@ void *cblk_intrpt_thread(void *data)
     volatile uint64_t *p_hrrq_curr;
     uint64_t toggle;
 #endif /* BLOCK_FILEMODE_ENABLED */
+    cflash_block_check_os_status_t reset_status = CFLSH_BLK_CHK_OS_NO_RESET;
 
 
     
@@ -6532,14 +6582,14 @@ void *cblk_intrpt_thread(void *data)
                             if (path_reset_index[i]) {
 				
 
-				CBLK_GET_INTRPT_STATUS(chunk,i);
+				CBLK_GET_INTRPT_STATUS(chunk,i,&reset_status);
 
-				if (chunk->flags & CFLSH_CHNK_RECOV_AFU) {
+				if (reset_status != CFLSH_BLK_CHK_OS_NO_RESET) {
 
 				    /*
-				     * We could detect UE when reading interrupt status.
-				     * So give up on this recovery, if AFU recovery
-				     * is in progress.
+				     * We detected UE when reading interrupt status.
+				     * So give up on this recovery, since AFU recovery
+				     * would have handled recovery/retries.
 				     */
 
 				    CBLK_TRACE_LOG_FILE(5,"AFU Recovery in progress: abandon context reset chunk->index = %d, chunk->flags 0x%x",
@@ -6562,7 +6612,7 @@ void *cblk_intrpt_thread(void *data)
 #else
 
 			
-			CBLK_GET_INTRPT_STATUS(chunk,chunk->cur_path);
+			CBLK_GET_INTRPT_STATUS(chunk,chunk->cur_path,&reset_status);
 
 
 			/*
@@ -6573,6 +6623,14 @@ void *cblk_intrpt_thread(void *data)
 
 
 			chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+
+
+			/*
+			 * Clear halted state so that subsequent commands
+			 * do not hang, but are failed immediately.
+			 */
+
+			chunk->flags &= ~CFLSH_CHNK_HALTED;
 
 			cblk_chunk_free_mc_device_resources(chunk);
 
@@ -7101,9 +7159,10 @@ void  cblk_display_stats(cflsh_chunk_t *chunk, int verbosity)
     CBLK_TRACE_LOG_FILE(verbosity,"num_fail_detach_threads         0x%llx",chunk->stats.num_fail_detach_threads);
     CBLK_TRACE_LOG_FILE(verbosity,"num_active_threads              0x%llx",chunk->stats.num_active_threads);
     CBLK_TRACE_LOG_FILE(verbosity,"max_num_act_threads             0x%llx",chunk->stats.max_num_act_threads);
-    CBLK_TRACE_LOG_FILE(verbosity,"Avg latency                     %ld",(chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd));
-    CBLK_TRACE_LOG_FILE(verbosity,"Read latency                    %ld",chunk->rlat/chunk->rcmd);
-    CBLK_TRACE_LOG_FILE(verbosity,"Write latency                   %ld",chunk->wlat/chunk->wcmd);
+    CBLK_TRACE_LOG_FILE(verbosity,"Avg latency                     %ld",(chunk->rcmd+chunk->wcmd) ?
+                                                                        (chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd) : 0);
+    CBLK_TRACE_LOG_FILE(verbosity,"Read latency                    %ld",(chunk->rcmd) ? chunk->rlat/chunk->rcmd : 0);
+    CBLK_TRACE_LOG_FILE(verbosity,"Write latency                   %ld",(chunk->wcmd) ? chunk->wlat/chunk->wcmd : 0);
 
     return;
 }
@@ -8306,6 +8365,12 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 
 				    cblk_clear_poison_bits((void *)cmdi2_start_addr,CBLK_DCBZ_CACHE_LINE_SZ);
 
+				    CBLK_TRACE_LOG_FILE(1,"non-aligned Read command found other command with UE  lba = 0x%llx flags = 0x%x, chunk->index = %d",
+                                        cmdi->lba,cmd->cmdi->flags,chunk->index);
+
+
+
+
 				} else if (cmdi_start_addr == cmdi2_end_addr) {
 
 				    /*
@@ -8315,6 +8380,9 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 				     */
 
 				    cblk_clear_poison_bits((void *)cmdi_start_addr,CBLK_DCBZ_CACHE_LINE_SZ);
+
+				    CBLK_TRACE_LOG_FILE(1,"non-aligned Read command found other command with UE  lba = 0x%llx flags = 0x%x, chunk->index = %d",
+                                        cmdi->lba,cmd->cmdi->flags,chunk->index);
 				}
 			    }
 			}

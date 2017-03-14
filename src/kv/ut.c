@@ -31,14 +31,6 @@
 #include <unistd.h>
 #include <ut.h>
 
-uint64_t divup(uint64_t n, uint64_t m) {
-  return n/m + (n%m==0 ? 0 : 1);
-}
-
-uint64_t divceil(uint64_t n, uint64_t m) {
-  return n/m + (n%m==0 ? 0 : 1);
-}  
-
 char *rndalpha(int n, int m) {
   int i;
   char *ret = malloc(n + 1);

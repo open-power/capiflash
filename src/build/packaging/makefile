@@ -90,9 +90,7 @@ tarpkgs:
 	cd ${PKGDIR}; \
 	echo ${VERSION} > ver.txt; \
 	tar -cvzf pkg.${VERSION}.rpm.tar.gz *${SHORT_VERSION}*.rpm cflash_configure ver.txt; \
-	tar -cvzf pkg.${VERSION}.deb.tar.gz *${SHORT_VERSION}*.deb cflash_configure ver.txt; \
-	cp pkg.${VERSION}*deb.tar.gz /gsa/ausgsa/projects/s/surelock/surelock-sw/releases/GA4/latest_jenkins/pkg.deb.tar.gz; \
-	cp pkg.${VERSION}*rpm.tar.gz /gsa/ausgsa/projects/s/surelock/surelock-sw/releases/GA4/latest_jenkins/pkg.rpm.tar.gz
+	tar -cvzf pkg.${VERSION}.deb.tar.gz *${SHORT_VERSION}*.deb cflash_configure ver.txt
 
 aixcxlflash:
 	mkdir -p ${PKGDIR}

@@ -49,7 +49,7 @@ TEST(FVT_KV_ERROR_PATH, RANDOM_ERRORS)
     printf("\n"); fflush(stdout);
 
     Sync_ark_io ark_io_job;
-    ark_io_job.run_multi_arks(ctxts, 20, vlen, secs);
+    ark_io_job.run_multi_arks(ctxts, 20, vlen, secs, 0);
 
     kv_async_wait_jobs();
 }

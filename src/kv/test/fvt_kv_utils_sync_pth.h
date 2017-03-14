@@ -36,11 +36,13 @@
 extern "C"
 {
 #include <fvt_kv.h>
-#include <kv_utils_db.h>
 #include <errno.h>
+#include <ark.h>
+#include <arkdb_trace.h>
 }
 
 #define MAX_PTH_PER_CONTEXT 2048
+#define KLEN 4
 
 /**
  *******************************************************************************
@@ -50,12 +52,13 @@ extern "C"
 typedef struct
 {
     ARK      *ark;
-    kv_t     *db;
+    char     *key;
+    char     *val;
+    char     *gval;
+    uint32_t  n;
     int32_t   vlen;
-    int32_t   LEN;
+    uint32_t  LEN;
     int32_t   secs;
-    uint32_t  mb;
-    uint32_t  ops;
     pthread_t pth;
 } set_get_args_t;
 
@@ -69,80 +72,77 @@ class Sync_pth
     static void set(void *args)
     {
         set_get_args_t *sg_args = (set_get_args_t*)args;
-        ARK     *ark = sg_args->ark;
-        kv_t    *db  = sg_args->db;
-        int64_t res  = 0;
-        int32_t i    = 0;
-        int     rc   = 0;
+        ARK            *ark     = sg_args->ark;
+        int64_t         res     = 0;
+        uint32_t        i       = 0;
+        int             rc      = 0;
 
-        /* load all key/value pairs from the fixed db into the ark */
         for (i=0; i<sg_args->LEN; i++)
         {
+            GEN_VAL(sg_args->key, sg_args->n+i, KLEN);
+            GEN_VAL(sg_args->val, sg_args->n+i, sg_args->vlen);
             while (EAGAIN == (rc=ark_set(ark,
-                                         db[i].klen,
-                                         db[i].key,
-                                         db[i].vlen,
-                                         db[i].value,
+                                         KLEN,
+                                         sg_args->key,
+                                         sg_args->vlen,
+                                         sg_args->val,
                                          &res))) {usleep(10000);}
             EXPECT_EQ(0, rc);
-            EXPECT_EQ(db[i].vlen, res);
+            EXPECT_EQ(sg_args->vlen, res);
         }
     }
 
     static void get(void *args)
     {
         set_get_args_t *sg_args = (set_get_args_t*)args;
-        ARK      *ark   = sg_args->ark;
-        kv_t     *db    = sg_args->db;
-        int64_t  res    = 0;
-        int32_t  i      = 0;
-        int      rc     = 0;
-        uint8_t *gvalue = NULL;
+        ARK            *ark     = sg_args->ark;
+        int64_t         res     = 0;
+        uint32_t        i       = 0;
+        int             rc      = 0;
 
-        gvalue = (uint8_t*)malloc(sg_args->vlen);
-        ASSERT_TRUE(gvalue != NULL);
-
-        /* query all key/value pairs from the fixed db */
-        for (i=sg_args->LEN-1; i>=0; i--)
+        for (i=0; i<sg_args->LEN; i++)
         {
+            GEN_VAL(sg_args->key, sg_args->n+i, KLEN);
+            GEN_VAL(sg_args->val, sg_args->n+i, sg_args->vlen);
+
             while (EAGAIN == (rc=ark_get(ark,
-                                         db[i].klen,
-                                         db[i].key,
-                                         db[i].vlen,
-                                         gvalue,
+                                         KLEN,
+                                         sg_args->key,
+                                         sg_args->vlen,
+                                         sg_args->gval,
                                          0,
                                          &res))) {usleep(10000);}
             EXPECT_EQ(0, rc);
-            EXPECT_EQ(db[i].vlen, res);
-            EXPECT_EQ(0, memcmp(db[i].value,gvalue,db[i].vlen));
+            EXPECT_EQ(sg_args->vlen, res);
+            EXPECT_EQ(0, memcmp(sg_args->val,sg_args->gval,sg_args->vlen));
             while (EAGAIN == (rc=ark_exists(ark,
-                                            db[i].klen,
-                                            db[i].key,
+                                            KLEN,
+                                            sg_args->key,
                                             &res))) {usleep(10000);}
             EXPECT_EQ(0, rc);
-            EXPECT_EQ(db[i].vlen, res);
+            EXPECT_EQ(sg_args->vlen, res);
         }
-        free(gvalue);
     }
 
     static void del(void *args)
     {
         set_get_args_t *sg_args = (set_get_args_t*)args;
-        ARK     *ark = sg_args->ark;
-        kv_t    *db  = sg_args->db;
-        int64_t res  = 0;
-        int32_t i    = 0;
-        int     rc   = 0;
+        ARK            *ark     = sg_args->ark;
+        int64_t         res     = 0;
+        uint32_t        i       = 0;
+        int             rc      = 0;
+        uint8_t         key[KLEN];
 
-        /* delete all key/value pairs from the fixed db */
         for (i=0; i<sg_args->LEN; i++)
         {
+            GEN_VAL(key, sg_args->n+i, KLEN);
+
             while (EAGAIN == (rc=ark_del(ark,
-                                         db[i].klen,
-                                         db[i].key,
+                                         KLEN,
+                                         key,
                                          &res))) {usleep(10000);}
             EXPECT_EQ(0, rc);
-            EXPECT_EQ(db[i].vlen, res);
+            EXPECT_EQ(sg_args->vlen, res);
         }
     }
 
@@ -153,13 +153,13 @@ class Sync_pth
         int32_t         next    = start + 600;
         int32_t         cur     = 0;
 
-        KV_TRC(pFT, "RUN_PTH 0 minutes");
+        KV_TRC(pAT, "RUN_PTH 0 minutes");
 
         do
         {
             if (cur > next)
             {
-                KV_TRC(pFT, "RUN_PTH %d minutes", (next-start)/60);
+                KV_TRC(pAT, "RUN_PTH %d minutes", (next-start)/60);
                 next += 600;
             }
 
@@ -171,7 +171,7 @@ class Sync_pth
         }
         while (cur-start < sg_args->secs);
 
-        KV_TRC(pFT, "RUN_PTH DONE");
+        KV_TRC(pAT, "RUN_PTH DONE");
     }
 
     static void read_loop(void *args)
@@ -181,7 +181,7 @@ class Sync_pth
         int32_t         next    = start + 600;
         int32_t         cur     = 0;
 
-        KV_TRC(pFT, "RUN_PTH 0 minutes");
+        KV_TRC(pAT, "RUN_PTH 0 minutes");
 
         set(args);
 
@@ -189,7 +189,7 @@ class Sync_pth
         {
             if (cur > next)
             {
-                KV_TRC(pFT, "RUN_PTH %d minutes", (next-start)/60);
+                KV_TRC(pAT, "RUN_PTH %d minutes", (next-start)/60);
                 next += 600;
             }
 
@@ -201,7 +201,7 @@ class Sync_pth
 
         del(args);
 
-        KV_TRC(pFT, "RUN_PTH DONE");
+        KV_TRC(pAT, "RUN_PTH DONE");
     }
 
     static void write_loop(void *args)
@@ -211,13 +211,13 @@ class Sync_pth
         int32_t         next    = start + 600;
         int32_t         cur     = 0;
 
-        KV_TRC(pFT, "RUN_PTH 0 minutes");
+        KV_TRC(pAT, "RUN_PTH 0 minutes");
 
         do
         {
             if (cur > next)
             {
-                KV_TRC(pFT, "RUN_PTH %d minutes", (next-start)/60);
+                KV_TRC(pAT, "RUN_PTH %d minutes", (next-start)/60);
                 next += 600;
             }
 
@@ -228,7 +228,7 @@ class Sync_pth
         }
         while (cur-start < sg_args->secs);
 
-        KV_TRC(pFT, "RUN_PTH DONE");
+        KV_TRC(pAT, "RUN_PTH DONE");
     }
 
   public:

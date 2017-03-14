@@ -22,7 +22,8 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-#include "blk_tst.h"
+#include <blk_tst.h>
+#include <cflash_test_utils.h>
 #include <pthread.h>
 #include <fcntl.h>
 
@@ -104,18 +105,32 @@ void teminate_blk_tests()
 /**
  *******************************************************************************
  * \brief
- * set device to RAID0 if cflash_devices.pl finds GT luns, else use FVT_DEV
+ * if FVT_DEV_RAID0 is set, use it
+ * else if cflash_devices.pl finds GT superpipe luns, use RAID0
+ * else FVT_DEV is used
  ******************************************************************************/
 void blk_fvt_RAID0_setup(void)
 {
     char  buf[1024] = {0};
+    char *env_r0dev = getenv("FVT_DEV_RAID0");
+
+    if (env_r0dev && strlen(env_r0dev)>=5)
+    {
+        DEBUG_0("use FVT_DEV_RAID0\n");
+        strcpy(dev_paths[0],env_r0dev);
+    }
+    else
+    {
 #ifdef _AIX
-    FILE *fp = popen("cflash_devices.pl 2>/dev/null", "r");
+        FILE *fp = popen("cflash_devices.pl -S 2>/dev/null", "r");
 #else
-    FILE *fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl 2>/dev/null", "r");
+        FILE *fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl -S 2>/dev/null",
+                         "r");
 #endif
-    if (fp)               {fgets(buf, 1024, fp);}
-    if (strlen(buf) != 0) {strcpy(dev_paths[0],"RAID0");}
+        if (fp)               {fgets(buf, 1024, fp);}
+        if (strlen(buf)) {DEBUG_0("use RAID0\n"); strcpy(dev_paths[0],"RAID0");}
+    }
+    DEBUG_1("raid0 dev_paths[0] = %s \n", dev_paths[0]);
     return;
 }
 
@@ -168,6 +183,7 @@ int blk_fvt_setup(int size)
             fd = creat(test_filename, 0777);
             if (fd != -1) { 
                 paths = &test_filename[0];
+                num_devs = 1;
                 ret = ftruncate (fd, FILESZ);
                 if (ret){
                     fprintf(stderr,"blk_fvt_setup: couldn't increase  filesize\n");
@@ -203,16 +219,19 @@ int blk_fvt_setup(int size)
     DEBUG_2("\nsaving paths = %s to tpaths = %s\n",paths,tpaths);
 
     p = strtok(&tpaths[0], "," );
-    for (i=0; p != NULL; i++ ) {
-        if (!filemode) {
-            parents[i] = find_parent(p);
-            DEBUG_2("\nparent of %s p = %s\n", p, parents[i]);
+    if (p)
+    {
+        for (i=0; p != NULL; i++ ) {
+            if (!filemode) {
+                parents[i] = find_parent(p);
+                DEBUG_2("\nparent of %s p = %s\n", p, parents[i]);
+            }
+            strcpy(dev_paths[i],p);
+            DEBUG_2("\npath %d : %s\n", i, p);
+            p = strtok((char *)NULL,",");
         }
-        strcpy(dev_paths[i],p);
-        DEBUG_2("\npath %d : %s\n", i, p);
-        p = strtok((char *)NULL,",");
-    } 
-    num_devs = i;
+        num_devs = i;
+    }
     DEBUG_1("blk_fvt_setup: num_devs = %d\n",num_devs);
 
     bzero (&blk_data, sizeof(blk_data));
@@ -1150,7 +1169,7 @@ exit:
 ********************************************************************************
 ** \brief
 *******************************************************************************/
-void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags)
+void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
 {
     int                 rc          = 0;
     int                 ret_code    = 0;
@@ -1166,6 +1185,14 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags)
         num_devs    = 1;
     }
 
+    if (num_devs==0)
+    {
+        DEBUG_0("num_devs is 0\n");
+        *ret = -1;
+        *err = 22;
+        return;
+    }
+
     tdata = malloc(num_threads*sizeof(blk_thread_data_t));
     memset(tdata,0,num_threads*sizeof(blk_thread_data_t));
 
@@ -1173,7 +1200,7 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags)
     {
         if (open_flags & CBLK_GROUP_RAID0)
         {
-            id[x] = cblk_cg_open(dev_paths[0], 1024, O_RDWR, 1, ext, open_flags);
+            id[x] = cblk_cg_open(dev_paths[0], 1024, O_RDWR, 1, ext,open_flags);
         }
         else
         {
@@ -1231,6 +1258,13 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags)
                 *ret = -1;
                 *err = errno;
             }
+        }
+
+        if (eeh)
+        {
+            sleep(3);
+            if (inject_EEH(dev_paths[0])) {*ret=-1; return;}
+            DEBUG_0("after eeh inject\n");
         }
 
         /* Wait for all threads to complete */
@@ -1457,7 +1491,7 @@ exit:
 ********************************************************************************
 ** \brief
 *******************************************************************************/
-void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags)
+void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags, int eeh)
 {
     int             rc              = -1;
     int            *ctag            = NULL;
@@ -1523,6 +1557,12 @@ void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags)
             }
         }
         DEBUG_1("awrite sent num_cmds:%d\n", i);
+
+        if (x==loops/2 && eeh)
+        {
+            if (inject_EEH(dev_paths[0])) {*ret=-1; return;}
+            DEBUG_0("after eeh inject\n");
+        }
 
         i=0;
         while (TRUE)

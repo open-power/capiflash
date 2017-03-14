@@ -42,12 +42,12 @@ extern "C"
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_8x2)
+TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_VLEN_8)
 {
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 1;
-    uint32_t vlen     = 2;
-    uint32_t LEN      = 200;
+    uint32_t vlen     = 8;
+    uint32_t LEN      = 100000;
     uint32_t secs     = 3;
 
     Sync_pth sync_pth;
@@ -59,12 +59,12 @@ TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_8x2)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_8x4k)
+TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_VLEN_4k)
 {
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 1;
     uint32_t vlen     = KV_4K;
-    uint32_t LEN      = 200;
+    uint32_t LEN      = 20000;
     uint32_t secs     = 3;
 
     Sync_pth sync_pth;
@@ -81,7 +81,7 @@ TEST(FVT_KV_GOOD_PATH, SYNC_PTH_FIXED_BIG_BLOCKS)
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 1;
     uint32_t vlen     = KV_500K;
-    uint32_t LEN      = 50;
+    uint32_t LEN      = 1000;
     uint32_t secs     = 3;
 
     Sync_pth sync_pth;
@@ -97,8 +97,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_2_PTH_1_CONTEXT)
 {
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 2;
-    uint32_t vlen     = KV_4K;
-    uint32_t LEN      = 200;
+    uint32_t vlen     = 73;
+    uint32_t LEN      = 100000;
     uint32_t secs     = 3;
 
     Sync_pth sync_pth;
@@ -115,7 +115,7 @@ TEST(FVT_KV_GOOD_PATH, SYNC_64_PTH_BIG_BLOCKS)
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 64;
     uint32_t vlen     = KV_500K;
-    uint32_t LEN      = 2;
+    uint32_t LEN      = 50;
     uint32_t secs     = 3;
 
     Sync_pth sync_pth;
@@ -146,12 +146,31 @@ TEST(FVT_KV_GOOD_PATH, SYNC_100_PTH_STARVE)
  *******************************************************************************
  * \brief
  ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SYNC_25_PTH_4x4x1000000)
+{
+    uint32_t num_ctxt = 1;
+    uint32_t num_pth  = 25;
+    uint32_t vlen     = 4;
+    uint32_t LEN      = 40000;
+    uint32_t secs     = 3;
+
+    TESTCASE_SKIP_IF_FILE;
+
+    Sync_pth sync_pth;
+
+    sync_pth.run_multi_ctxt(num_ctxt, num_pth, vlen, LEN, secs);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 TEST(FVT_KV_GOOD_PATH, SYNC_1_PTH_2_CONTEXT)
 {
     uint32_t num_ctxt = 2;
     uint32_t num_pth  = 1;
     uint32_t vlen     = KV_4K;
-    uint32_t LEN      = 200;
+    uint32_t LEN      = 20000;
     uint32_t secs     = 3;
 
     TESTCASE_SKIP_IF_FILE;
@@ -169,8 +188,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_4_PTH_40_CONTEXT)
 {
     uint32_t num_ctxt = 40;
     uint32_t num_pth  = 4;
-    uint32_t vlen     = 128;
-    uint32_t LEN      = 200;
+    uint32_t vlen     = 4;
+    uint32_t LEN      = 1000;
     uint32_t secs     = 3;
 
     TESTCASE_SKIP_IF_FILE;

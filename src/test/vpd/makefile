@@ -22,27 +22,42 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
+
+.NOTPARALLEL:
+
 UNAME=$(shell uname)
 
 # Where to find user code.(Relative path(from the makefile) preferred for portability)
 ROOTPATH = ../../..
+USER_DIR = .
+SUBDIRS  =
+TESTDIR  = ${ROOTPATH}/obj/tests
+EXPFLAGS = -bexpall
 
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-include ${ROOTPATH}/config.mk
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
+LIBPATHS = -L${ROOTPATH}/img
+LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 
-#this application originates in surelock-afu/bringup/src and must be shipped for FFDC gathering
-ifeq ($(UNAME),AIX) # need to have a valid ffdc mechanism for AIX...
-else #Linux only
+ifneq ($(UNAME),AIX)
 
-test: ${TESTDIR}/mmio ${TESTDIR}/flashgt_vpd_access
+ifneq ($(TARGET_PLATFORM),x86_64)
 
-${TESTDIR}/mmio:
-	mkdir -p ${TESTDIR}
-	gcc -I . -lpthread -o ${TESTDIR}/mmio -O0 mmio.c
+BTESTS    = mmio flashgt_vpd_access
+BIN_TESTS = $(addprefix ${TESTDIR}/, ${BTESTS})
+LINKLIBS += -lpthread -ludev -lafu -lcxl
+OBJS      = afu.o capi_dev_nodes.o
 
-${TESTDIR}/flashgt_vpd_access:
-	mkdir -p ${TESTDIR}
-	gcc -I . -o ${TESTDIR}/flashgt_vpd_access -std=c99 flashgt_vpd_access.c
 endif
+
+endif
+
+CFLAGS = -D__FVT__ -Wno-unused-result \
+         -I$(ROOTPATH)/src/common     \
+         -I$(ROOTPATH)/src/test/ffdc
+
+VPATH += ${ROOTPATH}/src/test/ffdc
+
+include ${ROOTPATH}/config.mk

@@ -67,7 +67,7 @@ TEST(FVT_KV_ARK_IO, ASYNC_CB_ARK_IO_INJECT)
     printf("\n"); fflush(stdout);
 
     Sync_ark_io ark_io_job;
-    ark_io_job.run_multi_arks(ctxts, ops, vlen, xmin*60);
+    ark_io_job.run_multi_arks(ctxts, ops, vlen, xmin*60, 0);
 
     kv_async_wait_jobs();
 }

@@ -34,6 +34,7 @@ extern "C"
 #include <fvt_kv.h>
 #include <kv_utils_db.h>
 #include <fvt_kv_utils_ark_io.h>
+#include <cflash_test_utils.h>
 
 }
 void kv_async_get_arks(ARK *arks[], uint32_t num_ctxt);
@@ -77,10 +78,11 @@ void Sync_ark_io::wait(ark_io_args_t *args)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-void Sync_ark_io::run_multi_arks(uint32_t  num_ctxt,
-                                 uint32_t  num_pth,
-                                 uint32_t  vlen,
-                                 uint32_t  secs)
+void Sync_ark_io::run_multi_arks(uint32_t num_ctxt,
+                                 uint32_t num_pth,
+                                 uint32_t vlen,
+                                 uint32_t secs,
+                                 uint32_t eeh)
 {
     uint32_t        i        = 0;
     uint32_t        ctxt_i   = 0;
@@ -96,6 +98,7 @@ void Sync_ark_io::run_multi_arks(uint32_t  num_ctxt,
     uint64_t        ios      = 0;
     uint32_t        t_ops    = 0;
     uint32_t        t_ios    = 0;
+    char           *fvtdev   = getenv("FVT_DEV");
 
     memset(pth_args, 0, sizeof(ark_io_args_t) * tot_pth);
 
@@ -130,6 +133,13 @@ void Sync_ark_io::run_multi_arks(uint32_t  num_ctxt,
             pth_i = 0;
         }
     }
+
+    if (eeh)
+    {
+        sleep(2);
+        inject_EEH(fvtdev);
+    }
+
     for (i=0; i<tot_pth; i++)
     {
         wait(pth_args+i);

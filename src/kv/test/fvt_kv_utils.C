@@ -33,10 +33,189 @@
 
 extern "C"
 {
+#include <arkdb_trace.h>
 #include <fvt_kv.h>
 #include <fvt_kv_utils.h>
 #include <kv_utils_db.h>
 #include <errno.h>
+#include <ark.h>
+}
+
+/*******************************************************************************
+ ******************************************************************************/
+void fvt_kv_utils_sload(ARK     *ark,
+                        uint32_t seed,
+                        uint32_t klen,
+                        uint32_t vlen,
+                        uint32_t LEN)
+{
+    int      rc  = 0;
+    uint32_t i   = 0;
+    int64_t  res = 0;
+    uint8_t *key = (uint8_t*)malloc(klen);
+    uint8_t *val = (uint8_t*)malloc(vlen);
+
+    ASSERT_TRUE(NULL != ark);
+    ASSERT_TRUE(NULL != key);
+    ASSERT_TRUE(NULL != val);
+
+    for (i=0; i<LEN; i++)
+    {
+        GEN_VAL(key, seed+i, klen);
+        GEN_VAL(val, seed+i, vlen);
+
+        while (EAGAIN == (rc=ark_set(ark,
+                                     klen,
+                                     key,
+                                     vlen,
+                                     val,
+                                     &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
+        EXPECT_EQ(vlen, res);
+    }
+    free(key);
+    free(val);
+}
+
+/*******************************************************************************
+ ******************************************************************************/
+void fvt_kv_utils_squery(ARK     *ark,
+                         uint32_t seed,
+                         uint32_t klen,
+                         uint32_t vlen,
+                         uint32_t LEN)
+{
+    int      rc   = 0;
+    uint32_t i    = 0;
+    int64_t  res  = 0;
+    uint8_t *key  = (uint8_t*)malloc(klen);
+    uint8_t *val  = (uint8_t*)malloc(vlen);
+    uint8_t *gval = NULL;
+
+    if (vlen==0) {gval=(uint8_t*)malloc(1);}
+    else         {gval=(uint8_t*)malloc(vlen);}
+
+    ASSERT_TRUE(NULL != gval);
+    ASSERT_TRUE(NULL != ark);
+    ASSERT_TRUE(NULL != key);
+    ASSERT_TRUE(NULL != val);
+
+    for (i=0; i<LEN; i++)
+    {
+        GEN_VAL(key,  seed+i, klen);
+        GEN_VAL(val,  seed+i, vlen);
+
+        while (EAGAIN == (rc=ark_get(ark,
+                                     klen,
+                                     key,
+                                     vlen,
+                                     gval,
+                                     0,
+                                     &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
+        EXPECT_EQ(vlen, res);
+        if (0 != memcmp(val,gval,vlen))
+        {
+            KV_TRC    (pAT, "MISCOMPARE");
+            KV_TRC_HEX(pAT, 9, "gval  ", gval, vlen);
+            KV_TRC_HEX(pAT, 9, "val  ",  val,  vlen);
+            goto exit;
+        }
+        while (EAGAIN == (rc=ark_exists(ark,
+                                        klen,
+                                        key,
+                                        &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
+    }
+exit:
+    free(key);
+    free(val);
+    free(gval);
+}
+
+/*******************************************************************************
+ ******************************************************************************/
+void fvt_kv_utils_squery_empty(ARK     *ark,
+                               uint32_t seed,
+                               uint32_t klen,
+                               uint32_t LEN)
+{
+    int      rc   = 0;
+    uint32_t i    = 0;
+    int64_t  res  = 0;
+    uint8_t *key  = (uint8_t*)malloc(klen);
+
+    ASSERT_TRUE(NULL != ark);
+    ASSERT_TRUE(NULL != key);
+
+    for (i=0; i<LEN; i++)
+    {
+        GEN_VAL(key, seed+i, klen);
+
+        while (EAGAIN == (rc=ark_exists(ark,
+                                        klen,
+                                        key,
+                                        &res))) {usleep(10);}
+        EXPECT_EQ(ENOENT, rc);
+    }
+    free(key);
+}
+
+/**
+ *******************************************************************************
+ ******************************************************************************/
+void fvt_kv_utils_sdel(ARK     *ark,
+                       uint32_t seed,
+                       uint32_t klen,
+                       uint32_t vlen,
+                       uint32_t LEN)
+{
+    int      rc  = 0;
+    uint32_t i   = 0;
+    int64_t  res = 0;
+    uint8_t *key = (uint8_t*)malloc(klen);
+
+    ASSERT_TRUE(NULL != ark);
+    ASSERT_TRUE(NULL != key);
+
+    for (i=0; i<LEN; i++)
+    {
+        GEN_VAL(key, seed+i, klen);
+
+        while (EAGAIN == (rc=ark_del(ark,
+                                     klen,
+                                     key,
+                                     &res))) {usleep(10);}
+        EXPECT_EQ(0, rc);
+        EXPECT_EQ(vlen, res);
+    }
+    free(key);
+}
+
+/*******************************************************************************
+ ******************************************************************************/
+void fvt_kv_utils_SGD_SLOOP(ARK     *ark,
+                           uint32_t seed,
+                           uint32_t klen,
+                           uint32_t vlen,
+                           uint32_t len,
+                           uint32_t secs)
+{
+    uint32_t start = 0;
+    int32_t  LEN   = (int32_t)len;
+
+    ASSERT_TRUE(NULL != ark);
+
+    start = time(0);
+
+    do
+    {
+        fvt_kv_utils_sload       (ark, seed, klen, vlen, LEN);
+        fvt_kv_utils_squery      (ark, seed, klen, vlen, LEN);
+        fvt_kv_utils_sdel        (ark, seed, klen, vlen, LEN);
+        fvt_kv_utils_squery_empty(ark, seed, klen, LEN);
+    }
+    while (time(0)-start < secs);
 }
 
 /*******************************************************************************
@@ -91,7 +270,14 @@ void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
                                      &res))) {usleep(10);}
         EXPECT_EQ(0, rc);
         EXPECT_EQ(db[i].vlen, res);
-        EXPECT_EQ(0, memcmp(db[i].value,gvalue,db[i].vlen));
+        if (0 != memcmp(db[i].value,gvalue,db[i].vlen))
+        {
+            KV_TRC(pAT, "MISCOMPARE");
+            KV_TRC_HEX(pAT, 9, "gvalue  ", gvalue,      db[i].vlen);
+            KV_TRC_HEX(pAT, 9, "dbvalue ", db[i].value, db[i].vlen);
+            free(gvalue);
+            return;
+        }
         while (EAGAIN == (rc=ark_exists(ark,
                                         db[i].klen,
                                         db[i].key,

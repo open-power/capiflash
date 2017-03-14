@@ -517,20 +517,20 @@ void ctx_rrq_intr(struct ctx *p_ctx)
     struct afu_cmd *p_cmd;
     // process however many RRQ entries that are read
     debug_2("%d: In ctx_rrq_intr():  toggle_bit= 0X%llx p_ctx->toggle=%x\n",
-            pid, (*p_ctx->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT), p_ctx->toggle);
+            pid, ( CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & SISL_RESP_HANDLE_T_BIT), p_ctx->toggle);
 
-    while ((*p_ctx->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT) ==
+    while ((CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & SISL_RESP_HANDLE_T_BIT) ==
                p_ctx->toggle)
     {
 
         debug_2("------------------------------------------------\n");
         debug_2("%d: Got inside loop within ctx_rrq_intr()\n", pid);
-        debug_2("%d: address in p_hrrq_curr=0X%"PRIX64"\n", pid, *p_ctx->p_hrrq_curr);
+        debug_2("%d: address in p_hrrq_curr=0X%"PRIX64"\n", pid, CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr));
         debug_2("%d: toggle_bit = 0X%llx p_ctx->toggle=0X%x\n",
-                pid, (*p_ctx->p_hrrq_curr & SISL_RESP_HANDLE_T_BIT), p_ctx->toggle);
+                pid, (CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & SISL_RESP_HANDLE_T_BIT), p_ctx->toggle);
 
         p_cmd = (struct afu_cmd*)
-                ((*p_ctx->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
+                (CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
         debug_2("%d:cmd_address(IOARCB)=%p\n",pid,p_cmd);
 
         pthread_mutex_lock(&p_cmd->mutex);
@@ -912,6 +912,17 @@ int rw_cmp_buf(struct ctx *p_ctx, __u64 start_lba)
     //int read_fd, write_fd;
     for (i = 0; i < NUM_CMDS; i++)
     {
+        /* 
+           Here we are(from host) is accessing the read buffer;
+           In case we find the UE in the data buffer and test will return as FAIL 
+           if UE is observed in EEH scenario; then it will be considered as "PASS"
+         */
+
+        if (cflash_query_ue((void *)&p_ctx->rbuf[i][0],sizeof(p_ctx->rbuf[i])))
+        {
+            printf("%d: UE encountered at start_lba 0X%"PRIX64"\n",pid, start_lba);
+            return -1;
+        }
         if (cmp_buf((__u64*)&p_ctx->rbuf[i][0], (__u64*)&p_ctx->wbuf[i][0],
                     sizeof(p_ctx->rbuf[i])/sizeof(__u64)))
         {
@@ -5409,3 +5420,33 @@ int WWIDtoDisk (char * WWID)
 }
 
 #endif
+
+/*
+ * NAME:        cflash_query_ue
+ *
+ * FUNCTION:    Checks if UE has occurred in
+ *              the specified buffer.
+ *
+ * RETURNS:
+ *
+ *             1 if UE found. O otherwise
+ *
+ */
+
+int cflash_query_ue(void *buf, size_t len)
+{
+    int ue_found = FALSE;
+
+#if defined(_CFLASH_UE_SAFE) && defined(_AIX)
+
+    if (ue_query(buf,len)) {
+
+        ue_found = TRUE;
+        debug2("%d :buf = %p ue_found = %d\n",pid, buf, ue_found);
+    }
+
+#endif
+
+    return ue_found;
+
+}

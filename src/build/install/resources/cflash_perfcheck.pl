@@ -34,6 +34,7 @@ use Time::HiRes qw(usleep);
 
 my @devs;
 my $devstr="";
+my $secs;
 my $prthelp="";
 my $all;
 my $verbose="";
@@ -62,6 +63,7 @@ if (@ARGV==0) {usage();}
 
 if (! GetOptions ("d=s"        => \$devstr,
                   "h|help!"    => \$prthelp,
+                  "s:s"        => \$secs,
                   "a"          => \$all,
                   "v"          => \$verbose,
                   ))
@@ -80,35 +82,38 @@ if ($ARGV[0])
 }
 if ($prthelp) {usage();}
 
+#check sudo permissions
+(`id -u` == 0) || die "Run with sudo permissions\n";
+
 $ENV{'PATH'}="$ENV{'PATH'}:/opt/ibm/capikv/bin:/opt/ibm/capikv/test:/opt/ibm/capikv/afu";
 
 print "latency       vlun    plun\n";
-$out_vrd=`blockio -d $devstr -s8 -q1       |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
-$out_vwr=`blockio -d $devstr -s8 -q1 -r0   |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
-$out_prd=`blockio -d $devstr -s8 -q1 -p    |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
-$out_pwr=`blockio -d $devstr -s8 -q1 -p -r0|awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+$out_vrd=`blockio -d $devstr -s $secs -q1  -S100        |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+$out_vwr=`blockio -d $devstr -s $secs -q1  -S100    -r0 |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+$out_prd=`blockio -d $devstr -s $secs -q1        -p     |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
+$out_pwr=`blockio -d $devstr -s $secs -q1        -p -r0 |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;
 printf "  rd       %7d %7d\n", $out_vrd, $out_prd;
 printf "  wr       %7d %7d\n", $out_vwr, $out_pwr;
 
 print "1P QD1\n";
-$out_vrd=`blockio -d $devstr -s8 -q1       |awk -Fiops: \'{print \$2}\'`;
-$out_vwr=`blockio -d $devstr -s8 -q1 -r0   |awk -Fiops: \'{print \$2}\'`;
-$out_prd=`blockio -d $devstr -s8 -q1 -p    |awk -Fiops: \'{print \$2}\'`;
-$out_pwr=`blockio -d $devstr -s8 -q1 -p -r0|awk -Fiops: \'{print \$2}\'`;
+$out_vrd=`blockio -d $devstr -s $secs -q1 -S100        |awk -Fiops: \'{print \$2}\'`;
+$out_vwr=`blockio -d $devstr -s $secs -q1 -S100    -r0 |awk -Fiops: \'{print \$2}\'`;
+$out_prd=`blockio -d $devstr -s $secs -q1       -p     |awk -Fiops: \'{print \$2}\'`;
+$out_pwr=`blockio -d $devstr -s $secs -q1       -p -r0 |awk -Fiops: \'{print \$2}\'`;
 printf "  rd       %7d %7d\n", $out_vrd, $out_prd;
 printf "  wr       %7d %7d\n", $out_vwr, $out_pwr;
 
 print "1P QD128\n";
-$out_vrd=`blockio -d $devstr -s8 -q128       |awk -Fiops: \'{print \$2}\'`;
-$out_vwr=`blockio -d $devstr -s8 -q128 -r0   |awk -Fiops: \'{print \$2}\'`;
-$out_prd=`blockio -d $devstr -s8 -q128 -p    |awk -Fiops: \'{print \$2}\'`;
-$out_pwr=`blockio -d $devstr -s8 -q128 -p -r0|awk -Fiops: \'{print \$2}\'`;
+$out_vrd=`blockio -d $devstr -s $secs -q128 -S100        |awk -Fiops: \'{print \$2}\'`;
+$out_vwr=`blockio -d $devstr -s $secs -q128 -S100    -r0 |awk -Fiops: \'{print \$2}\'`;
+$out_prd=`blockio -d $devstr -s $secs -q128       -p     |awk -Fiops: \'{print \$2}\'`;
+$out_pwr=`blockio -d $devstr -s $secs -q128       -p -r0 |awk -Fiops: \'{print \$2}\'`;
 printf "  rd       %7d %7d\n", $out_vrd, $out_prd;
 printf "  wr       %7d %7d\n", $out_vwr, $out_pwr;
 
 print "1P QD32 N16\n";
-$out_prd=`blockio -d $devstr -s8 -q32 -p -n16    |awk -F"4k-iops:" \'{print \$2}\'`;
-$out_pwr=`blockio -d $devstr -s8 -q32 -p -n16 -r0|awk -F"4k-iops:" \'{print \$2}\'`;
+$out_prd=`blockio -d $devstr -s $secs -q32 -p -n16    |awk -F"4k-iops:" \'{print \$2}\'`;
+$out_pwr=`blockio -d $devstr -s $secs -q32 -p -n16 -r0|awk -F"4k-iops:" \'{print \$2}\'`;
 printf "  rd               %7d\n", $out_prd;
 printf "  wr               %7d\n", $out_pwr;
 
@@ -116,52 +121,53 @@ if ($all)
 {
   print "\n";
   print "100% reads 1P QD1    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q1\"   -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q1\"   -n 1`;
   print "100% reads 1P QD8    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q8\"   -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q8\"   -n 1`;
   print "100% reads 1P QD16   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q16\"  -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q16\"  -n 1`;
   print "100% reads 1P QD32   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q32\"  -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q32\"  -n 1`;
   print "100% reads 1P QD128  ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q128\" -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q128\" -n 1`;
   print "\n";
   print "70%  reads 1P QD1    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q1   -r70\"   -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q1   -r70\"   -n 1`;
   print "70%  reads 1P QD8    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q8   -r70\"   -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q8   -r70\"   -n 1`;
   print "70%  reads 1P QD16   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q16  -r70\"  -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q16  -r70\"  -n 1`;
   print "70%  reads 1P QD32   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q32  -r70\"  -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q32  -r70\"  -n 1`;
   print "70%  reads 1P QD128  ";
-  print `ioppt.pl -c \"blockio -d $devstr -s5 -q128 -r70\" -n 1`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q128 -r70\" -n 1`;
   print "\n";
 
   print "400P QD1  blockio vlun  100% reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s15 -q1\" -n 400`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q1\" -n 400`;
 
   print "400P QD1  blockio vlun  100% writes    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s15 -q1 -r0\" -n 400`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q1 -r0\" -n 400`;
 
   print "100P QD64 blockio vlun  100% reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64\" -n 100`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S7 -q64\" -n 100`;
 
   print "100P QD64 blockio vlun  100% writes    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -r0\" -n 100`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S7 -q64 -r0\" -n 100`;
 
   print "100P QD64 blockio plun  100% reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -p\" -n 100`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q64 -p\" -n 100`;
 
   print "100P QD64 blockio plun  100% writes    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -r0 -p\" -n 100`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q64 -r0 -p\" -n 100`;
 
   print "100P QD64 kv_benchmark  100% reads     ";
-  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s15 -q64\" -n 100`;
+  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s $secs -q64\" -n 100`;
 
   print "100P QD64 kv_benchmark  75%  reads     ";
-  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s15 -q64 -r75\" -n 100`;
+  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s $secs -q64 -r75\" -n 100`;
 
   print "100P QD64 blockio vlun  75%  reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s10 -q64 -r75\" -n 100`;
+  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q64 -S7 -r75\" -n 100`;
 }
+

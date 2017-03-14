@@ -48,8 +48,6 @@ if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];               then ubuntu=1; f
 if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];         then redhat=1; fi
 if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1; fi
 
-CF_VER=$(cat ver.txt)
-
 ################################################################################
 ################################################################################
 ################################################################################
@@ -63,6 +61,23 @@ CF_VER=$(cat ver.txt)
 ################################################################################
 if [[ $ubuntu ]]
 then
+  ls *cxlflash*.deb >/dev/null 2>&1
+  rc=$?
+
+  if [[ -e ver.txt && $rc -eq 0 ]]
+  then
+    CF_VER=$(cat ver.txt)
+    echo "------------------------------"
+    echo -e "INFO: Attempting to install version($CF_VER)\n"
+  elif [[ -e /opt/ibm/capikv/version.txt ]]
+  then
+    CF_VER=$(cat /opt/ibm/capikv/version.txt)
+    echo "------------------------------"
+    echo -e "INFO: Attempting to configure version($CF_VER)\n"
+  else
+    echo "ERROR: no cxlflash pkgs are installed nor found in `pwd`"
+    exit 30
+  fi
 
  ##################################
  # install Adv Toolchain and others
@@ -99,69 +114,59 @@ then
  echo "------------------------------"
  echo -e "INFO: Checking software versions\n"
 
- if [[ $ubuntu ]]
+ if [[ $1 =~ mfg && ! -e /opt/ibm/capikv/lib/libafu.so ]]; then force=yes; fi
+
+ #remove old
+ EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
+ if [[ $EXISTS_LVL =~ ibmcapikv-test ]]
  then
-   ls *cxlflash*.deb >/dev/null 2>&1
-   if [[ $? -ne 0 ]]
-   then
-     echo "ERROR: no cxlflash pkgs found in the current dir"
-     exit 2
-   fi
+   dpkg -r ibmcapikv-test
+ fi
+ if [[ $EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER ]]
+ then
+   dpkg -r cxlflash-test
+ fi
 
-   if [[ $1 =~ mfg && ! -e /opt/ibm/capikv/lib/libafu.so ]]; then force=yes; fi
+ EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  ibmcapikv |i  cxlflash ")
+ if [[ $EXISTS_LVL =~ ibmcapikv ]]
+ then
+   dpkg -r ibmcapikv
+ fi
+ if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
+ then
+   dpkg -r cxlflash
+ fi
 
-   #remove old
-   EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
-   if [[ $EXISTS_LVL =~ ibmcapikv-test ]]
-   then
-     dpkg -r ibmcapikv-test
-   fi
-   if [[ $EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER ]]
-   then
-     dpkg -r cxlflash-test
-   fi
+ EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  afuimage |i  cxlflashimage ")
+ if [[ $EXISTS_LVL =~ afuimage ]]
+ then
+   dpkg -r afuimage
+ fi
+ if [[ $EXISTS_LVL =~ cxlflashimage && ! $EXISTS_LVL =~ $CF_VER ]]
+ then
+   dpkg -r cxlflashimage
+ fi
 
-   EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  ibmcapikv |i  cxlflash ")
-   if [[ $EXISTS_LVL =~ ibmcapikv ]]
-   then
-     dpkg -r ibmcapikv
-   fi
-   if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
-   then
-     dpkg -r cxlflash
-   fi
+ #install new
+ EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  cxlflash ")
+ if [[ ! $EXISTS_LVL =~ "i  cxlflash " || $force =~ yes || \
+        ($EXISTS_LVL =~ "i  cxlflash " && ! $EXISTS_LVL =~ $CF_VER) ]]
+ then
+   dpkg -i cxlflash_*$CF_VER*.deb
+ fi
 
-   EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  afuimage |i  cxlflashimage ")
-   if [[ $EXISTS_LVL =~ afuimage ]]
-   then
-     dpkg -r afuimage
-   fi
-   if [[ $EXISTS_LVL =~ cxlflashimage && ! $EXISTS_LVL =~ $CF_VER ]]
-   then
-     dpkg -r cxlflashimage
-   fi
+ EXISTS_LVL=$(dpkg -l|egrep "i  cxlflash-test")
+ if [[ ! $EXISTS_LVL =~ "i  cxlflash-test" || \
+        ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
+ then
+   dpkg -i cxlflash-test*$CF_VER*.deb
+ fi
 
-   #install new
-   EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  cxlflash ")
-   if [[ ! $EXISTS_LVL =~ "i  cxlflash " || $force =~ yes || \
-          ($EXISTS_LVL =~ "i  cxlflash " && ! $EXISTS_LVL =~ $CF_VER) ]]
-   then
-     dpkg -i cxlflash_*$CF_VER*.deb
-   fi
-
-   EXISTS_LVL=$(dpkg -l|egrep "i  cxlflash-test")
-   if [[ ! $EXISTS_LVL =~ "i  cxlflash-test" || \
-          ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
-   then
-     dpkg -i cxlflash-test*$CF_VER*.deb
-   fi
-
-   EXISTS_LVL=$(dpkg -l|grep 'i  cxlflashimage')
-   if [[ ! $EXISTS_LVL =~ cxlflashimage || \
-          ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
-   then
-     dpkg -i cxlflashimage*$CF_VER*.deb
-   fi
+ EXISTS_LVL=$(dpkg -l|grep 'i  cxlflashimage')
+ if [[ ! $EXISTS_LVL =~ cxlflashimage || \
+        ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
+ then
+   dpkg -i cxlflashimage*$CF_VER*.deb
  fi
 
  ##################################
@@ -205,7 +210,7 @@ then
 
  ##################################
  # Check OS version
- OS_VER=16.04.1
+ OS_VER=16.04
  if [[ $1 =~ dev ]]
  then
    echo "------------------------------"
@@ -305,7 +310,24 @@ then
   K_VER="3.10.0"
   K_VER_INST="3.10.0"
   K_VER_GRUB="3.10.0"
-  CF_VER=$(cat ver.txt | sed 's,-,_,g')
+
+  ls *cxlflash*.rpm >/dev/null 2>&1
+  rc=$?
+
+  if [[ -e ver.txt && $rc -eq 0 ]]
+  then
+    CF_VER=$(cat ver.txt| sed 's,-,_,g')
+    echo "------------------------------"
+    echo -e "INFO: Attempting to install version($CF_VER)\n"
+  elif [[ -e /opt/ibm/capikv/version.txt ]]
+  then
+    CF_VER=$(cat /opt/ibm/capikv/version.txt| sed 's,-,_,g')
+    echo "------------------------------"
+    echo -e "INFO: Attempting to configure version($CF_VER)\n"
+  else
+    echo "ERROR: no cxlflash pkgs are installed nor found in `pwd`"
+    exit 31
+  fi
 
   ##################################
   # install Adv Toolchain and others
@@ -371,13 +393,6 @@ EOF
   # Check usr-mode software version
   echo "------------------------------"
   echo -e "INFO: Checking software versions\n"
-
-  ls *cxlflash*.rpm >/dev/null 2>&1
-  if [[ $? -ne 0 ]]
-  then
-    echo "ERROR: no cxlflash pkgs found in the current dir"
-    exit 2
-  fi
 
   if [[ $1 =~ mfg && ! -e /opt/ibm/capikv/lib/libafu.so ]]; then force=yes; fi
 
@@ -583,7 +598,18 @@ fi
     fi
   done
 
-  adaps=$(lspci|grep 0601|awk '{print $1}') #FlashGT
+
+  adapsGT=$(lspci|grep 0601|awk '{print $1}')
+  adapsCorsa=$(lspci|grep 04cf|awk '{print $1}')
+  adapGTN=0; adapCorsaN=0;
+  for adap in $adapsGT;    do let adapGTN=$adapGTN+1;       done
+  for adap in $adapsCorsa; do let adapCorsaN=$adapCorsaN+1; done
+
+  if [[ $adapGTN -eq 0 && $adapCorsaN -eq 0 ]]
+  then
+    echo "ERROR: no capiflash adapters were found"
+    exit 20
+  fi
 
   flash_all_adapters -reload
   sleep 2
@@ -612,38 +638,62 @@ fi
   echo -e "\nINFO: Installed Versions....OK\n"
 
   ##################################
-  # Check for FlashGT devices
+  # Check for devices
   echo -e "\n------------------------------"
   echo -e "INFO: Checking for devices\n"
 
-  #check that sg devices show up
+  #check GT devices
   adapN=0
+  adaps=$(lspci|grep 0601|awk '{print $1}')
   for adap in $adaps; do let adapN=$adapN+1; done
-  if [[ $adapN -eq 0 ]]
+  if [[ $adapN -ne $adapGTN ]]
   then
-    echo "INFO: no capiflash EJ1K adapters found"
-    exit 0
+    echo "INFO: there are missing capiflash EJ1K adapters"
+  fi
+
+  #check Corsa devices
+  adapN=0
+  adaps=$(lspci|grep 04cf|awk '{print $1}')
+  for adap in $adaps; do let adapN=$adapN+1; done
+  if [[ $adapN -ne $adapCorsaN ]]
+  then
+    echo "INFO: there are missing capiflash EJ16 adapters"
   fi
 
   if [[ $VM ]]
   then
-    sgs=$(for adap in $adaps
+    sgsGT=$(for adap in $adapsGT
         do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|awk -F/ '{print $12}' |tr -d '\r'
         done)
+    sgsCorsa=$(for adap in $adapsCorsa
+        do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|head -1|awk -F/ '{print $12}' |tr -d '\r'
+        done)
   else
-    sgs=$(for adap in $adaps
+    sgsGT=$(for adap in $adapsGT
         do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|awk -F/ '{print $13}' |tr -d '\r'
+        done)
+    sgsCorsa=$(for adap in $adapsCorsa
+        do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|head -1|awk -F/ '{print $13}' |tr -d '\r'
         done)
   fi
 
-  sglist=""
-  sgN=0
-  for sg in $sgs; do sgN=$((sgN+1)); sglist="$sglist /dev/$sg "; done
-  sglist=$(echo $sglist|tr -d '\r')
-  if [[ $sgN -ne  $((adapN*2)) ]] #FlashGT
+  #ensure each GT has 2 sg devices
+  sgN=0; sglist="";
+  if [[ $adapGTN -gt 0 ]]
   then
-    echo "ERROR: #adaps($adapN) should have $((adapN*2)) sg devices, but there are only $sgN devices"
-    exit 7
+    for sg in $sgsGT; do sgN=$((sgN+1)); sglist="$sglist /dev/$sg "; done
+    sglist=$(echo $sglist|tr -d '\r')
+    if [[ $sgN -ne  $((adapGTN*2)) ]] #FlashGT
+    then
+      echo "ERROR: #adaps($adapN) should have $((adapGTN*2)) sg devices, but there are only $sgN devices"
+      exit 7
+    fi
+  fi
+
+  if [[ $adapCorsaN -gt 0 ]]
+  then
+    for sg in $sgsCorsa; do sglist="$sglist /dev/$sg "; done
+    sglist=$(echo $sglist|tr -d '\r')
   fi
 
   ##################################
@@ -651,6 +701,17 @@ fi
   echo -e "\n------------------------------"
   echo -e "INFO: Checking IO\n"
   unset CFLSH_BLK_TRC_VERBOSITY
+  unset KV_TRC_VERBOSITY
+  rc=0
+
+  if [[ $1 =~ mfg ]]
+  then
+    iopsN=220000
+    secs=10
+  else
+    iopsN=180000
+    secs=3
+  fi
 
   for sg in $sglist
   do
@@ -661,12 +722,12 @@ fi
       wwid=$(cxlfstatus|grep ${sg:5:6}|awk '{print $5}')
       cxlfsetlunmode $wwid 1 >/dev/null
     fi
-    iops=$(LD_LIBRARY_PATH=/opt/ibm/capikv/lib /opt/ibm/capikv/bin/blockio -d $sg -s5 2>&1)
-    if [[ ! $iops =~ err && $(echo $iops|awk -Fiops: '{print $2}') -gt 140000 ]]
+    iops=$(LD_LIBRARY_PATH=/opt/ibm/capikv/lib /opt/ibm/capikv/bin/blockio -d $sg -s$secs 2>&1)
+    if [[ ! $iops =~ err && $(echo $iops|awk -Fiops: '{print $2}') -gt $iopsN ]]
     then
       echo "  $sg OK"
     else
-      echo "  $sg failed ($iops)"
+      echo "  $sg failed, iops($iops) < expected iops($iopsN)"
       rc=8
     fi
     if [[ $legacy -eq 1 ]]; then cxlfsetlunmode $wwid 0 >/dev/null; fi
@@ -677,7 +738,7 @@ fi
   then
     if [[ -e /opt/.lic/$LD ]]; then rm -f /opt/.lic/$LD; fi
     if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-    mv /opt/ibm/capikv/lib/* /opt/$HD
+    mv /opt/ibm/capikv/lib/* /opt/$HD >/dev/null 2>&1
   fi
 
   echo -e "\nINSTALL success"

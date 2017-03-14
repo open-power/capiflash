@@ -50,6 +50,7 @@
 #endif
 #include <errno.h>
 #ifdef _AIX
+#include <sys/machine.h>
 #ifndef ENOTRECOVERABLE
 #define ENOTRECOVERABLE 94  /* If we are compiling on an old AIX level */
 			    /* that does not have this errno, then     */
@@ -1053,7 +1054,6 @@ typedef struct cflsh_cmd_mgm_s {
     };
     struct cflsh_cmd_info_s *cmdi; /* Associated command info   */
     int    index;                  /* index of command          */
-    uint64_t stime;                /* ticks of cmd start        */
 #if !defined(__64BIT__) && defined(_AIX)
     int reserved2[10];            /* Reserved for future use    */
 #else
@@ -1082,6 +1082,7 @@ typedef struct cflsh_cmd_info_s {
 #define CFLSH_CMD_INFO_USTAT 0x80  /* User status field is valid */
     time_t cmd_time;             /* Time this command was      */
 				 /* created                    */
+    uint64_t stime;              /* ticks of cmd start         */
     int    user_tag;             /* User defined tag for this  */
 				 /* command.                   */
     int    index;                /* index of command           */

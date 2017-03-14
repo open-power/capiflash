@@ -96,7 +96,7 @@ int main (int argc, char *argv[])
       *((uint64_t *)adr) = val64;
       printf("Writing double : [%jx]= 0x%016lx\n",offset, val64);
       break;
-    other : // Error
+    default : // Error
       printf("Invalid Parms\n");
       exit(-1);
       break;

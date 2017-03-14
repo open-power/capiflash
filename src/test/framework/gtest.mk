@@ -36,12 +36,12 @@
 
 # Points to the root of Google Test, relative to where this file is.
 # Remember to tweak this if you move this file.
-GTEST_DIR =$(ROOTPATH)/${GTESTDIR}
+GTEST_DIR =${GTESTDIR}
 
 # Flags passed to the preprocessor.
 # Set Google Test's header directory as a system directory, such that
 # the compiler doesn't generate warnings in Google Test headers.
-CPPFLAGS += -isystem $(GTEST_DIR)/include
+CPPFLAGS += -isystem $(GTESTINC)
 
 
 # Flags passed to the C++ compiler.
@@ -51,8 +51,8 @@ CPPFLAGS += -isystem $(GTEST_DIR)/include
 
 # All Google Test headers.  Usually you shouldn't change this
 # definition.
-GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
-                $(GTEST_DIR)/include/gtest/internal/*.h
+GTEST_HEADERS = $(GTESTINC)/*.h \
+                $(GTESTINC)/gtest/internal/*.h
 
 
 # Builds gtest.a and gtest_main.a.

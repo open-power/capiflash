@@ -26,9 +26,17 @@
 #define __UT_H__
 #include <stdint.h>
 
-uint64_t divup(uint64_t n, uint64_t m);
+static __inline__ uint64_t divup(uint64_t n, uint64_t m)
+{
+    if (m) {return n/m + (n%m==0 ? 0 : 1);}
+    else   {return 0;}
+}
 
-uint64_t divceil(uint64_t n, uint64_t m);
+static __inline__ uint64_t divceil(uint64_t n, uint64_t m)
+{
+    if (m) {return n/m + (n%m==0 ? 0 : 1);}
+    else   {return 0;}
+}
 
 char *rndalpha(int n, int m);
 

@@ -1558,6 +1558,7 @@ cflash_cmd_err_t cblk_process_nonafu_intrpt_cxl_events(cflsh_chunk_t *chunk,int 
 {
     int rc = CFLASH_CMD_FATAL_ERR;
     uint64_t intrpt_status;
+    cflash_block_check_os_status_t reset_status;
 
     /*
      * TODO: ?? More work is needed here. 
@@ -1599,7 +1600,7 @@ cflash_cmd_err_t cblk_process_nonafu_intrpt_cxl_events(cflsh_chunk_t *chunk,int 
 	CBLK_TRACE_LOG_FILE(6,"cmd_start = 0x%llx",(uint64_t)chunk->cmd_start);
 	CBLK_TRACE_LOG_FILE(6,"cmd_end = 0x%llx",(uint64_t)chunk->cmd_end);
 
-	intrpt_status = CBLK_GET_INTRPT_STATUS(chunk,path_index);
+	intrpt_status = CBLK_GET_INTRPT_STATUS(chunk,path_index,&reset_status);
 	CBLK_TRACE_LOG_FILE(6,"intrpt_status = 0x%llx",intrpt_status);
 
 	CBLK_TRACE_LOG_FILE(6,"num_active_cmds = 0x%x\n",chunk->num_active_cmds);

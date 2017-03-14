@@ -209,6 +209,20 @@ typedef __u64 dev64_t; //no use in Linux, its dummy
 #define MAXNP   10
 #define KEYLEN  5
 
+/************************************************************************/
+/* Unrecoverable Error (UE) macros                                      */
+/************************************************************************/
+/*
+ * Read (dereference) memory address,but
+ * verify there is no UE here
+ */
+
+#if defined(_CFLASH_UE_SAFE) && defined(_AIX)
+#define CFLASH_READ_ADDR_CHK_UE(_address_)    (ue_load((void *)_address_))
+#else
+#define CFLASH_READ_ADDR_CHK_UE(_address_)    (*(_address_))
+#endif /* Linux or old AIX level */
+
 typedef struct eehCmd 
 {
     char cmdToRun[MAXBUFF];
@@ -889,4 +903,5 @@ int max_vlun_on_a_ctx();
 void displayBuildinfo();
 int get_max_res_hndl_by_capacity(char *dev);
 int max_ctx_cross_limit();
+int cflash_query_ue(void *buf, size_t len);
 #endif /*__CFLASH_TEST_H__ */

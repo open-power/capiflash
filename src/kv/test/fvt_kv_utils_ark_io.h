@@ -172,7 +172,8 @@ class Sync_ark_io
     void run_multi_arks(uint32_t num_ctxt,
                         uint32_t num_pth,
                         uint32_t vlen,
-                        uint32_t secs);
+                        uint32_t secs,
+                        uint32_t eeh);
 };
 
 #endif

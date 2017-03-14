@@ -25,31 +25,38 @@
 
 SHELL=/bin/bash
 
-build:
-	${MAKE} cleanall
-	${MAKE} -j10 dep
-	${MAKE} -j10 code_pass
-	${MAKE} -j10 test
-	${MAKE} docs
-	${MAKE} packaging
-
 ship:
 	${MAKE} -j10 dep
 	${MAKE} -j10 code_pass
-	@if [[ $(notdir $(PWD)) = test ]]; then ${MAKE} test; fi
-
-tests:
-	${MAKE} -j10 ship
 	${MAKE} -j10 test
 
+build:
+	${MAKE} ship
+	${MAKE} docs
+	${MAKE} packaging
+
+tests:
+	${MAKE} ship
+
 run_fvt:
-	${MAKE} -j10 tests
+	${MAKE} ship
 	${MAKE} fvt
 
 run_unit:
-	${MAKE} -j10 tests
+	${MAKE} ship
 	${MAKE} unit
 
+
+ifneq ($(wildcard /usr/src/gtest),)
+  GTESTDIR=/usr/src/gtest
+  GTESTINC=/usr/include
+else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/gtest-1.7.0),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/gtest-1.7.0
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
+  GTESTINC=${GTESTDIR}/include
+endif
 
 #needed to provide linker rpath hints for installed code
 DEFAULT_LIB_INSTALL_PATH = /opt/ibm/capikv/lib
@@ -69,9 +76,6 @@ TESTDIR = ${ROOTPATH}/obj/tests
 GENDIR  = ${ROOTPATH}/obj/genfiles
 IMGDIR  = ${ROOTPATH}/img
 PKGDIR  = ${ROOTPATH}/pkg
-
-GTESTDIR = src/test/framework/googletest/googletest
-GTESTINC = ${GTESTDIR}/include
 
 ifdef MODULE
 OBJDIR  = ${ROOTPATH}/obj/modules/${MODULE}
@@ -117,12 +121,8 @@ ifeq ($(USE_ADVANCED_TOOLCHAIN),yes)
 	VPATH_DIRS:= ${ADV_TOOLCHAIN_PATH}/lib64 ${VPATH_DIRS}
 	#see the ld flags below (search for rpath). This puts the atx.x stuff on the front
 	#which is REQUIRED by the toolchain.
-	RPATH_PREPEND = -rpath,${ADV_TOOLCHAIN_PATH}/lib64
-	CFLAGS += ${COMMONFLAGS} \
-	 -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} \
-	-R '$$ADV_TOOLCHAIN_PATH/lib64:$$ORIGIN/../lib:$$ORIGIN:/lib:/usr/lib:/opt/ibm/capikv/lib' \
-	${INCFLAGS}
-	LDFLAGS = ${COMMONFLAGS} -Wl,${RPATH_PREPEND},-rpath,$$ORIGIN/../lib,-rpath,$$ORIGIN,-rpath,$(DEFAULT_LIB_INSTALL_PATH)
+	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS} ${ARCHFLAGS} ${INCFLAGS}
+	LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,${ADV_TOOLCHAIN_PATH}/lib64:$(DEFAULT_LIB_INSTALL_PATH)
 else
 	CC_RAW = gcc 
 	CXX_RAW = g++ 
@@ -130,12 +130,8 @@ else
 	CXX = ${CXX_RAW}
 	LD = gcc
 	OBJDUMP = objdump
-	#if we are NOT using the atx.x stuff, prepend nothing.
-	RPATH_PREPEND =
-	CFLAGS += ${COMMONFLAGS} \
-	 -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} \
-	${INCFLAGS}
-	LDFLAGS = ${COMMONFLAGS}
+	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} ${INCFLAGS}
+	LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,$(DEFAULT_LIB_INSTALL_PATH)
 endif
 
 #TODO: Find correct flags for surelock
@@ -318,7 +314,7 @@ endef
 $(foreach bin_test,$(BIN_TESTS),$(eval $(call BIN_TESTS_template,$(bin_test))))
 
 $(BIN_TESTS):
-	$(LINK.o) $(CFLAGS) $(LDFLAGS) $($(@)_BTEST_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(LINK.o) $(CFLAGS) $($(@)_BTEST_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
 
 #Build a C++ file that uses gtest, build *_OFILES into TESTDIR, link with gtest_main
 define GTESTS_template
@@ -328,22 +324,6 @@ define GTESTS_template
  ALL_OFILES += $$($(1)_GTESTS_OFILES) $(1)
 endef
 $(foreach _gtest,$(GTESTS_DIR),$(eval $(call GTESTS_template,$(_gtest))))
-
-#Find out if a header exists or not by creating a one-liner c program that includes it,
-#compiling that, and passing the results back as a 'y' or 'n' - liberated from github.com/ibm-capi/libcxl's Makefile
-CHECK_HEADER = $(shell echo \\\#include $(1) | \
-               $(CC) $(CFLAGS) -E - > /dev/null 2>&1 && echo y || echo n)
-
-#Get cxlflash_ioctl.h if we can't find it on the default include path. Note that if the host system already has one in the system's include libs,
-#we won't download a new file. To download a new file, delete the existing one...
-${ROOTPATH}/src/include/scsi/cxlflash_ioctl.h:
-ifeq ($(call CHECK_HEADER,"<scsi/cxlflash_ioctl.h>"),n)
-	@echo "WARNING: Downloading new cxlflash_ioctl.h from Jenkins"
-	mkdir -p ${ROOTPATH}/src/include/scsi
-	wget -P ${ROOTPATH}/src/include/scsi -q http://hydepark.aus.stglabs.ibm.com:8081/job/ga2-kernel/lastSuccessfulBuild/artifact/linux/include/uapi/scsi/cxlflash_ioctl.h
-endif
-
-
 
 $(GTESTS_DIR):
 	$(CXX) $(CFLAGS) $(LDFLAGS) $($(@)_GTESTS_OFILES) $(GTEST_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
@@ -374,8 +354,7 @@ ${LIBRARIES}: ${OBJECTS}
 ${EXTRA_PARTS} ${PROGRAMS}: ${LIBRARIES}
 $(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(GTEST_TARGETS)
 
-#cxlflash_ioctl.h dep is necessary to cause the "wget" wagon to go download a header from the CI server... look below for the appropriate rule / recipe
-dep:       ${SUBDIRS:.d=.dep} ${DEPS} ${ROOTPATH}/src/include/scsi/cxlflash_ioctl.h
+dep:       ${SUBDIRS:.d=.dep} ${DEPS}
 code_pass: ${SUBDIRS} ${LIBRARIES} ${EXTRA_PARTS} ${PROGRAMS}
 test:      ${SUBDIRS:.d=.test} ${BIN_TESTS} ${GTESTS_DIR} ${GTESTS_NM_DIR}
 fvt:       ${SUBDIRS:.d=.fvt}

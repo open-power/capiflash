@@ -43,27 +43,18 @@ uint64_t mmio_write(char resource_file[],uint64_t offset,uint64_t val64);
 uint64_t query_i2c_ready(char resource_file[]);
 uint64_t query_i2c_error(char resource_file[]);
 uint64_t query_i2c_readdata_val(char resource_file[]);
-uint64_t poll_vpd_read_done(int basecfg, int cfgaddr);
-uint64_t poll_vpd_write_done(int basecfg, int cfgaddr);
+void     poll_vpd_read_done(int basecfg, int cfgaddr);
+void poll_vpd_write_done(int basecfg, int cfgaddr);
 
 int main (int argc, char *argv[])
 {
-  int priv1,priv2;
-  int dat, dif, edat;
   int CFG;
-  int RBF;
   int VPDRBF;
-  time_t ct, lt, st, et, eet, set, ept, spt, svt, evt;
-  int address, raddress;
   char device_num[1024];
   char bar2[1024];
 
-  char rbf_file[1024];
   char cfg_file[1024];
   char vpdrbf_file[1024];
-
-  int  print_cnt = 0;
-  uint32_t vpd[32];
 
   if (argc < 3) {
     printf("Usage: ./flashgt_vpd_access <pci_number> <card#> <output vpd bin name>\nExample: ./flashgt_vpd_access 0000:01:00.0 0 vpd_FlashGT_050916.vpdrbf\n");
@@ -105,7 +96,7 @@ int main (int argc, char *argv[])
 	exit(-1);
   }
   
-  int addr_reg, size_reg, cntl_reg, data_reg;
+  int addr_reg, data_reg;
   uint64_t mmio_i2c_addr = 0x0000000000000130;
   lseek(CFG, 0x404, SEEK_SET);
   read(CFG, &temp,4);
@@ -122,7 +113,6 @@ int main (int argc, char *argv[])
 uint64_t mmio_write_data = 0x00000000000000AB;
 uint64_t mmio_read_data = 0x0;
 uint8_t i2c_read_data = 0x00;
-uint64_t i2c_access_clear = 0;
 uint64_t i = 0;
 int ready_status = 1;
 
@@ -133,7 +123,7 @@ int ready_status = 1;
     }
     else if((i == 99) && (ready_status != 0)) {
       printf("I2C Failed to be ready\n");
-      exit -1;
+      exit(-1);
     }
     else {
       printf("I2C Not ready yet...\r");
@@ -153,7 +143,7 @@ int ready_status = 1;
     }
     else if((i == 99) && (ready_status != 0)) {
       printf("I2C Failed to be ready\n");
-      exit -1;
+      exit(-1);
     }
     else {
       printf("I2C Not ready yet...\r");
@@ -179,7 +169,7 @@ int ready_status = 1;
     }
     else if((i == 99) && (ready_status != 0)) {
       printf("I2C Failed to be ready\n");
-      exit -1;
+      exit(-1);
     }
     else {
       printf("I2C Not ready yet...\r");
@@ -209,7 +199,7 @@ int ready_status = 1;
     }
     else if((i == 99) && (ready_status != 0)) {
       printf("I2C Failed to be ready\n");
-      exit -1;
+      exit(-1);
     }
     else {
       printf("I2C Not ready yet...\r");
@@ -235,7 +225,7 @@ int ready_status = 1;
     }
     else if((i == 99) && (ready_status != 0)) {
       printf("I2C Failed to be ready\n");
-      exit -1;
+      exit(-1);
     }
     else {
       printf("I2C Not ready yet...\r");
@@ -265,7 +255,7 @@ int ready_status = 1;
     }
     else if((i == 99) && (ready_status != 0)) {
       printf("I2C Failed to be ready\n");
-      exit -1;
+      exit(-1);
     }
     else {
       printf("I2C Not ready yet...\r");
@@ -291,7 +281,7 @@ int ready_status = 1;
     }
     else if((i == 99) && (ready_status != 0)) {
       printf("I2C Failed to be ready\n");
-      exit -1;
+      exit(-1);
     }
     else {
       printf("I2C Not ready yet...\r");
@@ -320,6 +310,7 @@ int ready_status = 1;
   uint32_t vpd_f_addr_struct = 0x00000000;
   int rawbinaddr = 0;
   int readvalid = 1;
+//  uint32_t vpd[32];
 
   //Loop to read original vpd contents
   printf("Current VPD contents are: \n");
@@ -331,7 +322,7 @@ int ready_status = 1;
     
     lseek(CFG, data_reg, SEEK_SET);
     read(CFG, &vpd_data,4);
-    vpd[j] = vpd_data;
+//    vpd[j] = vpd_data;
     //lseek(VPDRBF, rawbinaddr, SEEK_SET);
     //write(VPDRBF, &vpd[j], 4);
     printf("0x%08x\n",vpd_data);
@@ -379,7 +370,6 @@ uint64_t mmio_read (char resource_file[],uint64_t offset)
   int priv2;
   struct stat sb;
   void *memblk, *adr;
-  int type;
   uint64_t val64;
 
   if ((priv2 = open(resource_file, O_RDWR)) < 0) {
@@ -417,8 +407,6 @@ uint64_t mmio_write (char resource_file[],uint64_t offset, uint64_t val64)
   int priv2;
   struct stat sb;
   void *memblk, *adr;
-  int type;
-
 
   if ((priv2 = open(resource_file, O_RDWR)) < 0) {
     printf("Can not open %s\n",resource_file);
@@ -452,7 +440,6 @@ uint64_t mmio_write (char resource_file[],uint64_t offset, uint64_t val64)
 uint64_t query_i2c_ready(char resource_file[])
 {
   uint64_t offset = 0x0000000000000130;
-  int rv;
   uint64_t read_data;
 
   read_data = mmio_read(resource_file, offset);
@@ -466,13 +453,12 @@ uint64_t query_i2c_ready(char resource_file[])
 uint64_t query_i2c_error(char resource_file[])
 {
   uint64_t offset = 0x0000000000000130;
-  int rv;
   uint64_t read_data;
 
   read_data = mmio_read(resource_file, offset);
   if((read_data & 0x2000000000000000) == 0x2000000000000000) {
     printf("I2C controller is in error\n");
-    exit -1;
+    exit(-1);
   }
   else return 1;
 }
@@ -480,12 +466,9 @@ uint64_t query_i2c_error(char resource_file[])
 uint64_t query_i2c_readdata_val(char resource_file[])
 {
   uint64_t offset = 0x0000000000000130;
-  int rv;
   uint64_t read_data;
-  uint8_t i2c_rdata = 0x00;
 
   read_data = mmio_read(resource_file, offset);
-  i2c_rdata = ((read_data & 0x000000000000FF00) >> 8);
   if((read_data & 0x4000000000000000) == 0x4000000000000000) {
     printf("I2C controller read data is valid\n");
     return read_data;
@@ -493,7 +476,7 @@ uint64_t query_i2c_readdata_val(char resource_file[])
   else return 1;
 }
 
-uint64_t poll_vpd_read_done(int basecfg, int cfgaddr) {
+void poll_vpd_read_done(int basecfg, int cfgaddr) {
   int i = 0;
   uint32_t temp;
 
@@ -501,17 +484,17 @@ uint64_t poll_vpd_read_done(int basecfg, int cfgaddr) {
     lseek(basecfg, cfgaddr, SEEK_SET);
     read(basecfg,&temp,4);
     if((temp & 0x80000000) == 0x80000000) {
-      return 0;
+      return;
     }
     else if(i >= 9999) {
       printf("ERROR: VPD Read is not finishing\n");
       printf("VPD reg value is %08x\n",temp);
-      exit -1;
-    }  
+      exit(-1);
+    }
   }
 }
 
-uint64_t poll_vpd_write_done(int basecfg, int cfgaddr) {
+void poll_vpd_write_done(int basecfg, int cfgaddr) {
   int i = 0;
   uint32_t temp;
 
@@ -519,11 +502,11 @@ uint64_t poll_vpd_write_done(int basecfg, int cfgaddr) {
     lseek(basecfg, cfgaddr, SEEK_SET);
     read(basecfg,&temp,4);
     if((temp & 0x80000000) == 0x00000000) {
-      return 0;
+      return;
     }
     else if(i >= 999999) {
       printf("ERROR: VPD Write is not finishing\n");
-      exit -1;
+      exit(-1);
     }
   }
 }

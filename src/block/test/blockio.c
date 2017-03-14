@@ -59,6 +59,7 @@
 #include <inttypes.h>
 #include <ticks.h>
 #include <math.h>
+#include <pthread.h>
 
 #ifdef _OS_INTERNAL
 #include <sys/capiblock.h>
@@ -106,6 +107,13 @@ typedef struct
     OP_t    *op;
     uint32_t RD;
     uint32_t WR;
+    uint32_t cnt;
+    uint32_t cnt_rd;
+    uint32_t cnt_wr;
+    uint64_t tlat;
+    uint64_t tlat_rd;
+    uint64_t tlat_wr;
+    uint32_t tmiss;
     size_t   lba;
     size_t   last_lba;
     uint32_t nblocks;
@@ -113,6 +121,21 @@ typedef struct
     uint8_t *rbuf;
     uint8_t *wbuf;
 } SGDEV_t;
+
+uint32_t nsecs       = 4;
+uint32_t QD          = 128;
+uint32_t nRD         = 100;
+uint32_t intrp_thds  = 0;
+uint32_t nblocks     = 1;
+uint32_t DEBUG       = 0;
+uint32_t MAX_POLL    = 100;
+uint32_t seq         = 0;
+uint32_t verbose     = 0;
+uint32_t COMP        = 0;
+uint32_t eto         = 1000000;
+uint32_t lto         = 10000;
+uint32_t hbar        = 0;
+double   ns_per_tick = 0;
 
 /**
 ********************************************************************************
@@ -137,20 +160,20 @@ typedef struct
 ********************************************************************************
 ** \brief call to begin an op, init data for the op
 *******************************************************************************/
-#define OP_BEG(_dev,_op,_rd)   _op->start  = getticks(); ++N;                  \
+#define OP_BEG(_dev,_op,_rd)   _op->start  = getticks();                       \
                                _op->iss    = 1;                                \
                                _op->id     = _dev->id;                         \
                                _op->lba    = _dev->lba;                        \
                                _op->rd     = _rd;                              \
-                               _op->cnt    = cnt;                              \
+                               _op->cnt    = _dev->cnt;                        \
                                _op->miss   = 0;                                \
                                _op->min_to = 0;                                \
                                _op->max_to = 0;                                \
                                _dev->issN   += 1;                              \
                                if (_rd==READ) {--_dev->RD;} else {--_dev->WR;} \
-      debug("OP_BEG: id:%d rd:%d lba:%9ld len:%d, issN:%4d RD:%d cnt:%d\n",    \
+      debug("OP_BEG: id:%d rd:%d lba:%9ld len:%5d, issN:%4d RD:%d cnt:%d\n",   \
             _op->id, (_op->rd==READ), _op->lba, _dev->nblocks, _dev->issN,     \
-            _dev->RD,cnt);                                                     \
+            _dev->RD,_dev->cnt);                                               \
                                BMP_LBA(_dev);
 
 /**
@@ -158,33 +181,35 @@ typedef struct
 ** \brief call to end an op, reset issued flag, save tick delta
 *******************************************************************************/
 #define OP_END(_dev, _op, _cticks)                                             \
-                        lat         = _cticks - _op->start; --N;               \
-                        cnt        += 1;                                       \
+                        lat         = _cticks - _op->start;                    \
+                        _dev->cnt  += 1;                                       \
                         _dev->issN -= 1;                                       \
                         _op->iss    = 0;                                       \
-                        tlat       += lat;                                     \
+                        _dev->tlat += lat;                                     \
                         if (verbose)                                           \
-                        {  if (_op->rd) {++cnt_rd; tlat_rd+=lat;}              \
-                           else         {++cnt_wr; tlat_wr+=lat;}              \
+                        {  if (_op->rd) {++_dev->cnt_rd; _dev->tlat_rd+=lat;}  \
+                           else         {++_dev->cnt_wr; _dev->tlat_wr+=lat;}  \
                         }                                                      \
-    debug("OP_END: id:%d rd:%d lba:%9ld issN:%4d\n",                           \
-          _op->id, (_op->rd==READ), _op->lba, _dev->issN);
+    debug("OP_END: id:%d rd:%d lba:%9ld lat:%5d, issN:%4d\n",                  \
+          _op->id, (_op->rd==READ), _op->lba,                                  \
+          (uint32_t)((lat*ns_per_tick)/1000),                                  \
+          _dev->issN);
 
 /**
 ********************************************************************************
 ** \brief call to check timeout for an op(cmd), print msg for warning TO & TO
 *******************************************************************************/
 #define OP_CHK_WARN_TO(_op, _cticks, _min, _max)                               \
-        if (verbose)                                                           \
+        if (verbose && _op->miss)                                              \
         {                                                                      \
           lat = ((_cticks - _op->start) * ns_per_tick) / 1000;                 \
           if (lat > _min && !_op->min_to++)                                    \
-              {printf("ETO: pid:%d cnt:%7d lba:%16ld rd:%d miss:%d TIME:%d\n", \
-                       getpid(), cnt, _op->lba, _op->rd,                       \
+              {printf("ETO: id:%d pid:%d lba:%16ld rd:%d miss:%d TIME:%d\n",   \
+                       _op->id, getpid(), _op->lba, _op->rd,                   \
                        _op->miss, lat);}                                       \
           else if (lat > _max && !_op->max_to++)                               \
-              {printf("TO:  pid:%d cnt:%7d lba:%16ld rd:%d miss:%d TIME:%d\n", \
-                       getpid(), cnt, _op->lba, _op->rd,                       \
+              {printf("TO:  id:%d pid:%d lba:%16ld rd:%d miss:%d TIME:%d\n",   \
+                       _op->id, getpid(), _op->lba, _op->rd,                   \
                        _op->miss, lat);}                                       \
         }
 
@@ -193,12 +218,12 @@ typedef struct
 ** \brief call to check latency for each op, print msg for LONG cmds
 *******************************************************************************/
 #define OP_CHK_LATENCY(_op, _lto, _cticks)                                     \
-        if (verbose)                                                           \
+        if (verbose && _op->miss)                                              \
         {                                                                      \
           lat = ((_cticks - _op->start) * ns_per_tick) / 1000;                 \
           if (lat > _lto)                                                      \
-              {printf("LTO: pid:%d cnt:%7d lba:%16ld rd:%d miss:%d TIME:%d\n", \
-                       getpid(), cnt, _op->lba, _op->rd,                       \
+              {printf("LTO: id:%d pid:%d lba:%16ld rd:%d miss:%d TIME:%d\n",   \
+                       _op->id, getpid(), _op->lba, _op->rd,                   \
                        _op->miss, lat);}                                       \
         }
 
@@ -209,8 +234,8 @@ typedef struct
 **   An IO has failed, print the errno and exit
 *******************************************************************************/
 #define IO_ISS_ERR(_type)                                                      \
-    fprintf(stderr, "io_iss_error: errno:%d pid:%d cnt:%7d rd:%d\n",           \
-            errno, getpid(), cnt, (READ==_type));                              \
+    fprintf(stderr, "io_iss_error: errno:%d pid:%d rd:%d\n",                   \
+            errno, getpid(), (READ==_type));                                   \
     goto exit;
 
 #define IO_CMP_ERR(_op)                                                        \
@@ -246,6 +271,113 @@ void usage(void)
 
 /**
 ********************************************************************************
+** \brief
+**  run async IO to a device
+*******************************************************************************/
+void run_async(SGDEV_t *dev)
+{
+    uint64_t  sticks = 0;
+    uint64_t  cticks = 0;
+    uint32_t  aresN  = 0;
+    uint32_t  TIME   = 1;
+    uint32_t  hits   = 1;
+    int       pflag  = 0;
+    int       rtag   = 0;
+    int       i      = 0;
+    int       rc     = 0;
+    uint64_t  status = 0;
+    OP_t     *op     = NULL;
+    uint32_t  lat    = 0;
+
+    debug("start dev:%p id:%d\n", dev, dev->id);
+
+    sticks = cticks = getticks();
+
+    /*--------------------------------------------------------------------------
+     * loop running IO for nsecs
+     *------------------------------------------------------------------------*/
+    do
+    {
+        /* setup #read ops and #write ops to send */
+        if (!dev->RD && !dev->WR) {dev->RD=nRD; dev->WR=100-nRD;}
+
+        /*------------------------------------------------------------------
+         * send up to RD reads, as long as the queuedepth N is not max
+         *----------------------------------------------------------------*/
+        for (i=0; i<QD && TIME && dev->RD && dev->issN<QD; i++)
+        {
+            rc = cblk_aread(dev->id, dev->rbuf, dev->lba, dev->nblocks,
+                            &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+            if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),READ);}
+            else if (EBUSY == errno) {break;}
+            else                     {IO_ISS_ERR(READ);}
+        }
+        /*------------------------------------------------------------------
+         * send up to WR writes, as long as the queuedepth N is not max
+         *----------------------------------------------------------------*/
+        for (i=0; i<QD && TIME && dev->WR && dev->issN<QD; i++)
+        {
+            rc = cblk_awrite(dev->id, dev->wbuf, dev->lba, dev->nblocks,
+                            &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+            if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),WRITE);}
+            else if (EBUSY == errno) {break;}
+            else                     {IO_ISS_ERR(WRITE);}
+        }
+
+        /* if polling, usleep if #hits are below bar */
+        if (QD>1 && !intrp_thds && hits<hbar)
+            {debug("USLEEP issN:%d\n", dev->issN); usleep(10);}
+
+        /*----------------------------------------------------------------------
+         * complete cmds
+         *--------------------------------------------------------------------*/
+        pflag=0; hits=0; aresN=0;
+
+        for (i=0; i<QD && dev->issN; i++, dev->htag++)
+        {
+            if (intrp_thds)
+            {
+                rc = cblk_aresult(dev->id, &dev->htag, &status,
+                                  CBLK_ARESULT_BLOCKING |
+                                  CBLK_ARESULT_NEXT_TAG);
+                cticks = getticks();
+
+                op=dev->op+dev->htag;
+                if (rc != dev->nblocks) {IO_CMP_ERR(op);}
+                OP_END(dev,op,cticks);
+                if (++aresN >= COMP) {break;}
+            }
+            else
+            {
+                dev->htag %= QD;
+                op         = dev->op + dev->htag;
+                if (!op->iss) {continue;}
+                if (++aresN > MAX_POLL) {break;}
+
+                if (pflag==0) {debug("HARVEST id:%d\n", dev->id);}
+                rc = cblk_aresult(dev->id, &dev->htag, &status, pflag);
+                cticks = getticks();
+
+                OP_CHK_WARN_TO(op, cticks, eto, _10SEC);
+                if      (!pflag)  {pflag=CBLK_ARESULT_NO_HARVEST;}
+                if      (rc == 0) {++op->miss; ++dev->tmiss; continue;}
+                else if (rc < 0)  {IO_CMP_ERR(op);}
+
+                OP_CHK_LATENCY(op,lto,cticks);
+                OP_END(dev,op,cticks); ++hits;
+            }
+        }
+
+        if (TIME && SDELTA(sticks,ns_per_tick) >= nsecs) {TIME=0;}
+    }
+    while (TIME || dev->issN);
+
+exit:
+    return;
+}
+
+/**
+********************************************************************************
 ** \brief main
 ** \details
 **   process input parms                                                      \n
@@ -263,7 +395,6 @@ int main(int argc, char **argv)
     SGDEV_t        *devs        = NULL;
     SGDEV_t        *dev         = NULL;
     uint32_t        devN        = 0;
-    OP_t           *op          = NULL;
     char            FF          = 0xFF;
     char            c           = '\0';
     chunk_ext_arg_t ext         = 0;
@@ -278,42 +409,18 @@ int main(int argc, char **argv)
     char           *_lto        = NULL;
     char           *_R          = NULL;
     uint32_t        plun        = 0;
-    uint32_t        nsecs       = 4;
-    uint32_t        QD          = 128;
-    uint32_t        nRD         = 100;
-    uint32_t        eto         = 1000000;
-    uint32_t        lto         = 10000;
-    uint32_t        intrp_thds  = 0;
-    int             rtag        = 0;
-    int             pflag       = 0;
     size_t          lun_size    = 0;
-    uint32_t        nblocks     = 1;
     uint32_t        vlunsize    = 1;
+    uint64_t        tlat        = 0;
+    uint64_t        tlat_rd     = 0;
+    uint64_t        tlat_wr     = 0;
     uint32_t        cnt         = 0;
     uint32_t        cnt_rd      = 0;
     uint32_t        cnt_wr      = 0;
     uint32_t        tmiss       = 0;
-    uint32_t        hits        = 1;
-    uint32_t        hbar        = 0;
-    uint64_t        status      = 0;
-    uint32_t        N           = 0;
-    uint32_t        TIME        = 1;
-    uint32_t        COMP        = 0;
-    uint32_t        lat         = 0;
     uint32_t        esecs       = 0;
-    uint32_t        seq         = 0;
-    uint32_t        aresN       = 0;
-    uint32_t        verbose     = 0;
-    uint32_t        DEBUG       = 0;
-    uint32_t        MAX_POLL    = 100;
-    uint32_t        issI        = 0;
-    uint32_t        dev_i       = 0;
-    uint64_t        tlat        = 0;
-    uint64_t        tlat_rd     = 0;
-    uint64_t        tlat_wr     = 0;
     uint64_t        sticks      = 0;
-    uint64_t        cticks      = 0;
-    double          ns_per_tick = 0;
+    pthread_t       pth[8];
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
@@ -376,8 +483,9 @@ int main(int argc, char **argv)
     srand48(time(0));
     ns_per_tick = time_per_tick(1000, 100);
 
-    hbar = QD<10 ? 1 : QD/10;
-    COMP = QD<6  ? 1 : QD/6;
+    hbar     = QD<20 ? 1 : (QD>64 ? 0 : QD/20);
+    COMP     = QD<6  ? 1 : QD/6;
+    MAX_POLL = QD<4  ? 1 : QD/4;
 
     /*--------------------------------------------------------------------------
      * alloc data
@@ -459,105 +567,52 @@ int main(int argc, char **argv)
                 exit(errno);
             }
         }
-        debug("open: %s id:%d nblks:%ld\n", devStrs[i],dev->id,dev->last_lba+1);
+        debug("open: %s dev:%p id:%d nblks:%ld\n",
+                devStrs[i],dev, dev->id, dev->last_lba+1);
 
         dev->nblocks = nblocks;
         BMP_LBA(dev);
     }
 
-    if (devN <= 4) {MAX_POLL = QD<2 ? 1 : QD/2;}
-    else           {MAX_POLL = QD<4 ? 1 : QD/4;}
-
-    sticks = cticks = getticks();
-
     /*--------------------------------------------------------------------------
-     * loop running IO for nsecs
+     * use threads to run IO
      *------------------------------------------------------------------------*/
-    do
+    sticks = getticks();
+
+    void* (*fp)(void*) = (void*(*)(void*))run_async;
+
+    for (i=0; i<devN; i++)
     {
-        for (issI=0; issI<devN; issI++)
-        {
-            dev=devs+issI;
-
-            /* setup #read ops and #write ops to send */
-            if (!dev->RD && !dev->WR) {dev->RD=nRD; dev->WR=100-nRD;}
-
-            /*------------------------------------------------------------------
-             * send up to RD reads, as long as the queuedepth N is not max
-             *----------------------------------------------------------------*/
-            for (i=0; i<QD && TIME && dev->RD && dev->issN<QD; i++)
-            {
-                rc = cblk_aread(dev->id, dev->rbuf, dev->lba, dev->nblocks,
-                                &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
-                if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),READ);}
-                else if (EBUSY == errno) {break;}
-                else                     {IO_ISS_ERR(READ);}
-
-                if (devN==1 && QD==1) {debug("USLEEP_RD\n"); usleep(10);}
-            }
-            /*------------------------------------------------------------------
-             * send up to WR writes, as long as the queuedepth N is not max
-             *----------------------------------------------------------------*/
-            for (i=0; i<QD && TIME && dev->WR && dev->issN<QD; i++)
-            {
-                rc = cblk_awrite(dev->id, dev->wbuf, dev->lba, dev->nblocks,
-                                &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
-                if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),WRITE);}
-                else if (EBUSY == errno) {break;}
-                else                     {IO_ISS_ERR(WRITE);}
-            }
-        }
-
-        /* if polling, usleep if #hits are below bar */
-        if (QD>1 && !intrp_thds && hits<=hbar)
-            {debug("USLEEP N:%d\n",N); usleep(10);}
-
-        /*----------------------------------------------------------------------
-         * complete cmds
-         *--------------------------------------------------------------------*/
-        dev=devs+dev_i; pflag=0; hits=0; aresN=0;
-
-        for (i=0; i<QD && dev->issN; i++, dev->htag++)
-        {
-            if (intrp_thds)
-            {
-                rc = cblk_aresult(dev->id, &dev->htag, &status,
-                                  CBLK_ARESULT_BLOCKING |
-                                  CBLK_ARESULT_NEXT_TAG);
-                cticks = getticks();
-
-                op=dev->op+dev->htag;
-                if (rc != dev->nblocks) {IO_CMP_ERR(op);}
-                OP_END(dev,op,cticks);
-                if (++aresN >= COMP) {break;}
-            }
-            else
-            {
-                dev->htag %= QD;
-                op         = dev->op + dev->htag;
-                if (!op->iss) {continue;}
-                if (++aresN > MAX_POLL) {break;}
-
-                if (pflag==0) {debug("HARVEST id:%d\n", dev->id);}
-                rc = cblk_aresult(dev->id, &dev->htag, &status, pflag);
-                cticks = getticks();
-
-                OP_CHK_WARN_TO(op, cticks, eto, _10SEC);
-                if      (!pflag)  {pflag=CBLK_ARESULT_NO_HARVEST;}
-                if      (rc == 0) {++op->miss; ++tmiss; continue;}
-                else if (rc < 0)  {IO_CMP_ERR(op);}
-
-                OP_CHK_LATENCY(op,lto,cticks);
-                OP_END(dev,op,cticks); ++hits;
-            }
-        }
-        dev_i = (dev_i+1) % devN;
-
-        if (TIME && SDELTA(sticks,ns_per_tick) >= nsecs) {TIME=0;}
+        debug("pthread_create %d for dev:%p id:%d\n", i, devs+i, (devs+i)->id);
+        pthread_create(pth+i, NULL, fp, (void*)(devs+i));
     }
-    while (TIME || N);
+    for (i=0; i<devN; i++)
+    {
+        pthread_join(pth[i], NULL);
+        debug("pthread_done %d\n", i);
+    }
 
     esecs = SDELTA(sticks,ns_per_tick);
+
+    for (i=0; i<devN; i++)
+    {
+        dev=devs+i;
+        if (verbose)
+        {
+            printf("%-10s id:%d lat:%d cnt:%d\n",
+                    devStrs[i],
+                    dev->id,
+                    (uint32_t)((dev->tlat*ns_per_tick)/dev->cnt/1000),
+                    dev->cnt);
+        }
+        tmiss   += dev->tmiss;
+        cnt     += dev->cnt;
+        cnt_rd  += dev->cnt_rd;
+        cnt_wr  += dev->cnt_wr;
+        tlat    += dev->tlat;
+        tlat_rd += dev->tlat_rd;
+        tlat_wr += dev->tlat_wr;
+    }
 
     /*--------------------------------------------------------------------------
      * print IO stats
@@ -575,7 +630,6 @@ lat:%d mbps:%d iops:%d",
                          (uint32_t)((tlat_wr*ns_per_tick)/cnt_wr/1000));}
     printf("\n"); fflush(stdout);
 
-exit:
     /*--------------------------------------------------------------------------
      * cleanup
      *------------------------------------------------------------------------*/

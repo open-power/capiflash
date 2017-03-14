@@ -66,7 +66,7 @@ CFLAGS += \
 	-g \
    -D__FVT__\
    -I$(ROOTPATH)/src/master \
-   -I$(ROOTPATH)/${GTESTINC}
+   -I${GTESTINC}
 CXXFLAGS+=$(CFLAGS)
 
 #VPATH += ${ROOTPATH}/src/master

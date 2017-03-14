@@ -71,7 +71,7 @@ CFLAGS += \
    -g -D__FVT__ -Wno-unused-result \
    -I$(ROOTPATH)/src/block \
    -I$(ROOTPATH)/src/include \
-   -I$(ROOTPATH)/${GTESTINC} \
+   -I${GTESTINC} \
 
 CXXFLAGS+=$(CFLAGS)
 

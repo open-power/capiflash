@@ -30,14 +30,14 @@
 #ifndef _AIX
 #include "zmalloc.h"
 #endif
-#include "am.h"
 
+#include <am.h>
 #include <kv_inject.h>
 #include <arkdb_trace.h>
 #include <errno.h>
+#include <ark.h>
 
 int x = 1;
-#define ARK_KV_ALIGN 16
 
 void *am_malloc(size_t size)
 {
@@ -48,23 +48,24 @@ void *am_malloc(size_t size)
     if ((int64_t)size > 0)
     {
 #ifdef _AIX
-      p = malloc(size + ARK_KV_ALIGN);
+      p = malloc(size);
 #else
-      p = zmalloc(size + ARK_KV_ALIGN);
+      p = zmalloc(size);
 #endif
-      if (p) {memset(p,0x00, size + ARK_KV_ALIGN);}
-      else
+      if (!p)
       {
           KV_TRC_FFDC(pAT, "ALLOC_FAIL errno=%d", errno);
           if (!errno) {errno = ENOMEM;}
       }
     }
-    KV_TRC_DBG(pAT, "ALLOC   %p size:%ld up:%ld", p, size,size+ARK_KV_ALIGN);
+    KV_TRC_DBG(pAT, "ALLOC   %p size:%ld", p, size);
     return p;
 }
 
 void am_free(void *ptr)
 {
+  if (!ptr) {return;}
+
   if ((uint64_t)ptr < 0xFFFF) {KV_TRC_FFDC(pAT, "FREE  BAD:%p", ptr); return;}
   else                        {KV_TRC_DBG (pAT, "FREE  %p",     ptr);}
 
@@ -84,9 +85,9 @@ void *am_realloc(void *ptr, size_t size)
     if (ptr && (int64_t)size > 0)
     {
 #ifdef _AIX
-      p = realloc(ptr, size + ARK_KV_ALIGN);
+      p = realloc(ptr, size);
 #else
-      p = zrealloc(ptr, size + ARK_KV_ALIGN);
+      p = zrealloc(ptr, size);
 #endif
     }
     else
@@ -97,10 +98,10 @@ void *am_realloc(void *ptr, size_t size)
 
     if (!p)
     {
-        KV_TRC_FFDC(pAT, "REALLOC_FAIL errno=%d", errno);
+        KV_TRC_FFDC(pAT, "REALLOC_FAIL size:%ld errno=%d", size, errno);
         if (!errno) {errno = ENOMEM;}
     }
-    KV_TRC_DBG(pAT, "REALLOC old:%p new:%p size:%ld up:%ld", ptr, p, size,size+ARK_KV_ALIGN);
+    KV_TRC_DBG(pAT, "REALLOC old:%p new:%p size:%ld", ptr, p, size);
 
     return p;
 }
@@ -111,8 +112,8 @@ void *ptr_align(void *ptr)
 
   if (ptr)
   {
-    new_ptr = (void *)(((uintptr_t)(ptr) + ARK_KV_ALIGN - 1) &
-                              ~(uintptr_t)(ARK_KV_ALIGN - 1));
+    new_ptr = (void *)(((uintptr_t)(ptr) + ARK_ALIGN - 1) &
+                              ~(uintptr_t)(ARK_ALIGN - 1));
   }
   else
   {

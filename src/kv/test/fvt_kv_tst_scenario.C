@@ -49,7 +49,7 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_CREATE_DELETE_LOOP)
     for (i=0; i<loops; i++)
     {
         ARK_CREATE;
-        printf("."); fflush(stdout); usleep(10000);
+        printf("."); fflush(stdout); usleep(1000);
         ARK_DELETE;
     }
     printf("\n");
@@ -469,12 +469,12 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_fork_single)
 #endif
  {
     ARK     *ark    = NULL;
-    uint32_t fklen  = 30;
-    uint32_t fvlen  = 111;
+    uint32_t fklen  = 4;
+    uint32_t fvlen  = 300;
     kv_t    *db_f   = NULL;
-    uint32_t klen   = 73;
-    uint32_t vlen   = 179;
-    int32_t  LEN    = 200;
+    uint32_t klen   = 8;
+    uint32_t vlen   = 8;
+    int32_t  LEN    = 500;
     uint32_t secs   = 10;
     pid_t    pid    =-1;
     int      cdone  = 0;
@@ -514,7 +514,7 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_fork_single)
 
     EXPECT_EQ(0, ark_fork_done(ark));
 
-    printf("parent start\n");
+    printf("parent start, child=%d\n", pid);
 
     /* replace the values for secs while child is doing backup */
     fvt_kv_utils_REP_LOOP(ark,
@@ -536,5 +536,24 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_fork_single)
     printf("parent done\n");
 
     kv_db_destroy(db_f, LEN);
+    ARK_DELETE;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   add fixed length key/value to ark, then query them
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SCENARIO_LOOP_FIXED_4x4x100000)
+{
+    ARK     *ark   = NULL;
+    uint32_t seed  = 392;
+    uint32_t klen  = 4;
+    uint32_t vlen  = 4;
+    uint32_t LEN   = 100000;
+    uint32_t secs  = 3;
+
+    ARK_CREATE;
+    fvt_kv_utils_SGD_SLOOP(ark, seed, klen, vlen, LEN, secs);
     ARK_DELETE;
 }

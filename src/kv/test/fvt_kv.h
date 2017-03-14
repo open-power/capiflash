@@ -110,6 +110,23 @@ do                                                       \
     }                                                    \
 } while (0);
 
+#define TESTCASE_SKIP_IF_NO_EEH                             \
+  do                                                        \
+  {                                                         \
+    char *env_filemode=getenv("BLOCK_FILEMODE_ENABLED");    \
+    char *env_eeh=getenv("FVT_EEH");                        \
+    if (env_filemode && atoi(env_filemode)==1)              \
+    {                                                       \
+        TESTCASE_SKIP("skip if BLOCK_FILEMODE_ENABLED==1"); \
+        return;                                             \
+    }                                                       \
+    if (!env_eeh || (env_eeh && atoi(env_eeh)!=1))          \
+    {                                                       \
+      TESTCASE_SKIP("skip if FVT_EEH!=1");                  \
+      return;                                               \
+    }                                                       \
+  } while (0)
+
 #define KV_4K   4   *1024
 #define KV_8K   8   *1024
 #define KV_64K  64  *1024

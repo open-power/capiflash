@@ -68,6 +68,8 @@ IMAGEH="${_RESOURCEDIR}/1410*"
 
 all:
 	rm -rf ${INSTALL_ROOT}
+	rm -rf ${TEST_ROOT}
+	rm -rf ${AFU_ROOT}
 	${MAKE} cflash cflash-test cflashimage
 
 LIC_FILES := $(notdir $(shell ls ${_RESOURCEDIR}/license/*.txt 2>/dev/null))
@@ -127,6 +129,7 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/run_kv_sync64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_persist64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_kv_benchmark64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/kv_perf64 ${_BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppt.pl ${_BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
 else
@@ -145,6 +148,7 @@ else
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_async ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_persist ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_benchmark ${_BIN_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/kv_perf ${_BIN_DIR}
 	${INSTALL}    ${ROOTPATH}/src/test/ioppt.pl ${_BIN_DIR}
 	${INSTALL}    ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
 
@@ -167,6 +171,7 @@ else
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxl.rules ${_UDEV_RULES_DIR}
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxlflash.rules ${_UDEV_RULES_DIR}
 	
+	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${PKGDIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc.debug ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc.cleardebug ${_ETC_DIR}
@@ -261,10 +266,9 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${_TEST_DIR}
 else
-	${INSTALL} ${ROOTPATH}/src/test/vpd/surelock_vpd2rbf.pl ${_TEST_DIR}
-	${INSTALL} ${ROOTPATH}/src/test/vpd/vpd_FlashGT.csv ${_TEST_DIR}
-	${INSTALL} -s ${_TESTSRCDIR}/flashgt_vpd_access ${_TEST_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_inject.pl ${_TEST_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst.sh ${_TEST_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/run_fvt_utils_scripts ${_TEST_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_inject ${_TEST_DIR}
 	${INSTALL} -s ${_RESOURCEDIR}/flashgt_nvme_override ${_TEST_DIR}
 endif
@@ -274,21 +278,28 @@ FW_FILES := $(notdir $(shell ls ${_RESOURCEDIR}/BTV*)) $(notdir $(shell ls ${_RE
 
 ${FW_FILES}:
 	@mkdir -p ${_AFU_IMAGES_DIR}
-	@if [[ -e ${_RESOURCEDIR}/$@ ]];\
-     then echo ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR};\
-               ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; fi
+	@if [[ -e ${_RESOURCEDIR}/$@ ]]; then \
+         echo ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; \
+              ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; \
+         if [[ $@ =~ gz ]]; then gunzip ${_AFU_IMAGES_DIR}/$@; fi; \
+     fi
 ifneq ($(UNAME),AIX)
-	@if [[ -e ${_RESOURCEDIR}/$@ ]];\
-     then cd ${_AFU_IMAGES_DIR}; /usr/bin/md5sum $@ >> afu_fw.md5sum; fi
+	@if [[ -e ${_AFU_IMAGES_DIR}/$(subst .gz,,$(@)) ]]; then \
+         cd ${_AFU_IMAGES_DIR}; /usr/bin/md5sum $(subst .gz,,$(@)) >> afu_fw.md5sum; \
+         if [[ ! -e $@ ]]; then gzip $(subst .gz,,$(@)); fi; \
+     fi
 endif
 
 cflashimage: ${FW_FILES}
 	@mkdir -p ${_AFU_IMAGES_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc ${AFU_ROOT}
 ifneq ($(UNAME),AIX)
+	${INSTALL} ${ROOTPATH}/src/test/vpd/surelock_vpd2rbf.pl ${AFU_ROOT}
+	${INSTALL} ${ROOTPATH}/src/test/vpd/vpd_FlashGT.csv ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_dump ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_status ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/flashgt_temp ${AFU_ROOT}
+	${INSTALL} -s ${_TESTSRCDIR}/flashgt_vpd_access ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/capi_flash.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_perst.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_perf.pl ${AFU_ROOT}
@@ -298,11 +309,14 @@ ifneq ($(UNAME),AIX)
 	${INSTALL} ${_RESOURCEDIR}/cflash_wear.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_stick.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_perfcheck.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_mfg_init.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/blacklist-cxlflash.conf ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/flash_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/reload_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/psl_trace_dump ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cxl_flash_vm ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cxl_afu_fmt_unit ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/flashgt_nvme_nsq ${AFU_ROOT}
 endif
 
 include ${ROOTPATH}/config.mk

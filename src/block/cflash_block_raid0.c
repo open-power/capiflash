@@ -97,7 +97,7 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
             devNStr[1] = pdevs[7];
             devN_in    = atoi(devNStr);
         }
-        fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl", "r");
+        fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl -S", "r");
         if (!fp)
         {
             CBLK_TRACE_LOG_FILE(1, "cflash_devices.pl failed");
@@ -212,7 +212,8 @@ int cblk_r0_set_size(chunk_r0_id_t id, size_t blocksN)
     }
 
 done:
-    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
+    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d blocksN:%ld rc:%d",
+                                   id, blocksN, rc);}
     return rc;
 }
 

@@ -86,6 +86,22 @@ extern void *blk_fvt_comp_data_buf;
     }                                                     \
 } while (0)
 
+#define TESTCASE_SKIP_IF_NO_EEH                             \
+  do                                                        \
+  {                                                         \
+    char *env_eeh=getenv("FVT_EEH");                        \
+    if (env_filemode && atoi(env_filemode)==1)              \
+    {                                                       \
+        TESTCASE_SKIP("skip if BLOCK_FILEMODE_ENABLED==1"); \
+        return;                                             \
+    }                                                       \
+    if (!env_eeh || (env_eeh && atoi(env_eeh)!=1))          \
+    {                                                       \
+      TESTCASE_SKIP("skip if FVT_EEH!=1");                  \
+      return;                                               \
+    }                                                       \
+  } while (0)
+
 #define DEBUG_0(A)                              \
     do                                          \
     {                                           \
@@ -158,11 +174,11 @@ int multi_lun_setup();
 
 void blk_fvt_cmp_buf(int size, int *ret);
 void blk_get_statistics (chunk_id_t id, int flags, int *ret, int *err);
-void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags);
+void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh);
 void blk_multi_luns_thread_tst(int *ret, int *err);
 void blocking_io_tst (chunk_id_t id, int *ret, int *err);
 void user_tag_io_tst (chunk_id_t id, int *ret, int *err, int flags);
-void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags);
+void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags, int eeh);
 int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags);
 int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode);
 int fork_and_clone_my_test(int *ret, int *err, int pmode, int cmode);

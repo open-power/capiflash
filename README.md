@@ -55,11 +55,10 @@ Builds are configurable for different purposes. If no Data Engine for NoSQL Acce
 As a developer, to get started:
 1. clone the repository
 2. cd capiflash
-3. (optional) modify / select a customrc file (see below)
+3. select a customrc file (see below)
 4. source env.bash
-5. make -j32 #build the code
-6. make test && make unit #run unit tests
-7. make fvt #run FVT tests - note you may need to set one or more env variables
+5. make cleanall #remove all previous build artifacts
+6. make          #build the code
 
 #### customrc - Targeting a specific platform or tuning
 
@@ -76,7 +75,7 @@ BLOCK_FILEMODE_ENABLED  | block     | Forces Block Layer to redirect all IO to a
 BLOCK_KERNEL_MC_ENABLED | block     | Enables block layer to communicate with cxlflash driver built in to the Linux kernel. For more information, see https://www.kernel.org/doc/Documentation/powerpc/cxlflash.txt
 
 
-Prebuild customrc files exist for different environments. Most users will want to use "customrc.p8elblkkermc" or "customrc.p8el:"
+Prebuilt customrc files exist for different environments. Most users will want to use "customrc.p8elblkkermc" or "customrc.p8el:"
 
 CustomRC files:
 
@@ -85,29 +84,34 @@ Filename                | Description
 customrc.p8el           | Little-endian Linux, P8 Tunings, Block FileMode enabled
 customrc.p8elblkkermc   | Little-endian Linux, P8 Tunings, Real IO to CXL Flash kernel driver
 
+#### Test Real IO
 
 Example on a POWER8 Little-endian system:
 ```
 ln -s customrc.p8elblkkermc customrc
 source env.bash
 make cleanall
-make -j32
+make
+```
+ulimit -n 5000; FVT_DEV=/dev/sgX LD_LIBRARY_PATH=.../capiflash/img .../capiflash/obj/tests/run_fvt
 ```
 
-#### Unit Tests
+#### Test File IO
 
 The software package relies on Google Test. For more information, see src/test/framework/README.md
 
-Example of acquiring the test framework and running unit tests in file mode:
+Example of acquiring the test framework and running tests in file mode:
 ```
 pushd src/test/framework
 git clone git@github.com:google/googletest.git
 popd
+OR
+apt-get install libgtest-dev
+...
 ln -s customrc.p8el customrc
 source env.bash
 make cleanall
-make -j32
-make -j32 tests
-make run_unit #run the unit tests - note that certain test cases will create up to a 1GB file in /tmp during the test run
-
+make
 ```
+ulimit -n 5000; LD_LIBRARY_PATH=.../capiflash/img .../capiflash/obj/tests/run_fvt  #run the tests - note that a 1GB file is created in /tmp
+

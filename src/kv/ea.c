@@ -90,7 +90,7 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         // Using memory for store
         ea->st_type = EA_STORE_TYPE_MEMORY;
 
-        store = malloc(*size);
+        store = am_malloc(*size);
         if (NULL == store)
         {
             errno = ENOMEM;
@@ -199,8 +199,8 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
     ea->bcount = *bcount;
     ea->size   = *size;
 
-    KV_TRC(pAT, "path %s bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64"",
-           path, bsize, *size, *bcount);
+    KV_TRC(pAT, "path(%s) id:%d bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64"",
+           path, ea->st_flash, bsize, *size, *bcount);
     goto done;
 
 error_exit:
@@ -217,23 +217,27 @@ int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
   uint64_t size = bcount * bsize;
   int rc        = 0;
 
+  KV_TRC(pAT, "EA_RESZ bsize:%ld old:%ld new:%ld", bsize, ea->bcount, bcount);
+
   ARK_SYNC_EA_WRITE(ea);
 
-  if ( ea->st_type == EA_STORE_TYPE_MEMORY )
+  if (ea->st_type == EA_STORE_TYPE_MEMORY)
   {
     // For an in-memory store, we simply "realloc"
     // the memory.
-    uint8_t *store = realloc(ea->st_memory, size);
-    if (store) {
-      ea->bcount = bcount;
-      ea->size = size;
+    uint8_t *store = am_realloc(ea->st_memory, size);
+    if (store)
+    {
+      ea->bcount    = bcount;
+      ea->size      = size;
       ea->st_memory = store;
     } 
-    else {
+    else
+    {
       errno = ENOMEM;
+      rc    = 1;
       KV_TRC_FFDC(pAT, "ENOMEM, resize ea %p bsize %lu bcount %lu, errno = %d",
               ea, bsize, bcount, errno);
-      rc = 1;
     }
   }
   else
@@ -376,10 +380,10 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
               &(blist[i].a_tag), NULL,CBLK_GROUP_RAID0|CBLK_ARW_WAIT_CMD_FLAGS);
         }
 
-        if (check_sched_error_injects(op)) {rc=-1;}
+        if (check_sched_error_injects(op)) {errno=5; rc=-1;}
 
-        KV_TRC_IO(pAT, "%s:  id:%d blkno:%"PRIi64" rc:%d",
-                ot, ea->st_flash, blist[i].blkno, rc);
+        KV_TRC_IO(pAT, "%s:  id:%d blkno:%"PRIi64" rc:%d errno:%d",
+                ot, ea->st_flash, blist[i].blkno, rc, errno);
 
         if ( rc == -1 )
         {
@@ -398,7 +402,6 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
           blist[i].a_tag.tag = -1;
           rc = 0;
         }
-        //_arkp->stats.io_cnt++;
       }
 
       // For as many IOs that were performed, we loop t
@@ -418,7 +421,7 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
           a_rc = cblk_cg_aresult(ea->st_flash, &(blist[j].a_tag),
                                &status, CBLK_GROUP_RAID0|CBLK_ARESULT_BLOCKING);
 
-          if (check_harv_error_injects(op))  {a_rc=-1;}
+          if (check_harv_error_injects(op)) {errno=5; a_rc=-1;}
 
           // There was an error, check to see if we haven't
           // encoutnered an error previously and if not, then
@@ -426,12 +429,9 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
           // all outstanding responses
           if (a_rc == -1)
           {
-            if (rc == 0)
-            {
-              rc = errno;
-            }
-            KV_TRC_IO(pAT, "IO_ERR: id:%d blkno:%ld status:%ld a_rc:%d",
-                    ea->st_flash, blist[j].blkno, status, a_rc);
+            rc = errno;
+            KV_TRC_IO(pAT, "IO_ERR: id:%d blkno:%ld status:%ld rc:%d errno:%d",
+                    ea->st_flash, blist[j].blkno, status, a_rc, errno);
           }
           else
           {
@@ -465,7 +465,7 @@ int ea_delete(EA *ea)
         // Simple free the block of store
         if (ea->st_memory)
         {
-            free(ea->st_memory);
+            am_free(ea->st_memory);
             ea->st_memory=NULL;
         }
     }

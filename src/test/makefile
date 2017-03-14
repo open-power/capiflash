@@ -23,12 +23,14 @@
 #
 # IBM_PROLOG_END_TAG
 
+.NOTPARALLEL:
+
 UNAME=$(shell uname)
 
 # Where to find user code.(Relative path(from the makefile) preferred for portability)
 ROOTPATH = ../..
 USER_DIR = .
-SUBDIRS  = usfs.d
+SUBDIRS  = usfs.d ffdc.d vpd.d
 TESTDIR  = ${ROOTPATH}/obj/tests
 EXPFLAGS = -bexpall
 
@@ -43,7 +45,6 @@ LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 BTESTS   = asyncstress asyncstress2
 
 ifneq ($(TARGET_PLATFORM),x86_64)
-SUBDIRS   = ffdc.d vpd.d
 BTESTS   += transport_test blk_test pvtestauto xlate pblkread
 OBJS      = afu.o capi_dev_nodes.o
 OBJS64    = afu.64o capi_dev_nodes.64o
@@ -53,7 +54,7 @@ endif
 
 BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
 
-GTESTS = run_fvt
+GTESTS = run_fvt run_fvt_utils_scripts
 GTESTS_DIR = $(addprefix $(TESTDIR)/, $(GTESTS))
 
 ifeq ($(UNAME),AIX) # AIX only
@@ -75,7 +76,11 @@ run_fvt_OFILES = \
  fvt_kv_utils.o kv_utils_db.o fvt_kv_utils_async_cb.o fvt_kv_utils_sync_pth.o  \
  fvt_kv_utils_ark_io.o fvt_trace.o \
  fvt_kv_tst_simple.o fvt_kv_tst_scenario.o fvt_kv_tst_sync_pth.o \
- fvt_kv_tst_async_cb.o fvt_kv_tst_errors.o fvt_kv_tst_sync_async.o
+ fvt_kv_tst_async_cb.o fvt_kv_tst_errors.o fvt_kv_tst_sync_async.o \
+ fvt_utils_scripts_tst.o
+
+run_fvt_utils_scripts_OFILES = \
+ fvt_utils_scripts_tst.o
 
 CFLAGS += \
    -D__FVT__ -Wno-unused-result\
@@ -83,7 +88,7 @@ CFLAGS += \
    -I$(ROOTPATH)/src/kv/test \
    -I$(ROOTPATH)/src/block \
    -I$(ROOTPATH)/src/common \
-   -I$(ROOTPATH)/${GTESTINC} 
+   -I${GTESTINC} 
 CXXFLAGS+=$(CFLAGS)
 
 VPATH += \
@@ -95,5 +100,5 @@ include ${ROOTPATH}/config.mk
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 fvt:
-#	@-if [[ $(UNAME) != "AIX" ]]; then \
-       $(TESTDIR)/run_fvt --gtest_output=xml:$(TESTDIR)/run_fvt.xml; 
+	@-if [[ $(UNAME) != "AIX" ]]; then \
+       $(TESTDIR)/run_fvt; fi

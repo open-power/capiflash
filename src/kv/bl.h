@@ -93,6 +93,13 @@ ark_io_list_t *bl_chain_blocks(BL *bl, int64_t start, int64_t len);
 
 ark_io_list_t *bl_chain_no_bl(int64_t start, int64_t len);
 
+// realloc an ark_io_list if required, setup the list starting at b
+int bl_rechain(ark_io_list_t **aiol,
+               BL             *bl,
+               int64_t         b,
+               int64_t         n,
+               int64_t         o);
+
 // generate a graph of the blocks
 void bl_dot(BL *bl, int n, int *bcnt, int ccnt, int64_t *chain);
 

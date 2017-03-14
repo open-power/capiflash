@@ -700,7 +700,8 @@ static inline uint64_t  CBLK_GET_CMD_ROOM(cflsh_chunk_t *chunk,
  *    
  */
 
-static inline uint64_t  CBLK_GET_INTRPT_STATUS(cflsh_chunk_t *chunk, int path_index)
+static inline uint64_t  CBLK_GET_INTRPT_STATUS(cflsh_chunk_t *chunk, int path_index,
+					       cflash_block_check_os_status_t *reset_status)
 {
     uint64_t rc;
 
@@ -711,6 +712,12 @@ static inline uint64_t  CBLK_GET_INTRPT_STATUS(cflsh_chunk_t *chunk, int path_in
 	return 0;
     }
 
+    if (reset_status == NULL) {
+
+	errno = EINVAL;
+
+	return 0;
+    }
 
     if (chunk->path[path_index] == NULL) {
 
@@ -763,7 +770,7 @@ static inline uint64_t  CBLK_GET_INTRPT_STATUS(cflsh_chunk_t *chunk, int path_in
 
 	CBLK_TRACE_LOG_FILE(1,"Potential UE encountered for interrupt status\n");
 
-	cblk_check_os_adap_err(chunk,path_index);
+	*reset_status = cblk_check_os_adap_err(chunk,path_index);
     }
 
 
@@ -2413,12 +2420,12 @@ static inline void CBLK_IO_LATENCY(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd)
     if (cmd->cmdi->flags & CFLSH_MODE_READ)
     {
         chunk->rcmd += 1;
-        chunk->rlat += UDELTA(cmd->stime,cflsh_blk.nspt);
+        chunk->rlat += UDELTA(cmd->cmdi->stime,cflsh_blk.nspt);
     }
     else if (cmd->cmdi->flags & CFLSH_MODE_WRITE)
     {
         chunk->wcmd += 1;
-        chunk->wlat += UDELTA(cmd->stime,cflsh_blk.nspt);
+        chunk->wlat += UDELTA(cmd->cmdi->stime,cflsh_blk.nspt);
     }
 
     /* trace latency */
@@ -2429,9 +2436,10 @@ static inline void CBLK_IO_LATENCY(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd)
             chunk->ptime = getticks();
             CBLK_TRACE_LOG_FILE(4, "id:%4ld tlat:%6ld rlat:%6ld wlat:%6ld",
                     chunk->index,
-                    (chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd),
-                    chunk->rlat/chunk->rcmd,
-                    chunk->wlat/chunk->wcmd);
+                    (chunk->rcmd+chunk->wcmd) ?
+                        (chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd) : 0,
+                    (chunk->rcmd) ? chunk->rlat/chunk->rcmd : 0,
+                    (chunk->wcmd) ? chunk->wlat/chunk->wcmd : 0);
         }
     }
 }
@@ -2603,7 +2611,7 @@ static inline int CBLK_COMPLETE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, 
     CBLK_TRACE_LOG_FILE(5,"in_use:0x%x lba:%8llx rc:%d lat:%6ld "
                           "flags:0x%x id:%2d rd:%d",
                            cmdi->in_use,cmdi->lba,rc,
-                           UDELTA(cmd->stime,cflsh_blk.nspt),
+                           UDELTA(cmdi->stime,cflsh_blk.nspt),
                            cmdi->flags, chunk->index,
                            ((cmdi->flags & CFLSH_MODE_READ)!=0));
 
@@ -2639,7 +2647,9 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
     cflsh_cmd_mgm_t *p_cmd;
     int rc = 0;
     int cmd_rc = 0;
-    time_t timeout;
+    time_t timeout; 
+    cflash_block_check_os_status_t reset_status = CFLSH_BLK_CHK_OS_NO_RESET;
+    
 
 
     if (chunk == NULL) {
@@ -2734,40 +2744,48 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
 		    chunk->stats.num_fail_timeouts++;
 
 		    
-		    CBLK_GET_INTRPT_STATUS(chunk,path_index);
-
+		    CBLK_GET_INTRPT_STATUS(chunk,path_index,&reset_status);
 		    
-		    cblk_notify_mc_err(chunk,cmdi->path_index,0x300,0,
-				       CFLSH_BLK_NOTIFY_AFU_ERROR,cmd);
-
-		    CFLASH_BLOCK_UNLOCK(chunk->lock);
-
-		    cblk_reset_context_shared_afu(chunk->path[path_index]->afu);
-				
-		    CFLASH_BLOCK_LOCK(chunk->lock);
-
-		    if ((cmdi->retry_count >= CAPI_CMD_MAX_RETRIES) ||
-			(cmdi->status)) {
-
+		    if (reset_status == CFLSH_BLK_CHK_OS_NO_RESET) {
+			
 			/*
-			 * Don't fail yet, until all retries have
-			 * been attempted. Also if the resume command
-			 * logic in the block library fails to re-issue
-			 * the command, then cmdi->status will be non-zero.
-			 * NOTE: We cleared cmdi->status before unlocking
-			 * and calling reset_context.  
+			 * If we did not detect UE, when reading the 
+			 * interrupt status registers. So instead do
+			 * context reset.
 			 */
-
-			CBLK_TRACE_LOG_FILE(1,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
-					    cmdi->lba,(uint64_t)cmd,cmdi->retry_count,cmdi->status);
-
-			cmdi->status = ETIMEDOUT;
-
-			*cmd_complete = TRUE;
-
-			errno = ETIMEDOUT;
-
-			rc = -1;
+			
+			cblk_notify_mc_err(chunk,cmdi->path_index,0x300,0,
+					   CFLSH_BLK_NOTIFY_AFU_ERROR,cmd);
+			
+			CFLASH_BLOCK_UNLOCK(chunk->lock);
+			
+			cblk_reset_context_shared_afu(chunk->path[path_index]->afu);
+			
+			CFLASH_BLOCK_LOCK(chunk->lock);
+			
+			if ((cmdi->retry_count >= CAPI_CMD_MAX_RETRIES) ||
+			    (cmdi->status)) {
+			    
+			    /*
+			     * Don't fail yet, until all retries have
+			     * been attempted. Also if the resume command
+			     * logic in the block library fails to re-issue
+			     * the command, then cmdi->status will be non-zero.
+			     * NOTE: We cleared cmdi->status before unlocking
+			     * and calling reset_context.  
+			     */
+			    
+			    CBLK_TRACE_LOG_FILE(1,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
+						cmdi->lba,(uint64_t)cmd,cmdi->retry_count,cmdi->status);
+			    
+			    cmdi->status = ETIMEDOUT;
+			    
+			    *cmd_complete = TRUE;
+			    
+			    errno = ETIMEDOUT;
+			    
+			    rc = -1;
+			}
 		    }
 		}
 
@@ -2926,6 +2944,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
     int poll_ret; 
     CFLASH_POLL_LIST_INIT(chunk,(chunk->path[path_index]),poll_list);
 #endif /* _SKIP_POLL_CALL */
+    cflash_block_check_os_status_t reset_status = CFLSH_BLK_CHK_OS_NO_RESET;
 
 
     
@@ -3297,7 +3316,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 
 #else
 
-	    CBLK_GET_INTRPT_STATUS(chunk,path_index);
+	    CBLK_GET_INTRPT_STATUS(chunk,path_index,&reset_status);
 
 		
 #endif /* _COMMON_INTRPT_THREAD */
@@ -3351,7 +3370,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 	     * for polling, then get interrupt status
 	     */
 	    
-	    CBLK_GET_INTRPT_STATUS(chunk,path_index);
+	    CBLK_GET_INTRPT_STATUS(chunk,path_index,&reset_status);
 	}
 	if (cmd) {
 
@@ -3408,29 +3427,40 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 
 		    
 		    
-			CBLK_GET_INTRPT_STATUS(chunk,path_index);
-
-			cblk_notify_mc_err(chunk,cmdi->path_index,0x301,0,
-					   CFLSH_BLK_NOTIFY_AFU_ERROR,cmd);
-
-			CFLASH_BLOCK_UNLOCK(chunk->lock);
-
-			cblk_reset_context_shared_afu(chunk->path[path_index]->afu);
+			CBLK_GET_INTRPT_STATUS(chunk,path_index,&reset_status);
+			
+			
+			if (reset_status == CFLSH_BLK_CHK_OS_NO_RESET) {
+			    
+			    /*
+			     * If we did not detect UE, when reading the 
+			     * interrupt status registers. So instead do
+			     * context reset.
+			     */
+			    
+			    cblk_notify_mc_err(chunk,cmdi->path_index,0x301,0,
+					       CFLSH_BLK_NOTIFY_AFU_ERROR,cmd);
+			    
+			    CFLASH_BLOCK_UNLOCK(chunk->lock);
+			    
+			    cblk_reset_context_shared_afu(chunk->path[path_index]->afu);
+			    
+			    CFLASH_BLOCK_LOCK(chunk->lock);
+			    
+			    if ((cmdi->retry_count >= CAPI_CMD_MAX_RETRIES) ||
+				(cmdi->status)) {
 				
-			CFLASH_BLOCK_LOCK(chunk->lock);
+				CBLK_TRACE_LOG_FILE(1,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
+						    cmdi->lba,(uint64_t)cmd,cmdi->retry_count,cmdi->status);
+				
+				*cmd_complete = TRUE;
+				
+				cmdi->status = ETIMEDOUT;
+				errno = ETIMEDOUT;
+				
+				rc = -1;
+			    }
 
-			if ((cmdi->retry_count >= CAPI_CMD_MAX_RETRIES) ||
-			    (cmdi->status)) {
-
-			    CBLK_TRACE_LOG_FILE(1,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
-						cmdi->lba,(uint64_t)cmd,cmdi->retry_count,cmdi->status);
-
-			    *cmd_complete = TRUE;
-
-			    cmdi->status = ETIMEDOUT;
-			    errno = ETIMEDOUT;
-
-			    rc = -1;
 			}
 		    }
 

@@ -69,7 +69,7 @@ DEPS=$(addprefix $(TESTDIR)/, $(run_cflash_fvt_OFILES:.o=.dep))
 
 CFLAGS += -g -Wno-unused-result\
           -D__FVT__\
-          -I$(ROOTPATH)/${GTESTINC}
+          -I${GTESTINC}
 CXXFLAGS+=$(CFLAGS)
 
 include ${ROOTPATH}/config.mk

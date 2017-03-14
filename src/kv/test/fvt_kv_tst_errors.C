@@ -91,7 +91,7 @@ TEST(FVT_KV_ERROR_PATH, BAD_PARMS_ark_set)
     ARK_CREATE;
     EXPECT_EQ(EINVAL, ark_set(NULL, 5,    s,    5,    s, &res));
     EXPECT_EQ(EINVAL, ark_set(ark,  5,    NULL, 5,    s, &res));
-    EXPECT_EQ(ENOMEM, ark_set(ark,  5,    s,   -1,    s, &res));
+    EXPECT_EQ(EINVAL, ark_set(ark,  5,    s,   -1,    s, &res));
     EXPECT_EQ(EINVAL, ark_set(ark,  5,    s,    5, NULL, &res));
     EXPECT_EQ(EINVAL, ark_set(ark,  5,    s,    5,    s, NULL));
     ARK_DELETE;
@@ -305,9 +305,11 @@ TEST(FVT_KV_ERROR_PATH, BAD_PARMS_ark_fork)
 TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
 {
     ARK     *ark  = NULL;
-    char     s[]  = {"12345678"};
+    char     s[130000];
     uint32_t klen = 8;
     int64_t  res  = 0;
+
+    GEN_VAL(s, 0, 9000);
 
     KV_SET_INJECT_ACTIVE;
 
@@ -324,16 +326,16 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
     EXPECT_EQ(ENOMEM, ark_set(ark, klen, s, klen, s, &res));
     EXPECT_EQ(ENOENT, ark_get(ark, klen, s, klen, s, 0, &res));
 
-    EXPECT_EQ(0, ark_set(ark, klen, s, klen, s, &res));
-    EXPECT_EQ(0, ark_get(ark, klen, s, klen, s, 0, &res));
-
+    EXPECT_EQ(0, ark_set(ark, 9000, s, klen, s, &res));
+    EXPECT_EQ(0, ark_get(ark, 9000, s, klen, s, 0, &res));
+#if 0
     errno=0; KV_INJECT_ALLOC_ERROR;
-    EXPECT_EQ(ENOMEM, ark_del(ark, klen, s, &res));
-    EXPECT_EQ(0,      ark_del(ark, klen, s, &res));
-
+    EXPECT_EQ(ENOMEM, ark_del(ark, 9000, s, &res));
+    EXPECT_EQ(0,      ark_del(ark, 9000, s, &res));
+#endif
     errno=0; ++async_io; async_err = ENOMEM;
     KV_INJECT_ALLOC_ERROR;
-    EXPECT_EQ(0, ark_set_async_cb(ark, klen, s, klen, s,
+    EXPECT_EQ(0, ark_set_async_cb(ark, 13000, s, klen, s,
                                   kv_tst_io_errors_cb, 0xfee1));
     while (async_io) usleep(50000);
 
@@ -351,7 +353,7 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
     EXPECT_EQ(0, ark_get_async_cb(ark, klen, s, klen, s, 0,
                                   kv_tst_io_errors_cb, 0xfee4));
     while (async_io) usleep(50000);
-
+#if 0
     errno=0; ++async_io; async_err = ENOMEM;
     KV_INJECT_ALLOC_ERROR;
     EXPECT_EQ(0, ark_del_async_cb(ark, klen, s,
@@ -362,7 +364,7 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
     EXPECT_EQ(0, ark_del_async_cb(ark, klen, s,
                                   kv_tst_io_errors_cb, 0xfee6));
     while (async_io) usleep(50000);
-
+#endif
     errno=0; KV_SET_INJECT_INACTIVE;
     ASSERT_EQ(0, ark_delete(ark));
 }
@@ -528,7 +530,7 @@ TEST(FVT_KV_ERROR_PATH, RANDOM_ERRORS)
     printf("\n"); fflush(stdout);
 
     Sync_ark_io ark_io_job;
-    ark_io_job.run_multi_arks(ctxts, ops, vlen, secs);
+    ark_io_job.run_multi_arks(ctxts, ops, vlen, secs, 0);
 
     kv_async_wait_jobs();
 }

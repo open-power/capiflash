@@ -95,6 +95,8 @@ uint32_t devN        = 0;
 uint32_t DEBUG       = 0;
 uint32_t plun        = 0;
 int      ids[_4K];
+uint8_t  *p_rbuf   = NULL;
+uint8_t  *p_wbuf   = NULL;
 
 pthread_mutex_t lock;
 
@@ -155,8 +157,6 @@ void run_sync(void *p)
     int       cid    = ids[tid % devN];
     int       rc     = 0;
     int       flags  = 0;
-    uint8_t  *rbuf   = NULL;
-    uint8_t  *wbuf   = NULL;
     uint32_t  lba    = 0;
     uint64_t  stime  = 0;
     uint64_t  sticks = 0;
@@ -165,28 +165,11 @@ void run_sync(void *p)
     uint32_t  WR     = 0;
     uint32_t  cnt    = 0;
     uint64_t  lat    = 0;
+    uint8_t  *rbuf   = p_rbuf+(tid*_4K);
+    uint8_t  *wbuf   = p_wbuf+(tid*_4K);
 
     if (!seq) {lba   = lrand48() % nblks;}
     if (plun) {flags = CBLK_GROUP_ID;}
-
-    /*--------------------------------------------------------------------------
-     * alloc data for IO
-     *------------------------------------------------------------------------*/
-    if ((rc=posix_memalign((void**)&rbuf, _4K, _4K*nblocks)))
-    {
-        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                _4K*nblocks, rc);
-        cblk_term(NULL,0);
-        exit(0);
-    }
-    if ((rc=posix_memalign((void**)&wbuf, _4K, _4K*nblocks)))
-    {
-        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                _4K*nblocks, rc);
-        cblk_term(NULL,0);
-        exit(0);
-    }
-    memset(wbuf,0x79,_4K*nblocks);
 
     debug("start tid:%d cid:%d\n", tid, cid);
 
@@ -217,7 +200,7 @@ void run_sync(void *p)
         {
             debug("write cid:%d lba:%d\n", cid, lba);
             sticks=getticks();
-            rc = cblk_write(cid, rbuf, lba, nblocks,flags);
+            rc = cblk_write(cid, wbuf, lba, nblocks,flags);
             if (nblocks == rc)
             {
                 cticks=getticks()-sticks;
@@ -234,8 +217,6 @@ void run_sync(void *p)
     tcnt    += cnt;
     pthread_mutex_unlock(&lock);
 
-    free(rbuf);
-    free(wbuf);
     debug("exiting cid:%d\n", cid);
     return;
 }
@@ -329,6 +310,25 @@ int main(int argc, char **argv)
     pths = (devN*QD > _8K) ? _8K : devN*QD;
 
     /*--------------------------------------------------------------------------
+     * alloc data for IO
+     *------------------------------------------------------------------------*/
+    if ((rc=posix_memalign((void**)&p_rbuf, 128, _4K*nblocks*pths)))
+    {
+        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
+                _4K*nblocks, rc);
+        cblk_term(NULL,0);
+        exit(0);
+    }
+    if ((rc=posix_memalign((void**)&p_wbuf, 128, _4K*nblocks*pths)))
+    {
+        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
+                _4K*nblocks, rc);
+        cblk_term(NULL,0);
+        exit(0);
+    }
+    memset(p_wbuf,0x79,_4K*nblocks*QD);
+
+    /*--------------------------------------------------------------------------
      * open device and set lun size
      *------------------------------------------------------------------------*/
     rc = cblk_init(NULL,0);
@@ -386,6 +386,7 @@ int main(int argc, char **argv)
 
     for (i=0; i<pths; i++)
     {
+        debug("pthread_create %d\n", i);
         pthread_create(pth+i, NULL, fp, (void*)(uint64_t)i);
     }
     for (i=0; i<pths; i++)

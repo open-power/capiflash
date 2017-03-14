@@ -87,7 +87,7 @@ void usage(void)
 ** \details
 **   reset an NVMe port, or set it offline
 *******************************************************************************/
-int nvme_link(uint32_t port, uint32_t state)
+void nvme_link(uint32_t port, uint32_t state)
 {
     uint64_t base = port ? FC_PORT1_OFFSET : FC_PORT0_OFFSET;
 
@@ -124,7 +124,7 @@ int nvme_link(uint32_t port, uint32_t state)
         addr=base+FC_STATUS;
         cxl_mmio_read64(afu, addr, &r);
         debug("rd FC_STATUS: 0x%016lx\n", r);
-        if (r&nvme_port_online != nvme_port_online)
+        if ((r&nvme_port_online) != nvme_port_online)
         {
             printf("NVMe port online failed\n");
             rc=-6;

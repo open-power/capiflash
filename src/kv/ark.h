@@ -36,14 +36,94 @@
 #include "sq.h"
 #include "ut.h"
 
+/* if on, then KV_TRC_HEX traces up to 64 bytes of key/value */
+#define DUMP_KV 0
+
+#define ARK_VERBOSE_SIZE_DEF   (1024*1024)
+#define ARK_VERBOSE_BSIZE_DEF         4096
+#define ARK_VERBOSE_HASH_DEF    (200*1024)
+#define ARK_VERBOSE_VLIMIT_DEF         256
+#define ARK_VERBOSE_BLKBITS_DEF         34
+#define ARK_VERBOSE_GROW_DEF          1024
+#define ARK_VERBOSE_NTHRDS_DEF           1
+
+#define ARK_MAX_TASK_OPS               100
+#define ARK_MIN_NASYNCS   ARK_MAX_TASK_OPS
+#define ARK_MAX_NASYNCS                512
+#define ARK_MIN_BASYNCS               1024
+
+#define ARK_MIN_BT                       1
+#define ARK_MIN_VB                       1
+#define ARK_MIN_AIOL                    10
+#define ARK_MAX_HTC_BLKS                 1
+
 #define PT_OFF  0
 #define PT_IDLE 1
 #define PT_RUN  2
 #define PT_EXIT 3
 
-#define ARK_VERB_FN "/root/kv_verbosity"
+#define ARK_VERB_FN "/tmp/kv_verbosity"
 
-#define DIVCEIL(_x, _y)  (((_x) / (_y)) + (((_x) % (_y)) ? 0 : 1))
+#define ARK_CLEANUP_DELAY 50
+
+#define ARK_ALIGN 128
+#define VDF_SZ    (sizeof(uint64_t))
+
+typedef struct
+{
+    void *p;
+    void *orig;
+} htc_t;
+
+#define HTC_GET(_htc, _bt, _sz) memcpy(_bt,    _htc.p, _sz)
+#define HTC_PUT(_htc, _bt, _sz) memcpy(_htc.p, _bt,    _sz)
+#define HTC_HIT(_htc, _blks)    (_htc.p && _blks<=ARK_MAX_HTC_BLKS)
+#define HTC_INUSE(_htc)         (_htc.p)
+
+#define HTC_NEW(_htc, _bt, _sz)                 \
+  do                                            \
+  {                                             \
+      _htc.orig = am_malloc(_sz+ARK_ALIGN);     \
+      if (_htc.orig)                            \
+      {                                         \
+          _htc.p = ptr_align(_htc.orig);        \
+          memcpy(_htc.p, _bt, _bt->len);        \
+      }                                         \
+  } while (0)
+
+#define HTC_FREE(_htc)      \
+  do                        \
+  {                         \
+      am_free(_htc.orig);   \
+      _htc.p    = NULL;     \
+      _htc.orig = NULL;     \
+  } while (0)
+
+/* _s - string to prepend to hex dump
+ * _p - ptr to bytes to dump
+ * _l - length in bytes to dump
+ */
+#define DUMPX(_s, _p, _l)                                                      \
+  do                                                                           \
+  {                                                                            \
+    uint32_t _ii;                                                              \
+    uint8_t *_cc=(uint8_t*)_p;                                                 \
+    printf("%s", _s);                                                          \
+    for (_ii=0; _ii<(uint32_t)((_l>64)?64:_l); _ii++){printf("%02x",_cc[_ii]);}\
+    printf("\n");                                                              \
+  } while (0)
+
+/* _num must be 4 bytes */
+#define GEN_VAL(_val,_num,_len)                                                \
+  do                                                                           \
+  {                                                                            \
+      int      _i=(int)_len-1;                                                 \
+      uint32_t _d=(uint32_t)_num;                                              \
+      uint8_t *_s=(uint8_t*)&_d;                                               \
+      uint8_t *_t=(uint8_t*)_val;                                              \
+      _d |= 0xFF000000;                                                        \
+      for (_i=_len-1; _i>=0; _i--) {*(_t++)=_s[_i%4];}                         \
+  } while (0)
 
 #define UPDATE_LAT(park, prcb, _lat)                                           \
 do                                                                             \
@@ -68,8 +148,12 @@ do                                                                             \
         park->del_opsT += 1;                                                   \
         park->del_latT += _lat;                                                \
     }                                                                          \
-}                                                                              \
-while (0);
+} while (0);
+
+extern uint32_t do_mem_fastpath;
+
+#define MEM_FASTPATH \
+    (do_mem_fastpath && _arkp->ea->st_type == EA_STORE_TYPE_MEMORY)
 
 // Stats to collect on number of K/V ops
 // and IOs
@@ -108,7 +192,7 @@ typedef struct p_cntr
   uint64_t p_cntr_bl_size;
   uint64_t p_cntr_bliv_offset;
   uint64_t p_cntr_bliv_size;
-  char     p_cntr_data[];  
+  char     p_cntr_data[];
 } p_cntr_t;
 
 typedef struct p_ark
@@ -130,28 +214,12 @@ typedef struct p_ark
   int      ntasks;
 } P_ARK_t;
 
-#define ARK_VERBOSE_SIZE_DEF  1048576
-#define ARK_VERBOSE_BSIZE_DEF    4096
-#define ARK_VERBOSE_HASH_DEF   200000
-#define ARK_VERBOSE_VLIMIT_DEF    256
-#define ARK_VERBOSE_BLKBITS_DEF    34
-#define ARK_VERBOSE_GROW_DEF     1024
-#define ARK_VERBOSE_NTHRDS_DEF      1
-
-#define ARK_MIN_NASYNCS           128
-#define ARK_MAX_NASYNCS           512
-#define ARK_MIN_BASYNCS          1024
-#define ARK_MAX_TASK_OPS           64
-#define ARK_MAX_QUEUE            8196
-#define ARK_MIN_VB                256
-
 typedef struct _ark
 {
   uint64_t flags;
   uint32_t persload;
   uint64_t pers_cs_bytes;    // amt required for only the Control Structures
   uint64_t pers_max_blocks;  // amt required to persist a full ark
-  char    *persdata;
   uint64_t size;
   uint64_t bsize;
   uint64_t bcount;
@@ -162,7 +230,6 @@ typedef struct _ark
   uint64_t blkused;
   uint64_t nasyncs;
   uint64_t ntasks;
-  uint32_t holds;
 
   int nthrds;
   int basyncs;
@@ -175,9 +242,15 @@ typedef struct _ark
 
   pthread_mutex_t mainmutex;
 
-  hash_t          *ht; // hashtable
-  BL              *bl; // block lists
-  struct _ea      *ea; // in memory store space
+  hash_t          *ht;      // hashtable
+  htc_t           *htc;     // array of ptrs to hash cache elements
+  void            *htc_orig;
+  uint64_t         htc_hits;// # of hash cache hits
+  uint64_t         htc_disc;// # of hash cache discards
+  uint32_t         htcN;    // # of hash cache
+
+  BL              *bl;      // block lists
+  struct _ea      *ea;      // in memory store space
   struct _rcb     *rcbs;
   struct _tcb     *tcbs;
   struct _iocb    *iocbs;
@@ -186,6 +259,7 @@ typedef struct _ark
   struct _tags    *rtags;
   struct _tags    *ttags;
 
+  uint32_t         min_bt;  // min size of inb/oub
   uint32_t         issT;
   uint64_t         QDT;
   uint64_t         QDN;
@@ -199,7 +273,6 @@ typedef struct _ark
   uint64_t         del_opsT;
   double           ns_per_tick;
   ark_stats_t      pers_stats;
-
 } _ARK;
 
 #define _ARC _ARK
@@ -207,14 +280,14 @@ typedef struct _ark
 typedef struct _scb
 {
   pthread_t        pooltid;
-  queue_t         *rqueue;
-  queue_t         *tqueue;
+  queue_t         *reqQ;
+  queue_t         *cmpQ;
+  queue_t         *taskQ;
   queue_t         *scheduleQ;
   queue_t         *harvestQ;
   int32_t          poolstate;
   int32_t          rlast;
   int32_t          dogc;
-  uint32_t         holds;
   ark_stats_t      poolstats;
   pthread_mutex_t  poolmutex;
   pthread_cond_t   poolcond;
@@ -244,7 +317,8 @@ typedef struct _pt
 
 
 // operation 
-typedef struct _rcb {
+typedef struct _rcb
+{
   _ARK       *ark;
   uint64_t    klen;
   void       *key;
@@ -262,7 +336,6 @@ typedef struct _rcb {
   uint64_t    rnum;
   int32_t     rtag;
   int32_t     ttag;
-  int32_t     hold;
   int32_t     sthrd;
   int32_t     cmd;
   int32_t     stat;
@@ -291,7 +364,7 @@ typedef struct _ari
 #define ARK_IO_HARVEST       4
 #define ARK_IO_DONE          5
 #define ARK_SET_START        6
-#define ARK_SET_PROCESS_INB  7
+#define ARK_SET_PROCESS      7
 #define ARK_SET_WRITE        8
 #define ARK_SET_FINISH       9
 #define ARK_GET_START        10
@@ -314,12 +387,6 @@ typedef struct _tcb
   int32_t         state;
   int32_t         sthrd;
 
-  uint64_t        inblen;
-  uint64_t        oublen;
-  BTP             inb;      // input bucket space - aligned
-  BTP             inb_orig; // input bucket space
-  BTP             oub;      // output bucket space - aligned
-  BTP             oub_orig; // output bucket space
   uint64_t        vbsize;
   uint8_t        *vb;       // value buffer space - aligned
   uint8_t        *vb_orig;  // value buffer space
@@ -331,20 +398,32 @@ typedef struct _tcb
   int64_t         nblk;
   uint64_t        blen;
   uint64_t        old_btsize;
+  int64_t         bytes;
   int64_t         vvlen;
   int32_t         new_key;
+
+  uint64_t        pad;
+  uint64_t        inb_size; // input  bucket space after alignment
+  uint64_t        oub_size; // output bucket space after alignment
+  BTP             inb_orig; // input  bucket space
+  BTP             oub_orig; // output bucket space
+  BTP             inb;      // input  bucket space - aligned
+  BTP             oub;      // output bucket space - aligned
+
+  ark_io_list_t  *aiol;
+  uint64_t        aiolN;
 } tcb_t;
 
 typedef struct _iocb
 {
   struct _ea     *ea; // in memory store space
-  int32_t         op;
   void           *addr;
   ark_io_list_t  *blist;
   uint64_t        nblks;
   uint64_t        start;
   uint64_t        new_start;
   uint64_t        cnt;
+  int32_t         op;
   int32_t         tag;
   uint32_t        issT;
   uint32_t        cmpT;
@@ -370,7 +449,40 @@ int ark_next_async_tag(_ARK *ark, uint64_t klen, void *key, _ARI *_arip, int32_t
 
 int ark_anyreturn(_ARK *ark, int *tag, int64_t *res);
 
-void ea_async_io_init(_ARK *_arkp, int op, void *addr, ark_io_list_t *blist,
-                      int64_t nblks, int start, int32_t tag, int32_t io_done);
+/**
+ *******************************************************************************
+ * \brief
+ *  init iocb struct for IO
+ ******************************************************************************/
+static __inline__ void ea_async_io_init(_ARK          *_arkp,
+                                        int            op,
+                                        void          *addr,
+                                        ark_io_list_t *blist,
+                                        int64_t        nblks,
+                                        int            start,
+                                        int32_t        tag,
+                                        int32_t        io_done)
+{
+  iocb_t *iocbp  = &(_arkp->iocbs[tag]);
+  tcb_t  *iotcbp = &(_arkp->tcbs[tag]);
+
+  iotcbp->state   = ARK_IO_SCHEDULE;
+  iocbp->ea       = _arkp->ea;
+  iocbp->op       = op;
+  iocbp->addr     = addr;
+  iocbp->blist    = blist;
+  iocbp->nblks    = nblks;
+  iocbp->start    = start;
+  iocbp->issT     = 0;
+  iocbp->cmpT     = 0;
+  iocbp->rd       = 0;
+  iocbp->lat      = 0;
+  iocbp->hmissN   = 0;
+  iocbp->aflags   = CBLK_GROUP_RAID0;
+  iocbp->io_error = 0;
+  iocbp->io_done  = io_done;
+  iocbp->tag      = tag;
+  return;
+}
 
 #endif

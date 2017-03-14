@@ -28,23 +28,25 @@ use strict;
 use warnings;
 use Fcntl;
 use Fcntl ':seek';
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 
 #-------------------------------------------------------------------------------
 # Variables
 my $type="0601";
 my $prthelp=0;
 my $single;
+my $superpipe;
 my $verbose;
 
 sub usage()
 {
   print "\n";
   print "Usage: cflash_devices.pl [-t type] [-s] [-v]                  \n";
-  print "    -t or --type   : Type to list                             \n";
-  print "    -s or --single : Output is a single line                  \n";
-  print "    -v             : verbose for debug                        \n";
-  print "    -h or --help   : Help - Print this message                \n";
+  print "    -t or --type      : Type to list                             \n";
+  print "    -s or --single    : Output is a single line                  \n";
+  print "    -S or --superpipe : only list devs in superpipe mode         \n";
+  print "    -v                : verbose for debug                        \n";
+  print "    -h or --help      : Help - Print this message                \n";
   print "\n  ex: cflash_devices.pl -t 0601                           \n\n";
   exit 0;
 }
@@ -52,10 +54,11 @@ sub usage()
 #-------------------------------------------------------------------------------
 # Parse Options
 #-------------------------------------------------------------------------------
-if (! GetOptions ("t|type=s"   => \$type,
-                  "s"          => \$single,
-                  "v"          => \$verbose,
-                  "h|help!"    => \$prthelp
+if (! GetOptions ("t|type=s"    => \$type,
+                  "s|single"    => \$single,
+                  "S|superpipe" => \$superpipe,
+                  "v"           => \$verbose,
+                  "h|help!"     => \$prthelp
                   ))
 {
   usage();
@@ -78,6 +81,9 @@ if ($prthelp) {usage();}
 select(STDOUT);
 $| = 1;
 
+#check sudo permissions
+(`id -u` == 0) || die "Run with sudo permissions\n";
+
 #-------------------------------------------------------------------------------
 # get wwids matching $type
 #-------------------------------------------------------------------------------
@@ -98,7 +104,7 @@ for my $adap (@cards)
   my @Acard=split / /, $adap;
   my $card=$Acard[0];
   chomp $card;
-  my @D=`ls -d /sys/devices/*/*/$card/*/*/host*/target*:*:*/*:*:*:*/scsi_generic/*|awk -F/ '{print \$13}' 2>/dev/null`;
+  my @D=`ls -d /sys/devices/*/*/$card/*/*/host*/target*:*:*/*:*:*:*/scsi_generic/* 2>/dev/null|awk -F/ '{print \$13}'`;
   for $dev (@D)
   {
     chomp $dev;
@@ -115,9 +121,12 @@ for $dev (@devs)
   #only use devs in superpipe mode
   my $out=`grep $wwid /opt/ibm/capikv/etc/sioluntable.ini|grep =1`;
   chomp $out;
-  $verbose && print "$dev $out\n";
-  push(@list,$wwid);
-  $lookup{$dev} = $wwid;
+  $verbose && print "$dev superpipe($out)\n";
+  if (!$superpipe || ($superpipe && $out =~ "=1"))
+  {
+    push(@list,$wwid);
+    $lookup{$dev} = $wwid;
+  }
 }
 
 @wwids = sort @list;

@@ -205,7 +205,18 @@ uint64_t  cblk_get_sisl_cmd_room(cflsh_chunk_t *chunk, int path_index)
 
 	cmd_room = chunk->path[path_index]->afu->cmd_room;
 
-	if (chunk->path[path_index]->afu->cmd_room) {
+	if (chunk->path[path_index]->afu->cmd_room == 0xffffffffffffffffLL) {
+
+
+	    /*
+	     * This is not valid. Set it to zero. The caller will
+	     * handle UE recovery. So leave cmd_room set to this
+	     * value.
+	     */
+
+	    chunk->path[path_index]->afu->cmd_room = 0;
+
+	} else if (chunk->path[path_index]->afu->cmd_room) {
 
 	    chunk->path[path_index]->afu->cmd_room--;
 	}
@@ -407,6 +418,9 @@ int  cblk_sisl_adap_sq_setup(cflsh_chunk_t *chunk, int path_index)
 
     }
 
+    CBLK_TRACE_LOG_FILE(9,"setup SQ register afu->p_sq_start = %p",
+		       chunk->path[path_index]->afu->p_sq_start);
+
     CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_SQ_START_EA_OFFSET, 
 		      (uint64_t)chunk->path[path_index]->afu->p_sq_start);
     
@@ -477,7 +491,7 @@ int  cblk_sisl_adap_setup(cflsh_chunk_t *chunk, int path_index)
 
 #endif /* AIX */
 
-
+    CBLK_TRACE_LOG_FILE(9,"setup RRQ registers");
 
     CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_RRQ0_START_EA_OFFSET, 
 		      (uint64_t)chunk->path[path_index]->afu->p_hrrq_start);
@@ -961,6 +975,9 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	 * afu lock.
 	 */
 	
+	CBLK_TRACE_LOG_FILE(9,"AFU is halted , for chunk->index = %d, chunk->dev_name = %s, path_index = %d,chunk->flags = 0x%x,afu->flags = 0x%x",
+			    chunk->index,chunk->dev_name,path_index,chunk->flags,chunk->path[path_index]->afu->flags);
+
 	CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
 
 	CFLASH_BLOCK_UNLOCK(chunk->lock);
@@ -991,6 +1008,8 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 		return -1;
 	    }
 
+	    CBLK_TRACE_LOG_FILE(9,"AFU is resuming , for chunk->index = %d, chunk->dev_name = %s, path_index = %d,chunk->flags = 0x%x,afu->flags = 0x%x",
+			    chunk->index,chunk->dev_name,path_index,chunk->flags,chunk->path[path_index]->afu->flags);
 	}
    
 	/*
@@ -1135,16 +1154,16 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_SQ_TAIL_EA_OFFSET, 
 			  (uint64_t)chunk->path[path_index]->afu->p_sq_curr);
 
-	CBLK_TRACE_LOG_FILE(9,"SQ mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, afu = %p", 
+	CBLK_TRACE_LOG_FILE(9,"SQ mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, chunk->flags = 0x%x, afu = %p", 
 			    (uint64_t)chunk->path[path_index]->afu->mmio_mmap,path_index,
-			    ioarcb,chunk->path[path_index]->afu);
+			    ioarcb,chunk->flags, chunk->path[path_index]->afu);
 
     } else {
 	CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET, (uint64_t)ioarcb);
 
-	CBLK_TRACE_LOG_FILE(9,"mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, afu = %p", 
+	CBLK_TRACE_LOG_FILE(9,"mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, chunk->flags = 0x%x, afu = %p", 
 			    (uint64_t)chunk->path[path_index]->afu->mmio_mmap,path_index,
-			    ioarcb,chunk->path[path_index]->afu);
+			    ioarcb,chunk->flags, chunk->path[path_index]->afu);
 
     }
 #endif /* !_USE_LIB_AFU */

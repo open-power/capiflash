@@ -25,16 +25,19 @@
 UNAME=$(shell uname)
 
 ROOTPATH = ../../..
+
 ifeq ($(UNAME),AIX)
-all: aixcxlflash aixcxlflash-test aixcxlflashimage
+codepkg: aixcxlflash aixcxlflash-test aixcxlflashimage
 else
 
 #only add tarpkgs if we are in the DISABLED dir path
 DISABLED=$(shell pwd|grep DISABLED)
 ifeq "$(DISABLED)" ""
-all: cxlflash cxlflash-test cxlflashimage
+codepkg: cxlflash cxlflashimage
+testpkg: cxlflash-test
 else
-all: cxlflash cxlflash-test cxlflashimage tarpkgs
+codepkg: cxlflash cxlflashimage tarpkgs
+testpkg: cxlflash-test tarpkgs
 endif
 
 endif

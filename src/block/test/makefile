@@ -38,16 +38,10 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
 LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflsh_block -lm
 
-BTESTS=blockio blocklistio blockplistio blocksio blockr0io blockr0sio
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
-
 # AIX only
 ifeq ($(UNAME),AIX)
 LINKLIBS +=-lpthreads
 BITS=64
-
-BTESTS64    = $(addsuffix 64, ${BTESTS})
-BIN_TESTS64 = $(addprefix ${TESTDIR}/, ${BTESTS64})
 
 #Linux only
 else
@@ -71,7 +65,7 @@ CFLAGS += \
    -g -D__FVT__ -Wno-unused-result \
    -I$(ROOTPATH)/src/block \
    -I$(ROOTPATH)/src/include \
-   -I${GTESTINC} \
+   -I${GTESTINC}
 
 CXXFLAGS+=$(CFLAGS)
 
@@ -81,11 +75,11 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 unit:
 ifeq ($(BLOCK_FILEMODE_ENABLED), 1)
-	-$(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_FM_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_FM_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else ifeq ($(BLOCK_MC_ENABLED), 1)
-	-$(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_UMC_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_UMC_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else ifeq ($(BLOCK_KERNEL_MC_ENABLED), 1)
-	-$(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else
-	-$(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 endif

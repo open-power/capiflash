@@ -81,9 +81,6 @@ if ($prthelp) {usage();}
 select(STDOUT);
 $| = 1;
 
-#check sudo permissions
-(`id -u` == 0) || die "Run with sudo permissions\n";
-
 #-------------------------------------------------------------------------------
 # get wwids matching $type
 #-------------------------------------------------------------------------------
@@ -116,6 +113,7 @@ for my $adap (@cards)
 for $dev (@devs)
 {
   my $tmp=`/lib/udev/scsi_id -d /dev/$dev --page=0x83 --whitelisted`;
+  ($? != 0) && die "You do not have enough permission\n";
   $wwid=substr $tmp,1;
   chomp $wwid;
   #only use devs in superpipe mode

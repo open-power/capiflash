@@ -54,7 +54,19 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   int32_t           rc          = 0;
   uint8_t           *new_vb     = NULL;
 
-  scbp->poolstats.ops_cnt+=1;
+  scbp->poolstats.ops_cnt += 1;
+  tcbp->bytes              = 0;
+
+  if (DUMP_KV)
+  {
+      char buf[256]={0};
+      sprintf(buf, "HEX_KEY tid:%d ttag:%3d pos:%6ld",
+              tid, tcbp->ttag, rcbp->pos);
+      KV_TRC_HEX(pAT, 4, buf, rcbp->key, rcbp->klen);
+      sprintf(buf, "HEX_VAL tid:%d ttag:%3d pos:%6ld",
+              tid, tcbp->ttag, rcbp->pos);
+      KV_TRC_HEX(pAT, 4, buf, rcbp->val, rcbp->vlen);
+  }
 
   // Let's check to see if the value is larger than
   // what can fit inline in the bucket.
@@ -75,8 +87,9 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       // the size in a new variable and wait to make sure
       // the realloc succeeds before updating vbsize
       new_vbsize = tcbp->vblkcnt * _arkp->bsize;
-      KV_TRC_DBG(pAT, "VB_REALLOC tid:%d ttag:%3d vlen:%5ld new_vbsize:%ld",
-                 tid, tcbp->ttag, rcbp->vlen, new_vbsize);
+      KV_TRC_DBG(pAT, "VB_REALLOC tid:%d ttag:%3d pos:%6ld vlen:%5ld "
+                      "new_vbsize:%ld",
+                      tid, tcbp->ttag, rcbp->pos, rcbp->vlen, new_vbsize);
       new_vb = am_realloc(tcbp->vb_orig, new_vbsize + ARK_ALIGN);
       if (NULL == new_vb)
       {
@@ -91,15 +104,11 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->vb      = ptr_align(tcbp->vb_orig);
     }
     memcpy(tcbp->vb, rcbp->val, rcbp->vlen);
-    if (DUMP_KV)
-    {
-        KV_TRC_HEX(pAT, 9, "set_key ", rcbp->key, rcbp->klen);
-        KV_TRC_HEX(pAT, 9, "set_val ", rcbp->val, rcbp->vlen);
-    }
   }
   else
   {
-    KV_TRC(pAT, "INLINE  tid:%d ttag:%3d vlen:%5ld", tid,tcbp->ttag,rcbp->vlen);
+    KV_TRC(pAT, "INLINE  tid:%d ttag:%3d pos:%6ld vlen:%5ld",
+           tid, tcbp->ttag, rcbp->pos, rcbp->vlen);
     tcbp->vval = (uint8_t *)rcbp->val;
   }
 
@@ -107,11 +116,12 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   if (0 == tcbp->hblk)
   {
-    KV_TRC(pAT, "1ST_KEY tid:%d ttag:%3d", tid, tcbp->ttag);
+    KV_TRC(pAT, "1ST_KEY tid:%d ttag:%3d pos:%6ld", tid, tcbp->ttag, rcbp->pos);
     // This is going to be the first key in this bucket.
     // Initialize the bucket data/header
     bt_clear(tcbp->inb);
     bt_clear(tcbp->oub);
+    tcbp->bytes += tcbp->oub->len; // add BT header if its the first
 
     // Call to the next phase of the SET command since
     // we do not need to read in the hash bucket since
@@ -129,8 +139,8 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
     if (tcbp->blen*_arkp->bsize > tcbp->inb_size)
     {
-        KV_TRC(pAT, "RE_INB  tid:%d ttag:%3d old:%ld new:%ld",
-               tid, tcbp->ttag, tcbp->inb_size, tcbp->blen*_arkp->bsize);
+        KV_TRC_DBG(pAT, "RE_INB  tid:%d ttag:%3d pos:%6ld old:%ld new:%ld",
+           tid, tcbp->ttag, rcbp->pos, tcbp->inb_size, tcbp->blen*_arkp->bsize);
         rc = bt_realloc(&tcbp->inb, &tcbp->inb_orig, tcbp->blen*_arkp->bsize);
         if (0 != rc)
         {
@@ -148,7 +158,7 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
     if (HTC_HIT(_arkp->htc[rcbp->pos], tcbp->blen))
     {
-        KV_TRC(pAT, "HTC_HIT tid:%d ttag:%3d pos:%ld",tid,tcbp->ttag,rcbp->pos);
+        KV_TRC(pAT,"HTC_HIT tid:%d ttag:%3d pos:%6ld",tid,tcbp->ttag,rcbp->pos);
         ++_arkp->htc_hits;
         HTC_GET(_arkp->htc[rcbp->pos], tcbp->inb, tcbp->blen*_arkp->bsize);
         ark_set_process(_arkp, tid, tcbp);
@@ -168,8 +178,8 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     }
     tcbp->aiolN = tcbp->blen;
 
-    KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d nblk:%5ld hblk:%6ld pos:%ld",
-           tid, tcbp->ttag, tcbp->nblk, tcbp->hblk, rcbp->pos);
+    KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d pos:%6ld hblk:%6ld nblks:%ld",
+           tid, tcbp->ttag, rcbp->pos, tcbp->hblk, tcbp->blen);
 
     ea_async_io_init(_arkp, ARK_EA_READ,
                      (void *)tcbp->inb, tcbp->aiol, tcbp->blen,
@@ -205,38 +215,39 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   int32_t          rc          = 0;
   uint64_t         new_btsize  = 0;
 
-  tcbp->bytes = 0;
-
   if (0 == tcbp->hblk) {tcbp->old_btsize = 0;}
   else                 {tcbp->old_btsize = tcbp->inb->len;}
 
-  KV_TRC_DBG(pAT, "INB_GET tid:%d ttag:%3d tot:%ld used:%ld",
-                  tid, tcbp->ttag, tcbp->inb_size, tcbp->old_btsize);
+  KV_TRC_DBG(pAT, "INB_GET tid:%d ttag:%3d pos:%6ld tot:%ld used:%ld",
+                  tid, tcbp->ttag, rcbp->pos, tcbp->inb_size, tcbp->old_btsize);
 
   // Let's see if we need to grow the out buffer
-  if ((exivlen=bt_get_vdf(tcbp->inb,rcbp->klen,rcbp->key,(uint8_t*)&oldvdf)) >0)
+  if ((exivlen=bt_get_vdf(tcbp->inb,rcbp->klen,rcbp->key,(uint8_t*)&oldvdf))>=0)
   {
       if (exivlen <= tcbp->inb->max) {oldvdf=0;}
       new_btsize = tcbp->inb->len -
                    (exivlen <= tcbp->inb->max ? exivlen : 0) +
                    (rcbp->vlen <= tcbp->inb->max ? rcbp->vlen : 0);
-      KV_TRC_DBG(pAT, "BT_EXI: new:%ld cur:%ld used:%ld exivlen:%ld vlen:%ld ",
-                      new_btsize, tcbp->inb_size, tcbp->inb->len, exivlen,
-                      rcbp->vlen);
+      KV_TRC_DBG(pAT, "BT_EXI: tid:%d ttag:%3d pos:%6ld new:%ld cur:%ld "
+                      "used:%ld exivlen:%ld vlen:%ld ",
+                      tid, tcbp->ttag, rcbp->pos, new_btsize, tcbp->inb_size,
+                      tcbp->inb->len, exivlen, rcbp->vlen);
   }
   else
   {
       new_btsize = tcbp->inb->len + BT_KV_LEN_SZ + rcbp->klen +
               (rcbp->vlen > tcbp->inb->max ? tcbp->inb->def : rcbp->vlen);
-      KV_TRC_DBG(pAT, "BT_ADD: new:%ld cur:%ld used:%ld kl:%ld vl:%ld",
-              new_btsize, tcbp->inb_size, tcbp->inb->len,rcbp->klen,rcbp->vlen);
+      KV_TRC_DBG(pAT, "BT_ADD: tid:%d ttag:%3d pos:%6ld new:%ld cur:%ld "
+                      "used:%ld kl:%ld vl:%ld",
+                      tid, tcbp->ttag, rcbp->pos, new_btsize, tcbp->inb_size,
+                      tcbp->inb->len,rcbp->klen,rcbp->vlen);
   }
 
   new_btsize = divceil(new_btsize, _arkp->bsize) * _arkp->bsize;
   if (new_btsize > tcbp->oub_size)
   {
-      KV_TRC_DBG(pAT, "RE_OUB  tid:%d ttag:%3d old:%ld new:%ld",
-                 tid, tcbp->ttag, tcbp->oub_size, new_btsize);
+      KV_TRC_DBG(pAT, "RE_OUB  tid:%d ttag:%3d pos:%6ld old:%ld new:%ld",
+                 tid, tcbp->ttag, rcbp->pos, tcbp->oub_size, new_btsize);
       rc = bt_realloc(&(tcbp->oub), &(tcbp->oub_orig), new_btsize);
       if (rc != 0)
       {
@@ -249,10 +260,10 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->oub_size = new_btsize;
   }
 
-  if (DUMP_KV && exivlen>0)
+  if (exivlen>0 && oldvdf)
   {
-      KV_TRC_HEX(pAT, 9, "inbkey  ", rcbp->key, rcbp->klen);
-      if (oldvdf) {KV_TRC_DBG(pAT, "inbvdf  %ld", oldvdf);}
+      KV_TRC_DBG(pAT, "INB_VDF tid:%d ttag:%3d pos:%6ld oldvdf:%ld",
+                 tid, tcbp->ttag, rcbp->pos, oldvdf);
   }
 
   /* if replacing an existing key/value, evaluate drop/take and vdf */
@@ -264,10 +275,9 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       if (exivlen > tcbp->inb->max && rcbp->vlen <= tcbp->inb->max)
       {
           ark_drop_pool(_arkp, &(scbp->poolstats), oldvdf);
-          tcbp->bytes -= exivlen;
-          KV_TRC_DBG(pAT, "REP_VAL tid:%d ttag:%3d exivl:%ld vl:%ld pos:%ld "
-                          "bytes:%ld VDF>INLINE",
-                  tid, tcbp->ttag, exivlen, rcbp->vlen, rcbp->pos, tcbp->bytes);
+          KV_TRC(pAT, "REP_VAL tid:%d ttag:%3d pos:%6ld exivl:%ld vl:%ld "
+                      "VDF>INLINE",
+                  tid, tcbp->ttag, rcbp->pos, exivlen, rcbp->vlen);
       }
       /* replace inline with vdf */
       else if (exivlen <= tcbp->inb->max && rcbp->vlen > tcbp->inb->max)
@@ -278,29 +288,30 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
             rcbp->res   = -1;
             rcbp->rc    = ENOSPC;
             tcbp->state = ARK_CMD_DONE;
-            KV_TRC_FFDC(pAT, "ark_take_pool %ld failed, ttag = %d rc = %d",
-                        tcbp->vblkcnt, tcbp->ttag,rc);
+            KV_TRC_FFDC(pAT, "FFDC    tid:%d ttag:%3d pos:%6ld ark_take_pool "
+                             "%ld failed rc = %d",
+                             tid, tcbp->ttag, rcbp->pos, tcbp->vblkcnt, rc);
             goto ark_set_process_err;
           }
           tcbp->vval   = (uint8_t *)&(tcbp->vblk);
-          tcbp->bytes += rcbp->vlen;
-          KV_TRC_DBG(pAT, "REP_VAL tid:%d ttag:%3d exivl:%ld vl:%ld pos:%ld "
-                          "bytes:%ld INLINE>VDF",
-                  tid, tcbp->ttag, exivlen, rcbp->vlen, rcbp->pos, tcbp->bytes);
+          KV_TRC(pAT, "REP_VAL tid:%d ttag:%3d pos:%6ld exivl:%ld vl:%ld "
+                      "INLINE>VDF",
+                  tid, tcbp->ttag, rcbp->pos, exivlen, rcbp->vlen);
       }
       /* replace inline with inline */
       else if (exivlen <= tcbp->inb->max && rcbp->vlen <= tcbp->inb->max)
       {
-          KV_TRC_DBG(pAT, "REP_VAL tid:%d ttag:%3d exivl:%ld vl:%ld pos:%ld "
-                          "REP_INLINE",
-                     tid, tcbp->ttag, exivlen, rcbp->vlen, rcbp->pos);
+          KV_TRC(pAT, "REP_VAL tid:%d ttag:%3d pos:%6ld exivl:%ld vl:%ld "
+                      "REP_INLINE",
+                      tid, tcbp->ttag, rcbp->pos, exivlen, rcbp->vlen);
       }
       /* reuse the existing vdf */
       else if (tcbp->vblkcnt == oldvblkcnt)
       {
-          KV_TRC_DBG(pAT, "REP_VAL tid:%d ttag:%3d vdf:%ld old:%ld new:%ld "
-                          "pos:%ld REUSE_VDF",
-                 tid, tcbp->ttag, oldvdf, oldvblkcnt, tcbp->vblkcnt, rcbp->pos);
+          KV_TRC(pAT, "REP_VAL tid:%d ttag:%3d pos:%6ld vdf:%ld old:%ld new:%ld"
+                      " pos:%6ld REUSE_VDF",
+                      tid, tcbp->ttag, rcbp->pos, oldvdf, oldvblkcnt,
+                      tcbp->vblkcnt, rcbp->pos);
           tcbp->vval   = (uint8_t*)&oldvdf;
           tcbp->vblk   = oldvdf;
       }
@@ -314,15 +325,16 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
             rcbp->res   = -1;
             rcbp->rc    = ENOSPC;
             tcbp->state = ARK_CMD_DONE;
-            KV_TRC_FFDC(pAT, "ark_take_pool %ld failed, ttag = %d rc = %d",
-                        tcbp->vblkcnt, tcbp->ttag,rc);
+            KV_TRC_FFDC(pAT, "FFDC    tid:%d ttag:%3d pos:%6ld ark_take_pool "
+                             "%ld failed rc = %d",
+                             tid, tcbp->ttag, rcbp->pos, tcbp->vblkcnt, rc);
             goto ark_set_process_err;
           }
           tcbp->vval   = (uint8_t *)&(tcbp->vblk);
-          tcbp->bytes += rcbp->vlen - exivlen;
-          KV_TRC_DBG(pAT, "REP_VAL tid:%d ttag:%3d old:%ld new:%ld pos:%ld "
-                          "bytes:%ld REPLACE_VDF",
-            tid, tcbp->ttag, oldvblkcnt, tcbp->vblkcnt, rcbp->pos, tcbp->bytes);
+          KV_TRC(pAT, "REP_VAL tid:%d ttag:%3d pos:%6ld old:%ld new:%ld "
+                      "pos:%6ld REPLACE_VDF",
+                      tid, tcbp->ttag, rcbp->pos, oldvblkcnt, tcbp->vblkcnt,
+                      rcbp->pos);
       }
   }
   /* new key with non-inlined value */
@@ -334,36 +346,65 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
         rcbp->res   = -1;
         rcbp->rc    = ENOSPC;
         tcbp->state = ARK_CMD_DONE;
-        KV_TRC_FFDC(pAT, "ark_take_pool %ld failed, ttag = %d rc = %d",
-                    tcbp->vblkcnt, tcbp->ttag,rc);
+        KV_TRC_FFDC(pAT, "FFDC    tid:%d ttag:%3d pos:%6ld ark_take_pool "
+                         "%ld failed rc = %d",
+                         tid, tcbp->ttag, rcbp->pos, tcbp->vblkcnt, rc);
         goto ark_set_process_err;
       }
       tcbp->vval   = (uint8_t *)&(tcbp->vblk);
-      tcbp->bytes += rcbp->vlen;
-      KV_TRC_DBG(pAT, "NEW_VAL tid:%d ttag:%3d vl:%ld bytes:%ld",
-                 tid, tcbp->ttag, rcbp->vlen, tcbp->bytes);
+      KV_TRC(pAT, "NEW_VAL tid:%d ttag:%3d pos:%6ld vl:%ld",
+             tid, tcbp->ttag, rcbp->pos, rcbp->vlen);
   }
 
   // modify bucket
   tcbp->new_key = bt_set(tcbp->oub, tcbp->inb, rcbp->klen, rcbp->key,
                          rcbp->vlen, tcbp->vval, &oldvdf, &oldvlen);
 
-  if (DUMP_KV)
+  /* calc byte difference for poolstats.byte_cnt */
+  if (exivlen>0)
   {
-      KV_TRC_HEX(pAT, 9, "oubkey  ", rcbp->key, rcbp->klen);
-      KV_TRC_HEX(pAT, 9, "value   ", rcbp->val, rcbp->vlen);
+      /* replace vdf with inline */
+      if (exivlen > tcbp->inb->max && rcbp->vlen <= tcbp->inb->max)
+      {
+          tcbp->bytes += tcbp->oub->len - tcbp->inb->len - exivlen;
+      }
+      /* replace inline with vdf */
+      else if (exivlen <= tcbp->inb->max && rcbp->vlen > tcbp->inb->max)
+      {
+          tcbp->bytes += tcbp->oub->len - tcbp->inb->len + rcbp->vlen;
+      }
+      /* replace inline with inline */
+      else if (exivlen <= tcbp->inb->max && rcbp->vlen <= tcbp->inb->max)
+      {
+          tcbp->bytes += tcbp->oub->len - tcbp->inb->len;
+      }
+      /* replace vdf with vdf */
+      else
+      {
+          tcbp->bytes += rcbp->vlen - exivlen;
+      }
+  }
+  /* new key with non-inlined value */
+  else if (rcbp->vlen > tcbp->inb->max)
+  {
+      tcbp->bytes += tcbp->oub->len - tcbp->inb->len + rcbp->vlen;
+  }
+  /* new key with inlined value */
+  else
+  {
+      tcbp->bytes += tcbp->oub->len - tcbp->inb->len;
   }
 
-  tcbp->bytes += tcbp->oub->len - tcbp->old_btsize;
-
-  KV_TRC_DBG(pAT, "OUB_SET tid:%d ttag:%3d tot:%ld used:%ld ovdf:%ld ovl:%ld "
-                  "bytes:%ld",
-                  tid, tcbp->ttag, tcbp->oub_size, tcbp->oub->len, oldvdf,
-                  oldvlen, tcbp->bytes);
+  KV_TRC_DBG(pAT, "OUB_SET tid:%d ttag:%3d pos:%6ld tot:%ld used:%ld ovdf:%ld "
+                  "ovl:%ld bytes:%ld",
+                  tid, tcbp->ttag, rcbp->pos, tcbp->oub_size, tcbp->oub->len,
+                  oldvdf, oldvlen, tcbp->bytes);
 
   if (tcbp->new_key < 0)
   {
-    KV_TRC_FFDC(pAT, "bt_set failed ttag:%3d", tcbp->ttag);
+      KV_TRC_FFDC(pAT, "FFDC    tid:%d ttag:%3d pos:%6ld bt_set failed "
+                       "%ld failed rc = %d",
+                       tid, tcbp->ttag, rcbp->pos, tcbp->vblkcnt,tcbp->new_key);
     rcbp->rc    = ENOMEM;
     rcbp->res   = -1;
     tcbp->state = ARK_CMD_DONE;
@@ -373,8 +414,8 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   /* if value is not inlined */
   if (rcbp->vlen > tcbp->oub->max)
   {
-    KV_TRC(pAT, "WR_VAL  tid:%d ttag:%3d vlen:%5ld vblkcnt:%ld",
-           tid, tcbp->ttag, rcbp->vlen, tcbp->vblkcnt);
+    KV_TRC(pAT, "WR_VAL  tid:%d ttag:%3d pos:%6ld vlen:%5ld vblkcnt:%ld",
+           tid, tcbp->ttag, rcbp->pos, rcbp->vlen, tcbp->vblkcnt);
 
     if (bl_rechain(&tcbp->aiol,_arkp->bl,tcbp->vblk,tcbp->vblkcnt, tcbp->aiolN))
     {
@@ -459,8 +500,8 @@ void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
   }
   tcbp->aiolN = blkcnt;
 
-  KV_TRC(pAT, "WR_KEY  tid:%d ttag:%3d klen:%5ld nblk:%ld blkcnt:%ld",
-         tid, tcbp->ttag, rcbp->klen, tcbp->nblk, blkcnt);
+  KV_TRC(pAT, "WR_KEY  tid:%d ttag:%3d pos:%6ld klen:%5ld nblk:%ld blkcnt:%ld",
+         tid, tcbp->ttag, rcbp->pos, rcbp->klen, tcbp->nblk, blkcnt);
 
   scbp->poolstats.io_cnt += blkcnt;
 
@@ -526,8 +567,10 @@ void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
   rcbp->res                 = rcbp->vlen;
   tcbp->state               = ARK_CMD_DONE;
 
-  KV_TRC(pAT, "HASHSET tid:%d ttag:%3d nblk:%5ld pos:%6ld bytes:%ld byte_cnt:%ld",
-         tid, tcbp->ttag, tcbp->nblk, rcbp->pos, tcbp->bytes, scbp->poolstats.byte_cnt);
+  KV_TRC(pAT, "HASHSET tid:%d ttag:%3d pos:%6ld nblk:%5ld bytes:%ld "
+              "byte_cnt:%ld",
+              tid, tcbp->ttag, rcbp->pos, tcbp->nblk, tcbp->bytes,
+              scbp->poolstats.byte_cnt);
 
   return;
 }

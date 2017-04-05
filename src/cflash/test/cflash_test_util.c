@@ -515,6 +515,7 @@ void clear_waiting_cmds(struct ctx *p_ctx)
 void ctx_rrq_intr(struct ctx *p_ctx)
 {
     struct afu_cmd *p_cmd;
+    struct sisl_ioasa *p_ioasa;
     // process however many RRQ entries that are read
     debug_2("%d: In ctx_rrq_intr():  toggle_bit= 0X%llx p_ctx->toggle=%x\n",
             pid, ( CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & SISL_RESP_HANDLE_T_BIT), p_ctx->toggle);
@@ -529,8 +530,20 @@ void ctx_rrq_intr(struct ctx *p_ctx)
         debug_2("%d: toggle_bit = 0X%llx p_ctx->toggle=0X%x\n",
                 pid, (CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & SISL_RESP_HANDLE_T_BIT), p_ctx->toggle);
 
-        p_cmd = (struct afu_cmd*)
-                (CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
+        if ( p_ctx->sq_mode_flag == TRUE )
+        {
+          /* In SQ enabled mode, p_ctx->p_hrrq_curr is having the address of ioasa;
+             We have to find the base address of p_cmd command */
+           p_ioasa = (struct sisl_ioasa *)
+                     (CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
+           p_cmd  =  (struct afu_cmd *) ((char *)p_ioasa - ((size_t)&(((struct afu_cmd *)0)->sa)));
+        }
+        else
+        {
+           p_cmd = (struct afu_cmd*)
+                   (CFLASH_READ_ADDR_CHK_UE(p_ctx->p_hrrq_curr) & (~SISL_RESP_HANDLE_T_BIT));
+        }
+
         debug_2("%d:cmd_address(IOARCB)=%p\n",pid,p_cmd);
 
         pthread_mutex_lock(&p_cmd->mutex);

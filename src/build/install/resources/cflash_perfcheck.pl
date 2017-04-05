@@ -34,7 +34,7 @@ use Time::HiRes qw(usleep);
 
 my @devs;
 my $devstr="";
-my $secs;
+my $secs=10;
 my $prthelp="";
 my $all;
 my $verbose="";

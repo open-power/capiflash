@@ -5541,7 +5541,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 
 	    CFLASH_BLOCK_UNLOCK(chunk->lock);
 
-	    CBLK_TRACE_LOG_FILE(1,"reset context failed for path_index of %d, status = %d",path->path_index,status);
+	    CBLK_TRACE_LOG_FILE(1,"reset context failed for path_index of %d, status = %d",path_index,status);
 
 	    if (status != CFLSH_BLK_CHK_OS_NO_RESET) {
 

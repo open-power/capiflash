@@ -58,8 +58,8 @@ BT *bt_new(uint64_t dlen, uint64_t vmx, uint64_t vdf, BT **bt_orig)
     bt->max  = vmx;
     bt->def  = vdf;
   }
-  KV_TRC(pAT, "BT_NEW: bt:%p bt_orig:%p len:%ld tot:%ld vmx:%ld vdf:%ld",
-          bt, *bt_orig, bt->len, dlen, vmx, vdf);
+  KV_TRC_DBG(pAT, "BT_NEW: bt:%p bt_orig:%p len:%ld tot:%ld vmx:%ld vdf:%ld",
+             bt, *bt_orig, bt->len, dlen, vmx, vdf);
   return bt;
 }
 
@@ -84,7 +84,7 @@ int bt_realloc(BT **bt, BT **bt_orig, uint64_t size)
       btret       = (BT*)ptr_align(btnew);
       *bt_orig    = btnew;
       *bt         = btret;
-      KV_TRC(pAT, "REALLOC bt:%p orig:%p size:%ld", *bt, *bt_orig, size);
+      KV_TRC_DBG(pAT, "REALLOC bt:%p orig:%p size:%ld", *bt, *bt_orig, size);
   }
 
   return rc;
@@ -356,14 +356,12 @@ int64_t bt_find(BT *bti, uint64_t kl, uint8_t *k, uint8_t **v)
 int64_t bt_get(BT *bti, uint64_t kl, uint8_t *k, uint8_t *v)
 {
   uint8_t *pv  = NULL;
-  uint64_t pvl = 0;
+  uint64_t pvl = -1;
 
   if ((pvl=bt_find(bti, kl, k, &pv)) > 0)
   {
       if (v && pv) {memcpy(v, pv, (pvl>bti->max ? bti->def : pvl));}
   }
-  else
-      {errno = EINVAL;}
 
   return pvl;
 }
@@ -375,7 +373,7 @@ int64_t bt_get(BT *bti, uint64_t kl, uint8_t *k, uint8_t *v)
 int64_t bt_get_vdf(BT *bti, uint64_t kl, uint8_t *k, uint8_t *vdf)
 {
   uint8_t *pv  = NULL;
-  uint64_t pvl = 0;
+  uint64_t pvl = -1;
 
   if ((pvl=bt_find(bti, kl, k, &pv)) > 0)
   {

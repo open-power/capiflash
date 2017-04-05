@@ -25,8 +25,6 @@
 
 UNAME=$(shell uname)
 
-#NO_O3 = yes
-
 ROOTPATH = ../../..
 USER_DIR = .
 SUBDIRS  =
@@ -41,18 +39,8 @@ LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 VPATH   += ..
 
-BTESTS=_tst_ark _tst_kv_utils _tst_persist test_perf \
-       res_pers run_kv_async run_kv_sync run_kv_async_multi \
-       run_kv_benchmark run_kv_persist kv_perf
-
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
-
-_tst_ark_OFILES         = tst_ark.o
-_tst_kv_utils_OFILES    = kv_utils_db.o fvt_trace.o
-_tst_persist_OFILES     = tst_persist.o
-
 GTESTS     = \
- fvt_kv_tst_ark fvt_kv_fixme1 \
+ fvt_kv_fixme1 \
  fvt_ark_io fvt_ark_mcio fvt_ark_mc_aio fvt_ark_perf \
  fvt_ark_perf2 fvt_ark_perf_check fvt_ark_io_inject\
  run_sync_async run_fvt_kv run_simple run_scenarios run_sync_pth run_async_cb\
@@ -65,8 +53,6 @@ GTESTS_NM_DIR  = $(addprefix $(TESTDIR)/, $(GTESTS_NO_MAIN))
 # AIX only
 ifeq ($(UNAME),AIX)
 
-BTESTS64         = $(addsuffix 64, ${BTESTS})
-BIN_TESTS64      = $(addprefix ${TESTDIR}/, ${BTESTS64})
 GTESTS64         = $(addsuffix 64, ${GTESTS})
 GTESTS64_DIR     = $(addprefix $(TESTDIR)/, $(GTESTS64))
 GTESTS64_NO_MAIN = $(addsuffix 64, ${GTESTS_NO_MAIN})
@@ -81,7 +67,6 @@ endif
 
 fvt_ark_perf_tool_OFILES = kv_utils_db.o fvt_kv_utils.o fvt_kv_utils_async_cb.o\
   fvt_kv_utils_sync_pth.o fvt_trace.o
-fvt_kv_tst_ark_OFILES = tst_ark.o
 fvt_kv_tst_persist_OFILES = kv_utils_db.o fvt_kv_utils.o fvt_trace.o
 fvt_ark_perf_OFILES   = kv_utils_db.o fvt_kv_utils.o fvt_kv_utils_async_cb.o \
   fvt_kv_utils_sync_pth.o fvt_trace.o

@@ -108,21 +108,31 @@ typedef struct
   {                                                                            \
     uint32_t _ii;                                                              \
     uint8_t *_cc=(uint8_t*)_p;                                                 \
-    printf("%s", _s);                                                          \
+    if (_s) {printf("%s", _s);}                                                \
     for (_ii=0; _ii<(uint32_t)((_l>64)?64:_l); _ii++){printf("%02x",_cc[_ii]);}\
     printf("\n");                                                              \
   } while (0)
 
-/* _num must be 4 bytes */
+#ifdef _AIX
+#define GEN_VAL_MOD for (_i=7; _i>=8-_mod; _i--) {*(_t++)=_s[_i];}
+#else
+#define GEN_VAL_MOD for (_i=0; _i<_mod; _i++) {*(_t++)=_s[_i];}
+#endif
+
+/* generate pattern based upon _num into _val */
+/* _num can be up to 64-bit value             */
 #define GEN_VAL(_val,_num,_len)                                                \
   do                                                                           \
   {                                                                            \
-      int      _i=(int)_len-1;                                                 \
-      uint32_t _d=(uint32_t)_num;                                              \
-      uint8_t *_s=(uint8_t*)&_d;                                               \
-      uint8_t *_t=(uint8_t*)_val;                                              \
-      _d |= 0xFF000000;                                                        \
-      for (_i=_len-1; _i>=0; _i--) {*(_t++)=_s[_i%4];}                         \
+      int64_t   _i   = 0;                                                      \
+      uint64_t  _d   = (uint64_t)(_num);                                       \
+      uint8_t  *_s   = (uint8_t*)&_d;                                          \
+      uint8_t  *_t   = (uint8_t*)(_val);                                       \
+      int64_t   _div = (_len)/8;                                               \
+      int64_t   _mod = (_len)%8;                                               \
+      uint64_t *_p   = (uint64_t*)(_t+_mod);                                   \
+      GEN_VAL_MOD                                                              \
+      for (_i=0; _i<_div; _i++) {*(_p++)=_d;}                                  \
   } while (0)
 
 #define UPDATE_LAT(park, prcb, _lat)                                           \

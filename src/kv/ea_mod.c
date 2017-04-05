@@ -256,11 +256,11 @@ int ea_async_io_harvest(_ARK   *_arkp,
       else
       {
           iocbp->hmissN=0;
-          KV_TRC(pAT,"IO_CMP: tid:%d ttag:%3d a_tag:%4d issT:%3d "
-                      "cmpT:%3d nblks:%3ld blkno:%5ld rd:%d lat:%d",
-                      tid, iocbp->tag, iocbp->blist[i].a_tag.tag,
-                      iocbp->issT, iocbp->cmpT, iocbp->nblks,
-                      iocbp->blist[i].blkno, iocbp->rd, iocbp->lat);
+          KV_TRC_IO(pAT,"IO_CMP: tid:%d ttag:%3d a_tag:%4d issT:%3d "
+                        "cmpT:%3d nblks:%3ld blkno:%5ld rd:%d lat:%d",
+                        tid, iocbp->tag, iocbp->blist[i].a_tag.tag,
+                        iocbp->issT, iocbp->cmpT, iocbp->nblks,
+                        iocbp->blist[i].blkno, iocbp->rd, iocbp->lat);
       }
 
       iocbp->blist[i].a_tag.tag = -1; // mark as harvested
@@ -292,8 +292,8 @@ int ea_async_io_harvest(_ARK   *_arkp,
   {
       rc=TRUE;
       iotcbp->state = iocbp->io_done;
-      KV_TRC_IO(pAT, "IO_END: tid:%d ttag:%3d SUCCESS cmpT:%d",
-                tid, iocbp->tag, iocbp->cmpT);
+      KV_TRC(pAT, "IO_END: tid:%d ttag:%3d SUCCESS cmpT:%d",
+             tid, iocbp->tag, iocbp->cmpT);
   }
   // if more blks need a harvest
   else if (iocbp->cmpT < iocbp->issT)

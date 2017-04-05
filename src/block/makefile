@@ -85,6 +85,6 @@ endif
 LINKLIBS = -l${MODULE}
 LIBPATHS = -L${ROOTPATH}/img
 
-SUBDIRS =  test.d
+SUBDIRS =  bin.d test.d
 
 include ${ROOTPATH}/config.mk

@@ -208,7 +208,7 @@ do                                                                             \
     _delta_time.time    = _log_time.time    - _pKT->last_time.time;            \
     _delta_time.millitm = _log_time.millitm - _pKT->last_time.millitm;         \
                                                                                \
-    fprintf(_pKT->logfp,"  %-6d %-6d %3d.%03d %3d.%05d ",                      \
+    fprintf(_pKT->logfp,"  %-6d %-6d %3d.%05d %3d.%05d ",                      \
             pid,                                                               \
             _pKT->log_number,                                                  \
             (int)_log_time.time,                                               \
@@ -237,14 +237,14 @@ do                                                                             \
         {                                                                      \
             if (_pKT && _pKT->verbosity >= _v)                                 \
             {                                                                  \
-                char     buf[512]={0};                                         \
-                uint8_t *hxd=(uint8_t*)_hx;                                    \
-                char    *pb=buf+strlen(_s);                                    \
+                char     _buf[512]={0};                                        \
+                uint8_t *_hxd=(uint8_t*)_hx;                                   \
+                char    *_pb=_buf+strlen(_s)+2;                                \
                 uint32_t i;                                                    \
-                sprintf(buf, "%s", (char*)_s);                                 \
+                sprintf(_buf, "%s (", (char*)_s);                              \
                 for (i=0; i<(uint32_t)(_l>64?64:_l); i++)                      \
-                    {sprintf(pb+(i*2), "%02x",hxd[i]);}                        \
-                KV_TRACE_LOG_DATA(_pKT, "%s", buf);                            \
+                    {sprintf(_pb+(i*2), "%02x",_hxd[i]);}                      \
+                KV_TRACE_LOG_DATA(_pKT, "%s)", _buf);                          \
             }                                                                  \
         } while (0)
 

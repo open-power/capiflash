@@ -47,6 +47,7 @@ _LIBSRCDIR=${IMGDIR}
 _TESTSRCDIR=${TESTDIR}
 _DOCSRCDIR=${ROOTPATH}/obj/doxygen
 _RESOURCEDIR=${ROOTPATH}/src/build/install/resources
+_AFUDIR=${ROOTPATH}/src/afu
 
 _BIN_DIR=${INSTALL_ROOT}/bin
 _ETC_DIR=${INSTALL_ROOT}/etc
@@ -66,14 +67,26 @@ _UDEV_RULES_DIR=${PREFIX}/lib/udev/rules.d
 IMAGE="${_RESOURCEDIR}/corsa*"
 IMAGEH="${_RESOURCEDIR}/1410*"
 
-all:
+ifeq ($(UNAME),AIX)
+.PHONY: aixinstall
+aixinstall:
 	rm -rf ${INSTALL_ROOT}
-	rm -rf ${TEST_ROOT}
 	rm -rf ${AFU_ROOT}
+	rm -rf ${TEST_ROOT}
 	${MAKE} cflash cflash-test cflashimage
+else
+codeinstall:
+	rm -rf ${INSTALL_ROOT}
+	rm -rf ${AFU_ROOT}
+	rm -rf ${TEST_ROOT}
+	${MAKE} cflash cflashimage
+
+testinstall:
+	rm -rf ${TEST_ROOT}
+	${MAKE} cflash-test
+endif
 
 LIC_FILES := $(notdir $(shell ls ${_RESOURCEDIR}/license/*.txt 2>/dev/null))
-
 ${LIC_FILES}:
 	@mkdir -p ${_LIC_DIR}
 ifeq ($(UNAME),AIX)
@@ -82,7 +95,14 @@ else
 	${INSTALL} -m 644 ${_RESOURCEDIR}/license/$@ ${_LIC_DIR}
 endif
 
-cflash: ${LIC_FILES}
+MAN3_FILES := afu.h.3 cxl.h.3 capiblock.h.3 libcxl.h.3 arkdb.h.3 ark.h.3 cflash_tools_user.h.3
+${MAN3_FILES}:
+	@mkdir -p ${_MAN_DIR}
+	@if [[ -e ${_DOCSRCDIR}/man/man3/$@ ]]; \
+    then echo ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR};\
+              ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR}; fi
+
+cflash: ${LIC_FILES} ${MAN3_FILES}
 	@mkdir -p ${_BIN_DIR}
 	@mkdir -p ${_ETC_DIR}
 	@mkdir -p ${_LIB_DIR}
@@ -109,10 +129,6 @@ endif
 
 	@#Bins
 ifeq ($(UNAME),AIX)
-	${INSTALL} ${_TESTSRCDIR}/asyncstress ${_BIN_DIR}
-	${INSTALL} ${_TESTSRCDIR}/_tst_ark ${_BIN_DIR}
-	${INSTALL} ${_TESTSRCDIR}/asyncstress64 ${_BIN_DIR}
-	${INSTALL} ${_TESTSRCDIR}/_tst_ark64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blockio64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blocksio64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blockr0io64 ${_BIN_DIR}
@@ -136,8 +152,6 @@ else
 	${INSTALL} -s ${PGMDIR}/cxlfd ${_BIN_DIR}
 	${INSTALL} -s ${PGMDIR}/cxlflashutil ${_BIN_DIR}
 	${INSTALL} -s ${PGMDIR}/provtool ${_BIN_DIR}
-	${INSTALL} -s ${_TESTSRCDIR}/asyncstress ${_BIN_DIR}
-	${INSTALL} -s ${_TESTSRCDIR}/_tst_ark ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blockio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blocksio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blockr0io ${_BIN_DIR}
@@ -186,19 +200,19 @@ endif
 
 	@#Sample Code
 ifeq ($(UNAME),AIX)
-	${INSTALL} ${ROOTPATH}/src/block/test/blockio.c ${_EXAMPLES_DIR}
-	${INSTALL} ${ROOTPATH}/src/block/test/blocklistio.c ${_EXAMPLES_DIR}
-	${INSTALL} ${ROOTPATH}/src/block/test/blockplistio.c ${_EXAMPLES_DIR}
-	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_async.c ${_EXAMPLES_DIR}
-	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_sync.c ${_EXAMPLES_DIR}
-	${INSTALL} ${ROOTPATH}/src/kv/test/run_kv_persist.c ${_EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/block/bin/blockio.c ${_EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/block/bin/blocklistio.c ${_EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/block/bin/blockplistio.c ${_EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_async.c ${_EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_sync.c ${_EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_persist.c ${_EXAMPLES_DIR}
 else
-	${INSTALL} -m 644 ${ROOTPATH}/src/block/test/blockio.c ${_EXAMPLES_DIR}
-	${INSTALL} -m 644 ${ROOTPATH}/src/block/test/blocklistio.c ${_EXAMPLES_DIR}
-	${INSTALL} -m 644 ${ROOTPATH}/src/block/test/blockplistio.c ${_EXAMPLES_DIR}
-	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_async.c ${_EXAMPLES_DIR}
-	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_sync.c ${_EXAMPLES_DIR}
-	${INSTALL} -m 644 ${ROOTPATH}/src/kv/test/run_kv_persist.c ${_EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/block/bin/blockio.c ${_EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/block/bin/blocklistio.c ${_EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/block/bin/blockplistio.c ${_EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_async.c ${_EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_sync.c ${_EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_persist.c ${_EXAMPLES_DIR}
 
 	@#SystemD Daemons
 	${INSTALL} -m 644 ${_RESOURCEDIR}/cxlfd.service ${_SYSTEMD_DIR}
@@ -211,17 +225,12 @@ endif
 	echo "${GITREVISION}" > ${INSTALL_ROOT}/version.txt
 
 
-MAN3_FILES := afu.h.3 cxl.h.3 capiblock.h.3 libcxl.h.3 arkdb.h.3 ark.h.3 cflash_tools_user.h.3
-${MAN3_FILES}:
-	@mkdir -p ${_MAN_DIR}
-	@if [[ -e ${_DOCSRCDIR}/man/man3/$@ ]]; \
-    then echo ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR};\
-              ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR}; fi
-
-cflash-test: ${MAN3_FILES}
+cflash-test:
 	@#TEST ONLY CONTENT - DO NOT SHIP
 	@mkdir -p ${_TEST_DIR}
 	@mkdir -p ${_TEST_DATA_DIR}
+	${INSTALL} ${_TESTSRCDIR}/asyncstress ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/_tst_ark ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blk_test ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/pvtestauto ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/pblkread ${_TEST_DIR}
@@ -238,7 +247,6 @@ cflash-test: ${MAN3_FILES}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf2 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_check ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_tool ${_TEST_DIR}
-	${INSTALL} ${_TESTSRCDIR}/fvt_kv_tst_ark ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/run_ioppts ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${_TEST_DIR}
@@ -247,6 +255,8 @@ cflash-test: ${MAN3_FILES}
 
 
 ifeq ($(UNAME),AIX)
+	${INSTALL} ${_TESTSRCDIR}/asyncstress64 ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/_tst_ark64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blk_test64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/pvtestauto64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/pblkread64 ${_TEST_DIR}
@@ -262,9 +272,6 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_check64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_tool64 ${_TEST_DIR}
-	${INSTALL} ${_TESTSRCDIR}/fvt_kv_tst_ark64 ${_TEST_DIR}
-	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${_TEST_DIR}
-	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${_TEST_DIR}
 else
 	${INSTALL} ${_RESOURCEDIR}/cflash_inject.pl ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst.sh ${_TEST_DIR}
@@ -294,8 +301,8 @@ cflashimage: ${FW_FILES}
 	@mkdir -p ${_AFU_IMAGES_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc ${AFU_ROOT}
 ifneq ($(UNAME),AIX)
-	${INSTALL} ${ROOTPATH}/src/test/vpd/surelock_vpd2rbf.pl ${AFU_ROOT}
-	${INSTALL} ${ROOTPATH}/src/test/vpd/vpd_FlashGT.csv ${AFU_ROOT}
+	${INSTALL} ${_AFUDIR}/surelock_vpd2rbf.pl ${AFU_ROOT}
+	${INSTALL} ${_AFUDIR}/vpd_FlashGT.csv ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_dump ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_status ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/flashgt_temp ${AFU_ROOT}

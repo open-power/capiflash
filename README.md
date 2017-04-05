@@ -58,7 +58,24 @@ As a developer, to get started:
 3. select a customrc file (see below)
 4. source env.bash
 5. make cleanall #remove all previous build artifacts
-6. make          #build the code
+6. make          #build the code, excluding the test code
+
+```
+The Test software package relies on Google Test. For more information, see src/test/framework/README.md
+
+Example of acquiring the test framework:
+pushd src/test/framework
+git clone git@github.com:google/googletest.git
+popd
+OR
+apt-get install libgtest-dev
+
+```
+Build Targets:
+make cleanall    #remove all previous build artifacts
+make             #build the code, excluding test code
+make test        #build only the test code
+make buildall    #build the code, including the test code
 
 #### customrc - Targeting a specific platform or tuning
 
@@ -91,27 +108,18 @@ Example on a POWER8 Little-endian system:
 ln -s customrc.p8elblkkermc customrc
 source env.bash
 make cleanall
-make
+make buildall
 ```
 ulimit -n 5000; FVT_DEV=/dev/sgX LD_LIBRARY_PATH=.../capiflash/img .../capiflash/obj/tests/run_fvt
 ```
 
 #### Test File IO
 
-The software package relies on Google Test. For more information, see src/test/framework/README.md
-
-Example of acquiring the test framework and running tests in file mode:
+Example on a POWER8 Little-endian system:
 ```
-pushd src/test/framework
-git clone git@github.com:google/googletest.git
-popd
-OR
-apt-get install libgtest-dev
-...
 ln -s customrc.p8el customrc
 source env.bash
 make cleanall
-make
+make buildall
 ```
 ulimit -n 5000; LD_LIBRARY_PATH=.../capiflash/img .../capiflash/obj/tests/run_fvt  #run the tests - note that a 1GB file is created in /tmp
-

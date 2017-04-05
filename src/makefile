@@ -29,7 +29,7 @@ ROOTPATH = ..
 
 #common is built first to satisfy dependencies elsewhere. We likely need to support
 #different makefile passes for exported libs vs regular programs, libs, and shared libs.
-SUBDIRS = lib.d common.d block.d usfs.d kv.d test.d
+SUBDIRS = lib.d common.d afu.d block.d usfs.d kv.d test.d
 ifneq ($(TARGET_PLATFORM),x86_64)
 SUBDIRS += build.d cflash.d provisioning.d
 endif
@@ -50,10 +50,5 @@ TESTCASE_MODULES = cxxtest testerrl testdevicefw testsyslib \
                    testpnor testi2c testfsi testvfs testhwas
 
 RELOCATABLE_IMAGE_LDFLAGS = -pie --export-dynamic
-
-test: MKTESTSDIR
-
-MKTESTSDIR:
-	@-mkdir -p $(ROOTPATH)/obj/tests
 
 include ${ROOTPATH}/config.mk

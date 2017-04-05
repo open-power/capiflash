@@ -96,6 +96,7 @@ my $cfgfile = "";                        # RBF File Name
 my $vpd = "";
 my $parm_verbose=1;
 my $verbose;
+my $force;
 
 my $ADDR_REG = 0x920;                    # Flash Address Configuration Register
 my $SIZE_REG = 0x924;                    # Flash Size Configuration Register
@@ -263,7 +264,7 @@ sub write_file_to_flash
     my $hdat      = unpack("N",$dat);
     my $img_devid = sprintf("%x", $hdat);
 
-    if ($img_devid eq $cfg_devid)
+    if (($force && $cfg_devid eq "10140477") || $img_devid eq $cfg_devid)
     {
         ($_verbose==2) && printf("    Image has header for 0x%08x\n", $hdat);
         sysseek(IN, 0, SEEK_SET);
@@ -526,6 +527,7 @@ if (! GetOptions ("f=s"        => \$filename,
                   "l"          => \$list,
                   "t|target=s" => \$target,
                   "h|help!"    => \$prthelp,
+                  "force"      => \$force,
                   "v"          => \$verbose
                   ))
 {

@@ -53,6 +53,14 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   scbp->poolstats.ops_cnt+=1;
 
+  if (DUMP_KV)
+  {
+      char buf[256]={0};
+      sprintf(buf, "HEX_KEY tid:%d ttag:%3d pos:%6ld",
+              tid, tcbp->ttag, rcbp->pos);
+      KV_TRC_HEX(pAT, 4, buf, rcbp->key, rcbp->klen);
+  }
+
   // Now that we have the hash entry, get the block
   // that holds the control information for the entry.
   tcbp->hblk = HASH_LBA(HASH_GET(_arkp->ht, rcbp->pos));
@@ -62,8 +70,8 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // Set the error
   if (tcbp->hblk == 0)
   {
-    KV_TRC(pAT, "ENOENT tid:%d ttag:%3d key:%p klen:%ld pos:%ld",
-                 tid, tcbp->ttag, rcbp->key, rcbp->klen, rcbp->pos);
+    KV_TRC(pAT, "ENOENT  tid:%d ttag:%3d pos:%6ld key:%p klen:%ld",
+                 tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen);
     rcbp->res   = -1;
     rcbp->rc    = ENOENT;
     tcbp->state = ARK_CMD_DONE;
@@ -78,8 +86,9 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   if (tcbp->blen*_arkp->bsize > tcbp->inb_size)
   {
-      KV_TRC(pAT, "RE_INB  tid:%d ttag:%3d old:%ld new:%ld",
-             tid, tcbp->ttag, tcbp->inb_size, tcbp->blen*_arkp->bsize);
+      KV_TRC_DBG(pAT, "RE_INB  tid:%d ttag:%3d pos:%6ld old:%ld new:%ld",
+                 tid, tcbp->ttag, rcbp->pos, tcbp->inb_size,
+                 tcbp->blen*_arkp->bsize);
       rc = bt_realloc(&(tcbp->inb), &(tcbp->inb_orig), tcbp->blen*_arkp->bsize);
       if (rc != 0)
       {
@@ -97,7 +106,7 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   if (HTC_HIT(_arkp->htc[rcbp->pos], tcbp->blen))
   {
       ++_arkp->htc_hits;
-      KV_TRC(pAT, "HTC_HIT tid:%d ttag:%3d pos:%ld blen:%ld",
+      KV_TRC(pAT, "HTC_HIT tid:%d ttag:%3d pos:%6ld blen:%ld",
              tid, tcbp->ttag,rcbp->pos, tcbp->blen);
       HTC_GET(_arkp->htc[rcbp->pos], tcbp->inb, tcbp->blen*_arkp->bsize);
       ark_get_process(_arkp, tid, tcbp);
@@ -115,8 +124,8 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   }
   tcbp->aiolN = tcbp->blen;
 
-  KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d blk#:%5ld hblk:%6ld pos:%6ld nblks:%ld",
-         tid, tcbp->ttag, tcbp->aiol[0].blkno, tcbp->hblk, rcbp->pos, tcbp->blen);
+  KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d pos:%6ld blk#:%5ld hblk:%6ld nblks:%ld",
+         tid, tcbp->ttag, rcbp->pos, tcbp->aiol[0].blkno,tcbp->hblk,tcbp->blen);
 
   ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
                    tcbp->blen, 0, tcbp->ttag, ARK_GET_PROCESS);
@@ -146,18 +155,16 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
   uint64_t          vblk        = 0;
   uint64_t          new_vbsize  = 0;
 
-  KV_TRC(pAT, "INB_GET tid:%d ttag:%3d tot:%ld used:%ld",
-               tid, tcbp->ttag, tcbp->inb_size, tcbp->inb->len);
+  KV_TRC_DBG(pAT, "INB_GET tid:%d ttag:%3d pos:%6ld tot:%ld used:%ld",
+             tid, tcbp->ttag, rcbp->pos, tcbp->inb_size, tcbp->inb->len);
 
   if (!HTC_INUSE(_arkp->htc[rcbp->pos]) && tcbp->blen<=ARK_MAX_HTC_BLKS)
   {
       ++_arkp->htcN;
-      KV_TRC(pAT, "HTC_NEW tid:%d ttag:%3d pos:%ld htcN:%d blen:%ld",
+      KV_TRC(pAT, "HTC_NEW tid:%d ttag:%3d pos:%6ld htcN:%d blen:%ld",
              tid, tcbp->ttag,rcbp->pos, _arkp->htcN, tcbp->blen);
       HTC_NEW(_arkp->htc[rcbp->pos], tcbp->inb, _arkp->bsize*ARK_MAX_HTC_BLKS);
   }
-
-  if (DUMP_KV) {KV_TRC_HEX(pAT, 9, "get_key ", rcbp->key, rcbp->klen);}
 
   // Find the key position in the read in bucket
   tcbp->vvlen = bt_get(tcbp->inb, rcbp->klen, rcbp->key, tcbp->vb);
@@ -179,9 +186,9 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
       if (tcbp->vvlen > tcbp->vbsize)
       {
         new_vbsize = (tcbp->blen * _arkp->bsize);
-        KV_TRC(pAT, "RE_VB   tid:%d ttag:%3d old:%ld new:%ld",
-               tid, tcbp->ttag, tcbp->vbsize, new_vbsize);
-        new_vb     = am_realloc(tcbp->vb_orig, new_vbsize + ARK_ALIGN);
+        KV_TRC_DBG(pAT, "RE_VB   tid:%d ttag:%3d pos:%6ld old:%ld new:%ld",
+                   tid, tcbp->ttag, rcbp->pos, tcbp->vbsize, new_vbsize);
+        new_vb = am_realloc(tcbp->vb_orig, new_vbsize + ARK_ALIGN);
         if (!new_vb)
         {
           KV_TRC_FFDC(pAT, "am_realloc failed ttag:%d", tcbp->ttag);
@@ -211,8 +218,8 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
 
       scbp->poolstats.io_cnt += tcbp->blen;
 
-      KV_TRC(pAT, "RD_VAL  tid:%d ttag:%3d vlen:%5ld",
-             tid, tcbp->ttag, rcbp->vlen);
+      KV_TRC(pAT, "RD_VAL  tid:%d ttag:%3d pos:%6ld vlen:%5ld",
+             tid, tcbp->ttag, rcbp->pos, rcbp->vlen);
       // Schedule the READ of the key's value into the
       // variable buffer.
       ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->vb,
@@ -227,16 +234,16 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
     }
     else
     {
-        KV_TRC(pAT, "INLINE  tid:%d ttag:%3d vlen:%5ld",
-               tid, tcbp->ttag, rcbp->vlen);
+        KV_TRC(pAT, "INLINE  tid:%d ttag:%3d pos:%6ld vlen:%5ld",
+               tid, tcbp->ttag, rcbp->pos, rcbp->vlen);
         ark_get_finish(_arkp, tid, tcbp);
         return;
     }
   }
   else
   {
-    KV_TRC(pAT, "ENOENT tid:%d ttag:%3d key:%p klen:%ld pos:%ld",
-                tid, tcbp->ttag, rcbp->key, rcbp->klen, rcbp->pos);
+    KV_TRC(pAT, "ENOENT  tid:%d ttag:%3d pos:%6ld key:%p klen:%ld",
+                tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen);
     rcbp->rc    = ENOENT;
     rcbp->res   = -1;
     tcbp->state = ARK_CMD_DONE;
@@ -255,10 +262,15 @@ void ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
 
-  if (DUMP_KV) {KV_TRC_HEX(pAT, 9, "vb      ", tcbp->vb, rcbp->vlen);}
+  if (DUMP_KV)
+  {
+      char buf[256]={0};
+      sprintf(buf, "HEX_VAL tid:%d ttag:%3d pos:%6ld",
+              tid, tcbp->ttag, rcbp->pos);
+      KV_TRC_HEX(pAT, 4, buf, tcbp->vb, rcbp->vlen);
+  }
 
-  // We've read in the variable buffer.  Now we copy it
-  // into the passed in buffer.
+  // We've read in the variable buffer. Now we copy it to the passed in buffer
   if ((rcbp->voff + rcbp->vlen) <= tcbp->vvlen)
   {
     memcpy(rcbp->val, (tcbp->vb + rcbp->voff), rcbp->vlen);

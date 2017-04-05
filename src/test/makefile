@@ -23,14 +23,12 @@
 #
 # IBM_PROLOG_END_TAG
 
-.NOTPARALLEL:
-
 UNAME=$(shell uname)
 
 # Where to find user code.(Relative path(from the makefile) preferred for portability)
 ROOTPATH = ../..
 USER_DIR = .
-SUBDIRS  = usfs.d ffdc.d vpd.d
+SUBDIRS  = usfs.d
 TESTDIR  = ${ROOTPATH}/obj/tests
 EXPFLAGS = -bexpall
 
@@ -42,33 +40,18 @@ LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 
 
-BTESTS   = asyncstress asyncstress2
-
-ifneq ($(TARGET_PLATFORM),x86_64)
-BTESTS   += transport_test blk_test pvtestauto xlate pblkread
-OBJS      = afu.o capi_dev_nodes.o
-OBJS64    = afu.64o capi_dev_nodes.64o
-MODULE    = afu
-LINKLIBS += -lafu
-endif
-
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
-
 GTESTS = run_fvt run_fvt_utils_scripts
 GTESTS_DIR = $(addprefix $(TESTDIR)/, $(GTESTS))
 
 ifeq ($(UNAME),AIX) # AIX only
 LINKLIBS+=-lpthreads
 
-BTESTS64     = $(addsuffix 64, ${BTESTS})
-BIN_TESTS64  = $(addprefix ${TESTDIR}/, ${BTESTS64})
 GTESTS64     = $(addsuffix 64, ${GTESTS})
 GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
 BITS         = 64
 
 else #Linux only
 LINKLIBS+=-lpthread -ludev
-BTESTS  +=flashgt_temp
 endif
 
 run_fvt_OFILES = \
@@ -87,6 +70,7 @@ CFLAGS += \
    -I$(ROOTPATH)/src/kv \
    -I$(ROOTPATH)/src/kv/test \
    -I$(ROOTPATH)/src/block \
+   -I$(ROOTPATH)/src/block/test \
    -I$(ROOTPATH)/src/common \
    -I${GTESTINC} 
 CXXFLAGS+=$(CFLAGS)

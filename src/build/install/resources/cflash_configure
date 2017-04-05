@@ -159,7 +159,10 @@ then
  if [[ ! $EXISTS_LVL =~ "i  cxlflash-test" || \
         ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
  then
-   dpkg -i cxlflash-test*$CF_VER*.deb
+   if ls cxlflash*$CF_VER*.deb > /dev/null 2>&1
+   then
+     dpkg -i cxlflash-test*$CF_VER*.deb
+   fi
  fi
 
  EXISTS_LVL=$(dpkg -l|grep 'i  cxlflashimage')

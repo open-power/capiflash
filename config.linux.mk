@@ -25,29 +25,44 @@
 
 SHELL=/bin/bash
 
-ship:
-	${MAKE} -j10 dep
-	${MAKE} -j10 code_pass
+.PHONY: default
+
+default:
+	@-mkdir -p $(ROOTPATH)/obj/tests
+	${MAKE} -j10 SKIP_TEST=1 dep
+	${MAKE} -j10 SKIP_TEST=1 code_pass
+	${MAKE} -j10 SKIP_TEST=1 bin
+	@if [[ $(notdir $(PWD)) = test ]]; then ${MAKE} -j10 test; fi
+
+buildall: default
 	${MAKE} -j10 test
 
-build:
-	${MAKE} ship
+pkgs: default
 	${MAKE} docs
-	${MAKE} packaging
+	${MAKE} pkg_code
 
-tests:
-	${MAKE} ship
+all: buildall
+	${MAKE} docs
+	${MAKE} pkg_code
+	${MAKE} pkg_test
 
-run_fvt:
-	${MAKE} ship
+run_fvt: buildall
 	${MAKE} fvt
 
-run_unit:
-	${MAKE} ship
+run_unit:buildall
 	${MAKE} unit
 
+#setup package version
+ifeq (0,$(shell git rev-list HEAD 2>/dev/null| wc -l))
+GITREVISION:=2354-aaaDebian
+else
+GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
+endif
 
-ifneq ($(wildcard /usr/src/gtest),)
+ifneq ($(wildcard /usr/src/googletest/googletest),)
+  GTESTDIR=/usr/src/googletest/googletest
+  GTESTINC=/usr/include
+else ifneq ($(wildcard /usr/src/gtest),)
   GTESTDIR=/usr/src/gtest
   GTESTINC=/usr/include
 else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/gtest-1.7.0),)
@@ -142,8 +157,6 @@ ifndef NO_O3
 COMMONFLAGS += -O3
 endif
 
-#add support for the rev ID header
-GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
 CUSTOMFLAGS += -DGITREVISION='"${GITREVISION}"'
 
 #if ALLOW_WARNINGS is NOT defined, we assume we are compiling production code
@@ -278,9 +291,11 @@ ${BEAMDIR}/%.beam : %.S
 	echo Skipping ASM file.
 
 %.dep:
-	cd ${basename $@} && ${MAKE} dep
+	@if [[ A${SKIP_TEST} = A1 && ${@:.dep=} = test ]]; then echo "make: SKIP test"; else echo "make: dep"; cd ${basename $@} && ${MAKE} dep; fi
 %.d:
-	cd ${basename $@} && ${MAKE} code_pass
+	@if [[ A${SKIP_TEST} = A1 && ${@:.d=}   = test ]]; then echo "make: SKIP test"; else echo "make: code_pass"; cd ${basename $@} && ${MAKE} code_pass; fi
+%.bin:
+	@if [[ A${SKIP_TEST} = A1 && ${@:.bin=} = test ]]; then echo "make: SKIP test"; else echo "make: bin"; cd ${basename $@} && ${MAKE} bin; fi
 %.test:
 	cd ${basename $@} && ${MAKE} test
 %.fvt:
@@ -356,7 +371,8 @@ $(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(GTEST_TARGETS)
 
 dep:       ${SUBDIRS:.d=.dep} ${DEPS}
 code_pass: ${SUBDIRS} ${LIBRARIES} ${EXTRA_PARTS} ${PROGRAMS}
-test:      ${SUBDIRS:.d=.test} ${BIN_TESTS} ${GTESTS_DIR} ${GTESTS_NM_DIR}
+bin:       ${SUBDIRS:.d=.bin} ${BIN_TESTS}
+test:      ${SUBDIRS:.d=.test} ${GTESTS_DIR} ${GTESTS_NM_DIR}
 fvt:       ${SUBDIRS:.d=.fvt}
 unit:      ${SUBDIRS:.d=.unit}
 beam:      ${SUBDIRS:.d=.beamdir} ${BEAMOBJS}
@@ -365,13 +381,29 @@ docs: ${ROOTPATH}/src/build/doxygen/doxygen.conf
 	@rm -rf ${ROOTPATH}/obj/doxygen/*
 	@cd ${ROOTPATH}; doxygen src/build/doxygen/doxygen.conf
 
-install:
-	rm -rf ${PKGDIR}/install_root/*
-	cd ${ROOTPATH}/src/build/install && ${MAKE}
+bins:
+	${MAKE} -j10 bin
 
-packaging:
-	${MAKE} install
-	cd ${ROOTPATH}/src/build/packaging && ${MAKE}
+tests:
+	${MAKE} -j10 test
+
+install_code:
+	rm -rf ${PKGDIR}/install_root/*
+	cd ${ROOTPATH}/src/build/install && ${MAKE} codeinstall
+
+install_test:
+	cd ${ROOTPATH}/src/build/install && ${MAKE} testinstall
+
+pkg_code:
+	${MAKE} install_code
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} codepkg
+
+pkg_test:
+	${MAKE} install_test
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} testpkg
+
+pkg_tar:
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} tarpkgs
 
 cscope:
 	@mkdir -p ${ROOTPATH}/obj/cscope

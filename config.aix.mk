@@ -25,26 +25,25 @@
 
 SHELL=/bin/bash
 
-ship:
+.PHONY: default
+
+default:
 	${MAKE} -j10 code_pass
+	${MAKE} -j10 bin
+	@if [[ $(notdir $(PWD)) = test ]]; then ${MAKE} -j10 test; fi
+
+buildall: default
 	${MAKE} -j10 test
 
-docs:
-	@echo "WARNING: Skipping docs step"
-
-build:
-	${MAKE} ship
+pkgs: buildall
 	${MAKE} packaging
 
-tests:
-	${MAKE} ship
+all: pkgs
 
-run_fvt:
-	${MAKE} ship
+run_fvt: buildall
 	${MAKE} fvt
 
-run_unit:
-	${MAKE} ship
+run_unit: buildall
 	${MAKE} unit
 
 #generate VPATH based on these dirs.
@@ -294,6 +293,8 @@ ${BEAMDIR}/%.beam : %.S
 	cd ${basename $@} && ${MAKE} code_pass
 %.test:
 	cd ${basename $@} && ${MAKE} test
+%.bin:
+	cd ${basename $@} && ${MAKE} bin
 %.fvt:
 	cd ${basename $@} && ${MAKE} fvt
 %.unit:
@@ -424,10 +425,20 @@ ${EXTRA_PARTS} ${PROGRAMS} ${PROGRAMS64} : ${LIBRARIES} ${LIBRARIES64} ${AR_LIBR
 $(GTESTS_DIR) $(GTESTS64_DIR) $(GTESTS_NM_DIR) $(GTESTS64_NM_DIR) $(BIN_TESTS) $(BIN_TESTS64): $(GTEST_TARGETS)
 
 code_pass: ${SUBDIRS} ${LIBRARIES} ${LIBRARIES64} ${AR_LIBRARIES} ${EXTRA_PARTS} ${PROGRAMS} ${PROGRAMS64}
-test:      ${SUBDIRS:.d=.test} ${BIN_TESTS} ${BIN_TESTS64} ${GTESTS_DIR} $(GTESTS64_DIR) $(GTESTS_NM_DIR) $(GTESTS64_NM_DIR)
+bin:       ${SUBDIRS:.d=.bin} ${BIN_TESTS} ${BIN_TESTS64} 
+test:      ${SUBDIRS:.d=.test} ${GTESTS_DIR} $(GTESTS64_DIR) $(GTESTS_NM_DIR) $(GTESTS64_NM_DIR)
 fvt:       ${SUBDIRS:.d=.fvt}
 unit:      ${SUBDIRS:.d=.unit}
 beam:      ${SUBDIRS:.d=.beamdir} ${BEAMOBJS}
+
+docs:
+	@echo "WARNING: Skipping docs step"
+
+bins:
+	${MAKE} -j10 bin
+
+tests:
+	${MAKE} -j10 test
 
 install:
 	rm -rf ${PKGDIR}/install_root/*

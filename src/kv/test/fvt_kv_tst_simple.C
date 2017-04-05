@@ -44,6 +44,8 @@ extern "C"
 #include <arkdb_trace.h>
 }
 
+uint64_t seed = 0xFF00000000000000;
+
 /**
  *******************************************************************************
  * \brief
@@ -1127,10 +1129,10 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     park = (_ARK *)ark;
 
     kl=16; vl=32;
-    fvt_kv_utils_sload       (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_squery      (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_sdel        (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_squery_empty(ark, 0, kl, LEN);
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_sdel        (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
 
     /* empty */
     EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
@@ -1138,10 +1140,10 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
 
     kl=4096; vl=8000;
-    fvt_kv_utils_sload       (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_squery      (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_sdel        (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_squery_empty(ark, 0, kl, LEN);
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_sdel        (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
 
     /* empty */
     EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
@@ -1149,10 +1151,10 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
 
     kl=3745; vl=251;
-    fvt_kv_utils_sload       (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_squery      (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_sdel        (ark, 0, kl, vl, LEN);
-    fvt_kv_utils_squery_empty(ark, 0, kl, LEN);
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_sdel        (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
 
     /* empty */
     EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
@@ -1161,8 +1163,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 
     /* add k/v */
     kl=10; vl=20;
-    GEN_VAL(key, 0, kl);
-    GEN_VAL(val, 0, vl);
+    GEN_VAL(key, seed, kl);
+    GEN_VAL(val, seed, vl);
     max  = BT_SZ + kl + vl + BT_KV_LEN_SZ;
     min  = max*3/4;
     bs   = park->bsize;
@@ -1184,8 +1186,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 
     /* add k/v */
     kl=100; vl=200;
-    GEN_VAL(key, 1, kl);
-    GEN_VAL(val, 1, vl);
+    GEN_VAL(key, seed+1, kl);
+    GEN_VAL(val, seed+1, vl);
     max  = BT_SZ + kl + vl + BT_KV_LEN_SZ;
     min  = max*3/4;
     bs   = park->bsize;
@@ -1199,8 +1201,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 
     /* add 2nd k/v */
     kl=150; vl=2000;
-    GEN_VAL(key, 2, kl);
-    GEN_VAL(val, 2, vl);
+    GEN_VAL(key, seed+2, kl);
+    GEN_VAL(val, seed+2, vl);
     max += BT_SZ + kl + vl + BT_KV_LEN_SZ;
     min  = max*3/4;
     bs  += 2*park->bsize;
@@ -1214,8 +1216,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 
     /* add 3rd k/v */
     kl=200; vl=250;
-    GEN_VAL(key, 3, kl);
-    GEN_VAL(val, 3, vl);
+    GEN_VAL(key, seed+3, kl);
+    GEN_VAL(val, seed+3, vl);
     max += BT_SZ + kl + vl + BT_KV_LEN_SZ;
     min  = max*3/4;
     bs  += park->bsize;
@@ -1229,8 +1231,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 
     /* rep 2nd k/v, VDF->INLINE */
     kl=150; vl=10;
-    GEN_VAL(key, 2, kl);
-    GEN_VAL(val, 2, vl);
+    GEN_VAL(key, seed+2, kl);
+    GEN_VAL(val, seed+2, vl);
     max -= 2000 - VDF_SZ;
     max += vl;
     min  = max*3/4;
@@ -1245,8 +1247,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 
     /* rep 2nd k/v, INLINE->VDF */
     kl=150; vl=9000;
-    GEN_VAL(key, 2, kl);
-    GEN_VAL(val, 2, vl);
+    GEN_VAL(key, seed+2, kl);
+    GEN_VAL(val, seed+2, vl);
     max += vl + VDF_SZ;
     max -= 10;
     min  = max*3/4;
@@ -1261,8 +1263,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
 
     /* rep 3rd k/v INLINE->INLINE*/
     kl=200; vl=20;
-    GEN_VAL(key, 3, kl);
-    GEN_VAL(val, 3, vl);
+    GEN_VAL(key, seed+3, kl);
+    GEN_VAL(val, seed+3, vl);
     max += vl - 250;
     min  = max*3/4;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
@@ -1388,21 +1390,21 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_cleanup_task_memory)
 
     for (i=0; i<loops; i++)
     {
-        fvt_kv_utils_sload       (ark, 0, klen1, vlen1, LEN);
+        fvt_kv_utils_sload       (ark, seed, klen1, vlen1, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
-        fvt_kv_utils_squery      (ark, 0, klen1, vlen1, LEN);
+        fvt_kv_utils_squery      (ark, seed, klen1, vlen1, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
-        fvt_kv_utils_sload       (ark, 0, klen2, vlen2, LEN);
+        fvt_kv_utils_sload       (ark, seed, klen2, vlen2, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
-        fvt_kv_utils_squery      (ark, 0, klen2, vlen2, LEN);
+        fvt_kv_utils_squery      (ark, seed, klen2, vlen2, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
-        fvt_kv_utils_sdel        (ark, 0, klen2, vlen2, LEN);
+        fvt_kv_utils_sdel        (ark, seed, klen2, vlen2, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
-        fvt_kv_utils_squery_empty(ark, 0, klen2, LEN);
+        fvt_kv_utils_squery_empty(ark, seed, klen2, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
-        fvt_kv_utils_sdel        (ark, 0, klen1, vlen1, LEN);
+        fvt_kv_utils_sdel        (ark, seed, klen1, vlen1, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
-        fvt_kv_utils_squery_empty(ark, 0, klen1, LEN);
+        fvt_kv_utils_squery_empty(ark, seed, klen1, LEN);
         usleep(ARK_CLEANUP_DELAY*2000); fflush(stdout);
     }
     ARK_DELETE;

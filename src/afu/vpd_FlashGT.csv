@@ -1,0 +1,12 @@
+// VPD Key Word,Length,Type,Data,Comment,
+// Comment Line -- FlashGT,,,,,
+PN,7,A,01DH750,Adapter Part Number,
+EC,6,A,P11003,Adapter EC Level,
+FN,7,A,01DH749,IBM FRU,
+SN,8,A,17800823,Adapter Serial Number,
+V1,4,A,EJ1K,Feature Code - 2U FlashGT,
+V2,4,A,58CD,IBM CCIN,
+V3,4,A,0000,Configuration,# Use 0000
+V5,16,A,0000000000000000,WWPN 1,# Use 0000000000000000
+V6,16,A,0000000000000000,WWPN 2,# Use 0000000000000000
+// END,,,,,

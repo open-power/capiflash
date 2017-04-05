@@ -499,7 +499,7 @@ int ark_create_verbose(char *path, ARK **arkret,
 
   ark->ns_per_tick = time_per_tick(1000, 100);
 
-  KV_TRC_PERF2(pAT, "%p path(%s) size %ld bsize %ld hcount %ld "
+  KV_TRC_FFDC(pAT, "%p path(%s) size %ld bsize %ld hcount %ld "
               "nthrds %d nqueue %d basyncs %d flags:%08lx",
               ark, path, size, bsize, hcount, 
               nthrds, nqueue, basyncs, flags);

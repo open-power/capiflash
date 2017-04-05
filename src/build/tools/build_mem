@@ -112,14 +112,18 @@ fi
 
 if [[ -z $1 ]]
 then
-  $MAKE -j16
+  $MAKE
+  rc=$?
+  check_rc $rc
   __exit $?
 fi
 
 if [[ $1 = "cleanall" && -z $2 ]]
 then
   $MAKE cleanall
-  $MAKE -j16
+  $MAKE
+  rc=$?
+  check_rc $rc
   __exit $?
 fi
 
@@ -130,21 +134,25 @@ fi
 
 if [[ $1 = "tests" || $2 = "tests" || $3 = "tests" ]]
 then
-  $MAKE tests -j16
+  $MAKE buildall
   rc=$?
   check_rc $rc
 fi
 
 if [[ $1 = "run_unit" || $2 = "run_unit" || $3 = "run_unit" ]]
 then
-  $MAKE tests -j16
+  $MAKE buildall
+  rc=$?
+  check_rc $rc
   $MAKE run_unit
   __exit $?
 fi
 
 if [[ $1 = "run_fvt" || $2 = "run_fvt" || $3 = "run_fvt" ]]
 then
-  $MAKE tests -j16
+  $MAKE buildall
+  rc=$?
+  check_rc $rc
   $MAKE run_fvt
   __exit $?
 fi

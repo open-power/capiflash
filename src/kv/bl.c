@@ -58,7 +58,7 @@ int bl_init_chain_link(BL *bl)
     availN = bl->n - bl->top -1;
     if (availN <= 0)
     {
-        KV_TRC_FFDC(pAT, "no available blocks to chain n:%ld top:%ld",
+        KV_TRC_IO(pAT, "no available blocks to chain n:%ld top:%ld",
                 bl->n, bl->top);
         return rc;
     }
@@ -83,9 +83,10 @@ int bl_init_chain_link(BL *bl)
 
     rc = (bl->top == bl->n);
 
-    KV_TRC(pAT, "CHN_NEW n:%ld top:%ld count:%ld hd:%ld availN:%ld "
-                "chainN:%ld chain_exception:%ld rc:%d",
-            bl->n, bl->top, bl->count, bl->head, availN, chainN, chain_end, rc);
+    KV_TRC_DBG(pAT, "CHN_NEW n:%ld top:%ld count:%ld hd:%ld availN:%ld "
+                    "chainN:%ld chain_exception:%ld rc:%d",
+                    bl->n, bl->top, bl->count, bl->head, availN, chainN,
+                    chain_end, rc);
 exception:
     pthread_rwlock_unlock(&(bl->iv_rwlock));
     return rc;
@@ -125,8 +126,8 @@ BL *bl_new(int64_t n, int w)
     bl->w     = w;
     pthread_rwlock_init(&(bl->iv_rwlock), NULL);
 
-    KV_TRC(pAT, "BL_NEW  bl:%p list:%p n:%ld count:%ld w:%ld",
-           bl, bl->list, bl->n, bl->count, bl->w);
+    KV_TRC_DBG(pAT, "BL_NEW  bl:%p list:%p n:%ld count:%ld w:%ld",
+               bl, bl->list, bl->n, bl->count, bl->w);
 
 exception:
     return bl;
@@ -167,7 +168,7 @@ int bl_reserve(BL *bl, uint64_t resN)
     bl->count = 0;
     rc        = 0;
 
-    KV_TRC(pAT, "CHN_RES bl:%p resN:%ld count:%ld hd:%ld",
+    KV_TRC_DBG(pAT, "CHN_RES bl:%p resN:%ld count:%ld hd:%ld",
                bl, resN, bl->count, bl->head);
 exception:
     return rc;
@@ -179,7 +180,7 @@ exception:
  ******************************************************************************/
 void bl_delete(BL *bl)
 {
-  KV_TRC(pAT, "DELETE  bl:%p", bl);
+  KV_TRC_DBG(pAT, "DELETE  bl:%p", bl);
   if (!bl) return;
   iv_delete(bl->list);
   pthread_rwlock_destroy(&(bl->iv_rwlock));
@@ -222,8 +223,8 @@ BL *bl_resize(BL *bl, int64_t n, int w)
   }
   bl->n = n;
 
-  KV_TRC(pAT, "RESIZE  bl:%p b4:%ld n:%ld count:%ld",
-         bl, b4, bl->n, bl->count);
+  KV_TRC_DBG(pAT, "RESIZE  bl:%p b4:%ld n:%ld count:%ld",
+             bl, b4, bl->n, bl->count);
 
 exception:
   pthread_rwlock_unlock(&(bl->iv_rwlock));
@@ -300,9 +301,9 @@ void bl_check_take(BL *bl, int64_t n)
     // if we need blocks and we have uninitialized blocks, init them
     if (n > bl->count && avail)
     {
-        KV_TRC(pAT, "CHN_ADD bl:%p n:%ld bl->n:%ld top:%ld count:%ld "
-                    "hd:%ld ",
-                    bl, n, bl->n, bl->top, bl->count, bl->head);
+        KV_TRC_DBG(pAT, "CHN_ADD bl:%p n:%ld bl->n:%ld top:%ld count:%ld "
+                        "hd:%ld avail:%ld",
+                        bl, n, bl->n, bl->top, bl->count, bl->head, avail);
 
         while (!bl_init_chain_link(bl))
         {

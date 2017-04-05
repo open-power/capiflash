@@ -49,6 +49,6 @@ LIBPATHS = -L${ROOTPATH}/img
 CFLAGS   += $(KV_CFLAGS) -I$(ROOTPATH)/src/include
 CFLAGS64 += $(CFLAGS)
 
-SUBDIRS = test.d 
+SUBDIRS = bin.d test.d
 
 include ${ROOTPATH}/config.mk

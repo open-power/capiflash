@@ -58,7 +58,13 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // that holds the control information for the entry.
   tcbp->hblk = HASH_LBA(HASH_GET(_arkp->ht, rcbp->pos));
 
-  if (DUMP_KV) {KV_TRC_HEX(pAT, 9, "exi_key ", rcbp->key, rcbp->klen);}
+  if (DUMP_KV)
+  {
+      char buf[256]={0};
+      sprintf(buf, "HEX_KEY tid:%d ttag:%3d pos:%6ld",
+              tid, tcbp->ttag, rcbp->pos);
+      KV_TRC_HEX(pAT, 4, buf, rcbp->key, rcbp->klen);
+  }
 
   // If there is no control block for this hash
   // entry, then the key is not present in the hash.
@@ -148,8 +154,8 @@ void ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
   rcbp->res = bt_exists(tcbp->inb, rcbp->klen, rcbp->key);
   if (rcbp->res == BT_FAIL)
   {
-    KV_TRC(pAT, "ENOENT tid:%d ttag:%3d key:%p klen:%ld pos:%ld",
-           tid, tcbp->ttag, rcbp->key, rcbp->klen, rcbp->pos);
+    KV_TRC(pAT, "ENOENT  tid:%d ttag:%3d pos:%ld key:%p klen:%ld",
+           tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen);
     rcbp->rc    = ENOENT;
     rcbp->res   = -1;
     tcbp->state = ARK_CMD_DONE;

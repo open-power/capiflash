@@ -79,27 +79,26 @@ make buildall    #build the code, including the test code
 
 Note: Developers have options to enable / disable specific targets (e.g. Big endian PPC64BE vs little endian PPC64EL) or P8 vs P7 tunings. See the customrc.p8be as an example. Creating a new component-specific environment variable is legal, however the env variable should be optional and provide a default that is safe for production.
 
-Current valid options:
+##### Current valid options
 
-ENV Variable            | Component | Usage (BOLD = default) 
------------------------ | --------- | ------------------------
-TARGET_PLATFORM         | (all)     | PPC64BE - Big-Endian Structures
-                        |           | PPC64LE - Little-Endian Structures
-CUSTOMFLAGS             | (all)     | Custom GCC flags. Used typically to enable P8 or P7 tunings, debug, optimization, etc.
-BLOCK_FILEMODE_ENABLED  | block     | Forces Block Layer to redirect all IO to a file instead of a CAPI device. 1 = enabled, 0 = disabled
-BLOCK_KERNEL_MC_ENABLED | block     | Enables block layer to communicate with cxlflash driver built in to the Linux kernel. For more information, see https://www.kernel.org/doc/Documentation/powerpc/cxlflash.txt
-
+|ENV Variable            | Component | Usage (BOLD = default)|
+|----------------------- | --------- | ------------------------|
+|TARGET_PLATFORM         | (all)     | PPC64BE - Big-Endian Structures|
+|                        |           | PPC64LE - Little-Endian Structures|
+|CUSTOMFLAGS             | (all)     | Custom GCC flags. Used typically to enable P8 or P7 tunings, debug, optimization,  etc.|
+|BLOCK_FILEMODE_ENABLED  | block     | Forces Block Layer to redirect all IO to a file instead of a CAPI device. 1 = enabled, 0 = disabled|
+|BLOCK_KERNEL_MC_ENABLED | block     | Enables block layer to communicate with cxlflash driver built in to the Linux kernel. For more information, see https://www.kernel.org/doc/Documentation/powerpc/cxlflash.txt|
 
 Prebuilt customrc files exist for different environments. Most users will want to use "customrc.p8elblkkermc" or "customrc.p8el:"
 
-CustomRC files:
+##### CustomRC files
 
-Filename                | Description
------------------------ | -------------------------------------
-customrc.p8el           | Little-endian Linux, P8 Tunings, Block FileMode enabled
-customrc.p8elblkkermc   | Little-endian Linux, P8 Tunings, Real IO to CXL Flash kernel driver
+|Filename                | Description|
+|----------------------- | -------------------------------------|
+|customrc.p8el           | Little-endian Linux, P8 Tunings, Block FileMode enabled|
+|customrc.p8elblkkermc   | Little-endian Linux, P8 Tunings, Real IO to CXL Flash kernel driver|
 
-### Utilities
+#### Utilities
 - [Utility reference](src/build/install/resources/README.md)
 
 #### Test Real IO

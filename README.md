@@ -19,9 +19,7 @@ sudo add-apt-repository "deb ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ub
 
 sudo apt-get -y update
 sudo apt-get -y install advance-toolchain-at7.1-runtime advance-toolchain-at7.1-perf advance-toolchain-at7.1-devel advance-toolchain-at7.1-mcore-libs libudev1
- 
 ```
-
 To configure a build environment on RHEL or Fedora:
 ```
 #!/bin/bash
@@ -39,9 +37,7 @@ gpgkey=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-
 <CTRL-D>
 yum install make cscope ctags doxygen git gitk links
 yum install advance-toolchain-at7.1-runtime   advance-toolchain-at7.1-devel   advance-toolchain-at7.1-perf  advance-toolchain-at7.1-mcore-libs
-
 ```
-
 ### API Guide
 The IBM Data Engine for NoSQL provides two major sets of public APIs. These are described in:
 - [cflash - Block Layer APIs](src/block/README.md)
@@ -53,29 +49,31 @@ The IBM Data Engine for NoSQL provides two major sets of public APIs. These are 
 Builds are configurable for different purposes. If no Data Engine for NoSQL Accelerator is available, you can still do active development using a "File Mode." See below for how to select the mode. Likewise, you may also select the endianness of your code (if needed).
 
 As a developer, to get started:
+```
 1. clone the repository
 2. cd capiflash
 3. select a customrc file (see below)
 4. source env.bash
 5. make cleanall #remove all previous build artifacts
 6. make          #build the code, excluding the test code
-
 ```
-The Test software package relies on Google Test. For more information, see src/test/framework/README.md
+The Test software package relies on Google Test.
 
 Example of acquiring the test framework:
+```
 pushd src/test/framework
 git clone git@github.com:google/googletest.git
 popd
 OR
 apt-get install libgtest-dev
-
 ```
 Build Targets:
+```
 make cleanall    #remove all previous build artifacts
 make             #build the code, excluding test code
 make test        #build only the test code
 make buildall    #build the code, including the test code
+```
 
 #### customrc - Targeting a specific platform or tuning
 
@@ -101,25 +99,33 @@ Filename                | Description
 customrc.p8el           | Little-endian Linux, P8 Tunings, Block FileMode enabled
 customrc.p8elblkkermc   | Little-endian Linux, P8 Tunings, Real IO to CXL Flash kernel driver
 
+### Utilities
+- [Utility reference](src/build/install/resources/README.md)
+
 #### Test Real IO
 
 Example on a POWER8 Little-endian system:
 ```
+#select a /dev/sgX device
+/opt/ibm/capikv/bin/cxlfstatus
+#setup and run
 ln -s customrc.p8elblkkermc customrc
 source env.bash
 make cleanall
 make buildall
-```
+
 ulimit -n 5000; FVT_DEV=/dev/sgX LD_LIBRARY_PATH=.../capiflash/img .../capiflash/obj/tests/run_fvt
 ```
 
 #### Test File IO
 
 Example on a POWER8 Little-endian system:
+  (note that a 1GB file is created in /tmp)
 ```
 ln -s customrc.p8el customrc
 source env.bash
 make cleanall
 make buildall
+
+ulimit -n 5000; LD_LIBRARY_PATH=.../capiflash/img .../capiflash/obj/tests/run_fvt
 ```
-ulimit -n 5000; LD_LIBRARY_PATH=.../capiflash/img .../capiflash/obj/tests/run_fvt  #run the tests - note that a 1GB file is created in /tmp

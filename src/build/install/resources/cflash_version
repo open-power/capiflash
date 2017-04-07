@@ -63,7 +63,7 @@ if [[ $ubuntu ]]
 then
   if [[ -z $CF_VER ]]
   then
-    CF_VER=$(dpkg -l |grep -v test|grep "cxlflash "|awk '{print $3}')
+    CF_VER=$(dpkg -l |grep -v test|grep "cxlflash  "|awk '{print $3}')
   fi
 
   EXISTS_OS_VER=$(lsb_release -a 2>&1|grep -v LSB|grep Description|awk '{print $3}')

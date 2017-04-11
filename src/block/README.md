@@ -79,7 +79,7 @@ chunk\_id\_t chunk\_id = cblk\_open(const char \*path, int max\_num\_requests, i
 | max\_num\_requests | This indicates the maximum number of commands that can be queued to the adapter for this chunk at a given time. If this value is 0, then block layer will choose a default size. If the value specified it too large then the cblk\_open request will fail with an ENOMEM errno.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | mode               | Specifies the access mode for the child process (O\_RDONLY, O\_WRONLY, O\_RDWR).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ext\_arg           | Reserved for future use                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| flags              | This is a collection of bit flags. The **CBLK\_OPN\_VIRT\_LUN**indicates a virtual lun on the one physical lun will be provisioned. If the **CBLK\_OPN\_VIRT\_LUN** is not specified, then direct access to the full physical lun will be provided. The **CBLK\_OPN\_VIRT\_LUN**flag must be set for Redis shards. The **CBLK\_OPN\_NO\_INTRP\_THREADS**flag indicates that the cflash block library will not start any back ground threads for processing/harvesting of asynchronous completions from the CAPI adapter. Instead the process using this library must either call cblk\_aresult, or cblk\_listio library calls to poll for I/O completions. The **CBLK\_OPN\_MPIO\_FO**flag (valid for only AIX) indicates that the cflash block library will use Multi-path I/O failover (i.e. one path will be used for all I/O unless path specific errors are encountered, in which case an alternate path will be used if available. To determine the paths for a CAPI flash disk, use the command lspath -l hdiskN). The **CBLK\_OPN\_RESERVE** flag (valid for only AIX) indicates the cflash block library will use the “reserve policy” attribute associated with the disk in terms of establishing disk reservations. The **CBLK\_OPN\_RESERVE** flag can not be used in conjunction with the **CBLK\_OPN\_MPIO\_FO.** The **CBLK\_OPN\_FORCED\_RESERVE** flag (valid for only AIX) has the same behavior as the **CBLK\_OPEN\_RESERVE** flag with the one addition, that when the device is opened it will break any outstanding disk reservations on the first open of this disk. The **CBLK\_OPN\_FORCED\_RESERVE**flag can not be used in conjunction with the **CBLK\_OPN\_MPIO\_FO.** |
+| flags              | This is a collection of bit flags. The **CBLK\_OPN\_VIRT\_LUN** indicates a virtual lun on the one physical lun will be provisioned. If the **CBLK\_OPN\_VIRT\_LUN** is not specified, then direct access to the full physical lun will be provided. The **CBLK\_OPN\_VIRT\_LUN** flag must be set for Redis shards. The **CBLK\_OPN\_NO\_INTRP\_THREADS** flag indicates that the cflash block library will not start any back ground threads for processing/harvesting of asynchronous completions from the CAPI adapter. Instead the process using this library must either call cblk\_aresult, or cblk\_listio library calls to poll for I/O completions. The **CBLK\_OPN\_MPIO\_FO** flag (valid for only AIX) indicates that the cflash block library will use Multi-path I/O failover (i.e. one path will be used for all I/O unless path specific errors are encountered, in which case an alternate path will be used if available. To determine the paths for a CAPI flash disk, use the command lspath -l hdiskN). The **CBLK\_OPN\_RESERVE** flag (valid for only AIX) indicates the cflash block library will use the “reserve policy” attribute associated with the disk in terms of establishing disk reservations. The **CBLK\_OPN\_RESERVE** flag can not be used in conjunction with the **CBLK\_OPN\_MPIO\_FO.** The **CBLK\_OPN\_FORCED\_RESERVE** flag (valid for only AIX) has the same behavior as the **CBLK\_OPEN\_RESERVE** flag with the one addition, that when the device is opened it will break any outstanding disk reservations on the first open of this disk. The **CBLK\_OPN\_FORCED\_RESERVE** flag can not be used in conjunction with the **CBLK\_OPN\_MPIO\_FO.** |
 
 ***Description***
 
@@ -101,7 +101,7 @@ Closes a collection of contiguous blocks (called a “chunk”) on a CAPI flash 
 
 \#include &lt;capiblock.h&gt; for linux or &lt;sys/capiblock.h&gt; for AIX
 
-int rc = cblk\_close(chunk\_id\_t chunk\_id, int flags))
+int rc = cblk\_close(chunk\_id\_t chunk\_id, int flags)
 
 ***Description***
 
@@ -113,7 +113,7 @@ This service releases the blocks associated with a chunk to be reused by others.
 |---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Parameter** | **Description**                                                                                                                                                                                                                       |
 | chunk\_id     | The handle for the chunk which is being closed (released for reuse)                                                                                                                                                                   |
-| flags         | This is a collection of bit flags. The **CBLK\_SCRUB\_DATA\_FLG**indicates data blocks should be scrubbed before they can be reused by others,which is only valid for virtual luns (chunks opened with **CBLK\_OPN\_VIRT\_LUN**flag). |
+| flags         | This is a collection of bit flags. The **CBLK\_SCRUB\_DATA\_FLG** indicates data blocks should be scrubbed before they can be reused by others,which is only valid for virtual luns (chunks opened with **CBLK\_OPN\_VIRT\_LUN** flag). |
 
 ***Return Values***
 
@@ -129,7 +129,7 @@ Returns the “size” (number of blocks) of the physical lun to which this chun
 
 \#include &lt;capiblock.h&gt; for linux or &lt;sys/capiblock.h&gt; for AIX
 
-int rc = cblk\_get\_lun\_size(chunk\_id\_t chunk\_id, size\_t \*size, int flags))
+int rc = cblk\_get\_lun\_size(chunk\_id\_t chunk\_id, size\_t \*size, int flags)
 
 ***Description***
 
@@ -158,7 +158,7 @@ Returns the “size” (number of blocks) assigned to a specific (virtual lun) c
 
 \#include &lt;capiblock.h&gt; for linux or &lt;sys/capiblock.h&gt; for AIX
 
-int rc = cblk\_get\_size(chunk\_id\_t chunk\_id, size\_t \*size, int flags))
+int rc = cblk\_get\_size(chunk\_id\_t chunk\_id, size\_t \*size, int flags)
 
 ***Description***
 
@@ -187,7 +187,7 @@ Assign “size” blocks to a specific chunk id which is a virtual lun (i.e. the
 
 \#include &lt;capiblock.h&gt; for linux or &lt;sys/capiblock.h&gt; for AIX
 
-int rc = cblk\_set\_size(chunk\_id\_t chunk\_id, size\_t size, int flags))
+int rc = cblk\_set\_size(chunk\_id\_t chunk\_id, size\_t size, int flags)
 
 ***Description***
 
@@ -396,7 +396,7 @@ uint64\_t num\_cache\_hits; /\* Total number of cache hits \*/
 
 } chunk\_stats\_t;
 
-int rc = cblk\_get\_stats(chunk\_id\_t chunk\_id, chunk\_stats\_t \*stats, int flags))
+int rc = cblk\_get\_stats(chunk\_id\_t chunk\_id, chunk\_stats\_t \*stats, int flags)
 
 ***Description***
 
@@ -425,7 +425,7 @@ Read 4K blocks from the chunk at the specified logical block address (LBA) into 
 
 \#include &lt;capiblock.h&gt; for linux or &lt;sys/capiblock.h&gt; for AIX
 
-int rc = cblk\_read(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int flags));
+int rc = cblk\_read(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int flags);
 
 ***Description***
 
@@ -461,7 +461,7 @@ Write 4K blocks to the chunk at the specified logical block address (LBA) using 
 
 \#include &lt;capiblock.h&gt; for linux or &lt;sys/capiblock.h&gt; for AIX
 
-int rc = cblk\_write(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int flags));
+int rc = cblk\_write(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int flags);
 
 ***Description***
 
@@ -527,7 +527,7 @@ int errno; /\* Errno when status indicates \*/
 
 } cblk\_arw\_status\_t;
 
-int rc = cblk\_aread(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int \*tag, cblk\_arw\_status\_t \*status, int flags));
+int rc = cblk\_aread(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int \*tag, cblk\_arw\_status\_t \*status, int flags);
 
 ***Description***
 
@@ -626,7 +626,7 @@ int errno; /\* Errno when status indicates \*/
 
 } cblk\_arw\_status\_t;
 
-int rc = cblk\_awrite(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int \*tag, cblk\_arw\_status\_t \*status, int flags));
+int rc = cblk\_awrite(chunk\_id\_t chunk\_id, void \*buf, off\_t lba, size\_t nblocks, int \*tag, cblk\_arw\_status\_t \*status, int flags);
 
 ***Description***
 
@@ -704,7 +704,7 @@ This service returns an indication if the pending request issued via cblk\_aread
 | chunk\_id     | The handle for the chunk which is being written.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | tag           | Pointer to tag caller is waiting for completion. If the CBLK\_ARESULT\_NEXT\_TAG is set, then this field returns the tag for the next asynchronous completion                                                                                                                                                                                                                                                                                                                            |
 | status        | Pointer to status. The status will be returned when a request completes.                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| flags         | Flags passed from the caller to cblk\_aresult. The flag **CBLK\_ARESULT\_BLOCKING**is set by the caller if they want cblk\_aresult to block until a command completes (provided there are active commands). If the **CBLK\_ARESULT\_NEXT\_TAG**flag is set, then this call returns whenever any asynchronous I/O request completes. The **CBLK\_ARESULT\_USER\_TAG** flag indicates the caller checking for status of an asynchronous request that was issued with a user specified tag. |
+| flags         | Flags passed from the caller to cblk\_aresult. The flag **CBLK\_ARESULT\_BLOCKING** is set by the caller if they want cblk\_aresult to block until a command completes (provided there are active commands). If the **CBLK\_ARESULT\_NEXT\_TAG** flag is set, then this call returns whenever any asynchronous I/O request completes. The **CBLK\_ARESULT\_USER\_TAG** flag indicates the caller checking for status of an asynchronous request that was issued with a user specified tag. |
 
 ***Return Values***
 
@@ -802,7 +802,7 @@ cblk\_arw\_status\_t stat; /\* Status of request \*/
 
 } cblk\_io\_t
 
-int rc = cblk\_listio(chunk\_id\_t chunk\_id,cblk\_io\_t \*issue\_io\_list\[\],int issue\_items,cblk\_io\_t \*pending\_io\_list\[\],int pending\_items, cblk\_io\_t \*wait\_io\_list\[\], int wait\_items, cblk\_io\_t \*completion\_io\_list\[\],int \*completion\_items, uint64\_t timeout, int flags));
+int rc = cblk\_listio(chunk\_id\_t chunk\_id,cblk\_io\_t \*issue\_io\_list\[\],int issue\_items,cblk\_io\_t \*pending\_io\_list\[\],int pending\_items, cblk\_io\_t \*wait\_io\_list\[\], int wait\_items, cblk\_io\_t \*completion\_io\_list\[\],int \*completion\_items, uint64\_t timeout, int flags);
 
 ***Description***
 

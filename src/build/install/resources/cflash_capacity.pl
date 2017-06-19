@@ -94,37 +94,41 @@ for my $cardN (@cards)
   my @Acard=split / /, $cardN;
   my $card=$Acard[0];
   chomp $card;
-  my $afustr=`ls -d /sys/devices/*/*/$Acard[0]/cxl/card*/afu*.0/afu*m 2>/dev/null`;
+  my $afustr=`ls -d /sys/devices/*/*/$card/cxl/card*/afu*.0/afu*m 2>/dev/null`;
   my @afu=split /\//, $afustr;
   my $afu=pop @afu;
   if (length $afu) {chomp $afu;}
   else             {$afu="";}
-  my $cardstr=`ls -d /sys/devices/*/*/$Acard[0]/cxl/card* 2>/dev/null`;
+  my $cardstr=`ls -d /sys/devices/*/*/$card/cxl/card* 2>/dev/null`;
   chomp $cardstr;
   my $cardN=substr $cardstr,-1;
 
   for (my $i=0; $i<2; $i++)
   {
     if ($i == 1 && $type =~ /04cf/) {next;}
-    my @Adev=`ls -d /sys/devices/*/*/$Acard[0]/*/*/host*/target*:$i:*/*:*:*:*/block/* 2>/dev/null |awk -F/ '{print \$13}'`;
+    my @devs=`ls /sys/devices/*/*/$card/*/*/host*/target*:*:*/*:$i:*:*/scsi_generic 2>/dev/null|grep ^sg`;
+
     if ($? != 0) {next;}
-    foreach my $dev (@Adev)
+
+    foreach my $dev (@devs)
     {
       chomp $dev;
-      $size=`fdisk -l /dev/$dev 2>/dev/null|grep "Disk /dev"|awk '{print \$3}'|awk -F. '{print \$1}'`;
-      $sym=`fdisk -l /dev/$dev 2>/dev/null|grep "Disk /dev"|awk '{print \$4}'`;
+      $size=`sg_readcap /dev/$dev 2>/dev/null|grep size|awk '{print \$3}'`;
       chomp $size;
       if ($size eq "") {$size=0;}
-      if ($sym =~ /TiB/) {$size *= 1000;}
+      $size/=(1024*1024*1024);
 
-      my $pdev=`/opt/ibm/capikv/bin/cxlfstatus|grep $dev|awk '{print \$1}'`;
-      my $spdev=`/opt/ibm/capikv/bin/cxlfstatus|grep $dev|grep superpipe`;
-      chomp $spdev; chomp $pdev;
-      if ($superpipe && !($spdev =~ /superpipe/)) {next;}
+      my $line =`/opt/ibm/capikv/bin/cxlfstatus|grep $dev`;
+      my @pdevs=split /:/, $line;
+      my $pdev=$pdevs[0];
+      chomp $pdev;
+      $pdev =~ tr/ //ds;
+      if ($pdev eq "") {next;}
+      if ($superpipe && !($line =~ /superpipe/)) {next;}
 
       if ($verbose)
       {
-        printf("/dev/%s %d    ",$pdev, $size);
+        printf("/dev/%s: %d    ",$pdev, $size);
         if ($type =~ /0601/)
         {
           $nsq=`/opt/ibm/capikv/afu/flashgt_nvme_nsq --port $i /dev/cxl/$afu`;

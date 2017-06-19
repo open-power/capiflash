@@ -30,14 +30,13 @@ if [[ ! -e /opt ]]; then mkdir /opt; fi
 if [[ ! -e /opt/.lic ]]; then mkdir /opt/.lic; fi
 
 export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/afu
+export CFLASH_CONFIGURE=1
+
 rc=0
 LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 force=no
 ADV_TC=at10
-K_VER="4.4.0-36.55"
-K_VER_INST="4.4.0-36"
-K_VER_GRUB="4.4.0-36-generic"
 
 wget www.ibm.com >/dev/null 2>&1
 internet=$?
@@ -71,7 +70,7 @@ then
     echo -e "INFO: Attempting to install version($CF_VER)\n"
   elif [[ -e /opt/ibm/capikv/version.txt ]]
   then
-    CF_VER=$(cat /opt/ibm/capikv/version.txt)
+    CF_VER=$(cat /opt/ibm/capikv/version.txt|awk -F- '{print $1}')
     echo "------------------------------"
     echo -e "INFO: Attempting to configure version($CF_VER)\n"
   else
@@ -159,7 +158,7 @@ then
  if [[ ! $EXISTS_LVL =~ "i  cxlflash-test" || \
         ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
  then
-   if ls cxlflash*$CF_VER*.deb > /dev/null 2>&1
+   if ls cxlflash-test*$CF_VER*.deb > /dev/null 2>&1
    then
      dpkg -i cxlflash-test*$CF_VER*.deb
    fi
@@ -173,118 +172,15 @@ then
  fi
 
  ##################################
- # Check LIC
- if [[ ! $1 =~ mfg ]]
- then
-   if [[ -e /tmp/cxlflash_headless ]]
-   then
-     echo "INFO: running headless"
-     date > /opt/.lic/$LD
-   else
-     if [[ ! $1 =~ dev ]]
-     then
-       if [[ ! -e /opt/.lic/$LD ]]
-       then
-         echo ""
-         echo "Please review the licenses available in /opt/ibm/capikv/license/"
-         echo "Press 'y' to accept the license agreement, or skip now and rerun later"
-         read char
-         if [[ $char = [yY] ]]
-         then
-           date > /opt/.lic/$LD
-           if [[ -e /opt/$HD && ! -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
-           then
-             mv /opt/$HD/* /opt/ibm/capikv/lib
-           fi
-           rm -R /opt/$HD >/dev/null 2>&1
-         else
-           echo "ERROR: The license must be accepted"
-           if [[ -e /opt/ibm/capikv/lib ]]
-           then
-             if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-             mv /opt/ibm/capikv/lib/* /opt/$HD
-           fi
-           exit 128
-         fi
-       fi
-     fi
-   fi
- fi
-
- ##################################
  # Check OS version
- OS_VER=16.04
- if [[ $1 =~ dev ]]
- then
-   echo "------------------------------"
-   echo -e "INFO: Checking OS version\n"
- fi
+ echo "------------------------------"
+ echo -e "INFO: Checking OS version\n"
 
- if [[ ! $(lsb_release -a 2>/dev/null) =~ $OS_VER ]]
+ if [[ $(lsb_release -a 2>/dev/null|grep Description|awk '{print $3}'|awk -F. '{print $1}') -lt 16 ]]
  then
-   if [[ $internet -ne 0 ]]
-   then
-     echo "ERROR: unable to reach the internet for OS updates. A firewall may be up, telnet to www.ibm.com and rerun to update your OS"
-   else
-     if [[ ! $(lsb_release -a 2>/dev/null) =~ $OS_VER ]]
-     then
-       do_upgrade=0
-       if [[ ! -e /tmp/cxlflash_headless ]]
-       then
-         echo "The linux OS must be updated to $OS_VER"
-         echo " enter 'y' to continue, or <enter> to skip the upgrade to $OS_VER"
-         read -r yes
-         if [[ $yes = [Yy] ]]
-         then
-           do_upgrade=1
-         elif [[ ! $1 =~ dev ]]
-         then
-           echo "aborting the install, retry when the OS may be upgraded to $OS_VER"
-           exit 11
-         fi
-       fi
-       if [[ $do_upgrade -eq 1 ]]
-       then
-         apt-get -y install update-manager-core
-         apt-get -y install --reinstall apt
-         apt-get -y update
-         apt-get -y upgrade
-         do-release-upgrade
-         apt-get -y dist-upgrade
-       fi
-     fi
-   fi
- fi
-
- ######################################
- # Check the recommended kernel version
- if [[ -z $(dpkg -l|grep -v libc|grep "i  linux-image-$K_VER_GRUB") ]]
- then
-   apt-get -y install linux-image-"$K_VER_INST"-generic
- fi
- if [[ -z $(dpkg -l|grep -v libc|grep "i  linux-image-extra-$K_VER_GRUB") ]]
- then
-   apt-get -y install linux-image-extra-"$K_VER_INST"-generic
- fi
- if [[ -z $(dpkg -l|grep -v libc|grep "i  linux-tools-$K_VER_GRUB") ]]
- then
-   apt-get -y install linux-tools-"$K_VER_INST"-generic
- fi
-
- ##################################
- # check grub.cfg
- if [[ ! $(grep initrd /boot/grub/grub.cfg|head -1) =~ $K_VER_GRUB ]]
- then
-   echo -e "\n------------------------------"
-   echo -e "INFO: Fixing grub.cfg\n"
-   ln=$(grep -n "menuentry 'Ubuntu" /boot/grub/grub.cfg|head -1|awk -F: '{print $1}')
-   ln=$((ln-1))
-   head -$ln /boot/grub/grub.cfg > /tmp/new
-   TXT=$(grep -A16 "with Linux $K_VER_GRUB'" /boot/grub/grub.cfg)
-   echo "$TXT" >> /tmp/new
-   awk -v ln=$ln 'NR>ln' /boot/grub/grub.cfg >> /tmp/new
-   cp /boot/grub/grub.cfg /boot/grub/grub.cfg.$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)
-   mv /tmp/new /boot/grub/grub.cfg
+   echo "The linux OS must be updated to at least 16.04.1"
+   echo -e "Update the OS and retry, aborting...\n"
+   exit 11
  fi
 
  ##################################
@@ -310,10 +206,6 @@ fi
 ################################################################################
 if [[ $redhat ]]
 then
-  K_VER="3.10.0"
-  K_VER_INST="3.10.0"
-  K_VER_GRUB="3.10.0"
-
   ls *cxlflash*.rpm >/dev/null 2>&1
   rc=$?
 
@@ -455,99 +347,19 @@ EOF
   fi
 
   ##################################
-  # Check LIC
-  if [[ ! $1 =~ mfg ]]
-  then
-    if [[ -e /tmp/cxlflash_headless ]]
-    then
-      echo "INFO: running headless"
-      date > /opt/.lic/$LD
-    else
-      if [[ ! $1 =~ dev ]]
-      then
-        if [[ ! -e /opt/.lic/$LD ]]
-        then
-          echo ""
-          echo "Please review the licenses available in /opt/ibm/capikv/license/"
-          echo "Press 'y' to accept the license agreement, or skip now and rerun later"
-          read char
-          if [[ $char = [yY] ]]
-          then
-            date > /opt/.lic/$LD
-            if [[ -e /opt/$HD && ! -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
-            then
-              mv /opt/$HD/* /opt/ibm/capikv/lib
-            fi
-            rm -R /opt/$HD >/dev/null 2>&1
-          else
-            echo "ERROR: The license must be accepted"
-            if [[ -e /opt/ibm/capikv/lib ]]
-            then
-              if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-              mv /opt/ibm/capikv/lib/* /opt/$HD
-            fi
-            exit 128
-          fi
-        fi
-      fi
-    fi
-  fi
-
-  ##################################
   # Check OS version
-  OS_VER=7.3
-  if [[ $1 =~ dev ]]
-  then
-    echo "------------------------------"
-    echo -e "INFO: Checking OS version\n"
-  fi
+  ver=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
+  v1=$(echo $ver|awk -F. '{print $1}')
+  v2=$(echo $ver|awk -F. '{print $2}')
 
-  if [[ ! $(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}') =~ $OS_VER || -z $(rpm -q kernel |grep $K_VER) ]]
-  then
-    if [[ $internet -ne 0 ]]
-    then
-      echo "ERROR: unable to reach the internet for OS updates. A firewall may be up, telnet to www.ibm.com and rerun to update your OS"
-    else
-      if [[ ! $(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}' ) =~ $OS_VER ]]
-      then
-        do_upgrade=0
-        if [[ ! -e /tmp/cxlflash_headless ]]
-        then
-          echo "The linux OS must be updated to $OS_VER"
-          echo " enter 'y' to continue, or <enter> to skip the upgrade to $OS_VER"
-          read -r yes
-          if [[ $yes = [Yy] ]]
-          then
-            do_upgrade=1
-          elif [[ ! $1 =~ dev ]]
-          then
-            echo "aborting the install, retry when the OS may be upgraded to $OS_VER"
-            exit 11
-          fi
-        fi
-        if [[ $do_upgrade -eq 1 ]]
-        then
-          echo "Don't know how to upgrade to $OS_VER. You must updgrade."
-          #TODO:
-          #yum -y install update-manager-core
-          #yum -y install --reinstall apt
-          #yum -y update
-          #yum -y upgrade
-          #do-release-upgrade
-          #yum -y dist-upgrade
-        fi
-      fi
+  echo "------------------------------"
+  echo -e "INFO: Checking OS version\n"
 
-      if [[ -z $(rpm -q kernel | grep $K_VER) ]]
-      then
-        echo "Don't know how to upgrade to $K_VER kernel. You must updgrade."
-        #TODO:
-        #yum -y install linux-image-"$K_VER_INST"-generic
-        #yum -y install linux-image-extra-"$K_VER_INST"-generic
-        #yum -y install linux-tools-"$K_VER_INST"-generic
-        #yum -y install linux-headers-"$K_VER_INST"-generic
-      fi
-    fi
+  if [[ ! (($v1 -eq 7 && $v2 -ge 3) || ($v1 -ge 8)) ]]
+  then
+    echo "The linux OS must be updated to at least 7.3"
+    echo -e "Update the OS and retry, aborting...\n"
+    exit 11
   fi
 
   ##################################
@@ -573,34 +385,61 @@ fi
 ################################################################################
 
   ##################################
+  # Check LIC
+  if [[ ! $1 =~ mfg ]]
+  then
+    if [[ -e /tmp/cxlflash_headless ]]
+    then
+      echo "INFO: running headless"
+      date > /opt/.lic/$LD
+    else
+      if [[ ! $1 =~ dev ]]
+      then
+        if [[ ! -e /opt/.lic/$LD ]]
+        then
+          echo ""
+          echo "Please review the licenses available in /opt/ibm/capikv/license/"
+          echo "Press 'y' to accept the license agreement, or skip now and rerun later"
+          read char
+          if [[ $char = [yY] ]]
+          then
+            date > /opt/.lic/$LD
+            if [[ -e /opt/$HD && ! -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
+            then
+              mv /opt/$HD/* /opt/ibm/capikv/lib >/dev/null 2>&1
+            fi
+            rm -R /opt/$HD >/dev/null 2>&1
+          else
+            echo "ERROR: The license must be accepted"
+            if [[ -e /opt/ibm/capikv/lib ]]
+            then
+              if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD >/dev/null 2>&1; fi
+              mv /opt/ibm/capikv/lib/* /opt/$HD >/dev/null 2>&1
+            fi
+            exit 128
+          fi
+        fi
+      fi
+    fi
+  fi
+
+  ##################################
   # Check AFU version
   echo -e "\n------------------------------"
   echo -e "INFO: Checking firmware versions\n"
 
-  systemctl stop cxlfd.service
-  if [[ $1 =~ dev && -e /sbin/multipath && -n $(lsmod | grep multipath) ]]; then multipath -F; fi
+  CORSA_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep CORSA_IMAGE|awk '{print $2}'|cut -c26-33)
+  GT_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_F_IMAGE |awk '{print $2}'|cut -c26-33)
+  GTP_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_F_IMAGE|awk '{print $2}'|cut -c26-33)
+  GT_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
+  GTP_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
 
-  for x in 1 2 3
+  for str in $(capi_flash.pl -l|awk '{print $4$9}')
   do
-    lsmod | grep cxlflash >/dev/null 2>&1
-    if [[ $? -eq 0 ]]
-    then
-      rmmod cxlflash >/dev/null 2>&1
-      if [[ $? -ne 0 && $x -eq 3 ]]
-      then
-        lsof|grep cxlflash
-        echo "ERROR: unable to unload cxlflash"
-        if [[ ! $1 =~ dev && -e /sbin/multipath && -n $(lsmod | grep multipath) ]]
-        then
-          echo "       you could try 'multipath -F'"
-        fi
-        exit 3
-      else
-        sleep 1
-      fi
-    fi
+    if [[ $str =~ 04cf && ! $str =~ $CORSA_IMAGE ]]; then do_flash=1; break; fi
+    if [[ $str =~ 0601 && ! $str =~ $GT_IMAGE ]];    then do_flash=1; break; fi
+    if [[ $str =~ 0628 && ! $str =~ $GTP_IMAGE ]];   then do_flash=1; break; fi
   done
-
 
   adapsGT=$(lspci|grep 0601|awk '{print $1}')
   adapsCorsa=$(lspci|grep 04cf|awk '{print $1}')
@@ -614,23 +453,17 @@ fi
     exit 20
   fi
 
-  flash_all_adapters -reload
-  sleep 2
-
-  if [[ -z $(lsmod |grep cxlflash) ]]; then modprobe cxlflash; fi
-  if [[ $? -ne 0 ]]
+  if [[ $do_flash ]]
   then
-    echo "ERROR: unable to reload cxlflash"
-    exit 4
+    systemctl stop cxlfd.service
+    flash_all_adapters -reload
+    systemctl daemon-reload
   fi
-  echo ""
-
-  systemctl restart cxlfd.service
 
   ##################################
   # Re-check all versions
   echo -e "\n------------------------------"
-  cflash_version $K_VER
+  cflash_version
   if [[ $? -ne 0 ]]
   then
     echo -e "\n\n*************************"
@@ -681,6 +514,9 @@ fi
   fi
 
   #ensure each GT has 2 sg devices
+  adapN=0
+  adaps=$(lspci|egrep "0601"|awk '{print $1}')
+  for adap in $adaps; do let adapN=$adapN+1; done
   sgN=0; sglist="";
   if [[ $adapGTN -gt 0 ]]
   then
@@ -716,13 +552,15 @@ fi
     secs=3
   fi
 
+  fstatus="$(/opt/ibm/capikv/bin/cxlfstatus)"
+
   for sg in $sglist
   do
     legacy=0
-    if [[ $(cxlfstatus|grep ${sg:5:6}) =~ legacy ]]
+    if [[ $(echo "$fstatus"|grep ${sg:5:6}) =~ legacy ]]
     then
       legacy=1
-      wwid=$(cxlfstatus|grep ${sg:5:6}|awk '{print $5}')
+      wwid=$(echo "$fstatus"|grep ${sg:5:6}|awk -F, '{print $4}')
       cxlfsetlunmode $wwid 1 >/dev/null
     fi
     iops=$(LD_LIBRARY_PATH=/opt/ibm/capikv/lib /opt/ibm/capikv/bin/blockio -d $sg -s$secs 2>&1)

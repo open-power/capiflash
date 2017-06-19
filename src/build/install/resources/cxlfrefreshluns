@@ -40,5 +40,7 @@ if [ "$#" -ne 0 ]; then
     exit $EINVAL;
 fi
 
-dotableupdate;
+dotableupdate
+$CAPIKV/bin/cflash_plinks
+sleep 1
 printstatus;

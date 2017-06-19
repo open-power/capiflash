@@ -35,12 +35,10 @@ EXPFLAGS = -bexpall
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
 LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 
-
-GTESTS = run_fvt run_fvt_utils_scripts
+GTESTS = run_fvt run_fvt_scripts
 GTESTS_DIR = $(addprefix $(TESTDIR)/, $(GTESTS))
 
 ifeq ($(UNAME),AIX) # AIX only
@@ -60,9 +58,8 @@ run_fvt_OFILES = \
  fvt_kv_utils_ark_io.o fvt_trace.o \
  fvt_kv_tst_simple.o fvt_kv_tst_scenario.o fvt_kv_tst_sync_pth.o \
  fvt_kv_tst_async_cb.o fvt_kv_tst_errors.o fvt_kv_tst_sync_async.o \
- fvt_utils_scripts_tst.o
 
-run_fvt_utils_scripts_OFILES = \
+run_fvt_scripts_OFILES = \
  fvt_utils_scripts_tst.o
 
 CFLAGS += \
@@ -84,5 +81,4 @@ include ${ROOTPATH}/config.mk
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 fvt:
-	@-if [[ $(UNAME) != "AIX" ]]; then \
-       $(TESTDIR)/run_fvt; fi
+	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt$(BITS)

@@ -47,7 +47,7 @@ fi
 
 
 ################################################################
-#        Utility functions to help asserting conditions       #
+#        Utility functions to help asserting conditions        #
 ################################################################
 function echoerr {
     >&2 echo "$@"
@@ -144,10 +144,10 @@ function print_summary {
 
     #echo "$END_TIME - $START_TIME" 
     ELAPSED_MINS=0;
-    shr=$((START_TIME/100));
-    smin=$((START_TIME%(shr*100)));
-    ehr=$((END_TIME/100));
-    emin=$((END_TIME%(shr*100)));
+    shr=$((10#$START_TIME/100));
+    smin=$((10#$START_TIME%(shr*100)));
+    ehr=$((10#$END_TIME/100));
+    emin=$((10#$END_TIME%(shr*100)));
     ELAPSED_MINS=$(( (ehr*60 + emin) - (shr*60+smin) ))
 
     printf "\n\n"
@@ -558,7 +558,8 @@ function CFLASH_PERST_RC_TEST {
     fi
 
     rmmod cxlflash 
-    ${CMD} -l $slot &> $BUFFER
+    if [[ $? -ne 0 ]]; then echoerr "[  SKIPPED ]"; return; fi
+    ${CMD} -t $slot &> $BUFFER
     CMD_RC=$?
     expect_eq 0 $CMD_RC "CFLASH_PERST_RC_TEST"
     modprobe cxlflash 
@@ -574,13 +575,46 @@ function CFLASH_PERST_ERRSTR_TEST {
         return;
     fi
 
-    rmmod cxlflash 
+    rmmod cxlflash
+    if [[ $? -ne 0 ]]; then echoerr "[  SKIPPED ]"; return; fi
     ${CMD} -t $slot &> $BUFFER
     expect_no_err_strings $BUFFER "CFLASH_PERST_ERRSTR_TEST" "ERROR[: ]"
     expect_str $BUFFER "CFLASH_PERST_SUCC_STR_TEST" "$slot"
     expect_str $BUFFER "CFLASH_PERST_SUCC_STR_TEST" "successfully"
 
     modprobe cxlflash 
+}
+
+################################################################
+#Run cflash_reset.pl
+################################################################
+function CFLASH_RESET_RC_TEST {
+    setup; CMD=cflash_reset.pl
+ 
+    slot=$(capi_flash.pl -l | grep 0601 | sed -n 1p |awk '{print $6}')
+    if [[ -z $slot ]]; then
+        echoerr "Slot not found."
+        FAILED_CHECKS=$((FAILED_CHECKS+1));TOTAL_CHECKS=$((TOTAL_CHECKS+1))
+        return;
+    fi
+
+    ${CMD} -t $slot &> $BUFFER
+    CMD_RC=$?
+    expect_eq 0 $CMD_RC "CFLASH_RESET_RC_TEST"
+}
+
+function CFLASH_RESET_ERRSTR_TEST {
+    setup; CMD=cflash_reset.pl
+
+    slot=$(capi_flash.pl -l | grep 0601 | sed -n 1p |awk '{print $6}')
+    if [[ -z $slot ]]; then
+        echoerr "Slot not found."
+        FAILED_CHECKS=$((FAILED_CHECKS+1));TOTAL_CHECKS=$((TOTAL_CHECKS+1))
+        return;
+    fi
+
+    ${CMD} -t $slot &> $BUFFER
+    expect_no_err_strings $BUFFER "CFLASH_RESET_ERRSTR_TEST" "ERROR[: ]"
 }
 
 

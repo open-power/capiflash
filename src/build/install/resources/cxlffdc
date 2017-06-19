@@ -24,6 +24,8 @@
 #
 # IBM_PROLOG_END_TAG
 
+export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/afu:/opt/ibm/capikv/test:/opt/ibm/capikv/etc
+
 DATADIR=/var/log/cflash/cxlffdc
 PREVDIR=/var/log/cflash/prev
 MISCDIR=/var/log/cflash/misc
@@ -110,19 +112,19 @@ done
 AFUs=`ls /dev/cxl/afu*m`
 for afu_m in $AFUs
 do
-  $AFUDIR/cxl_afu_dump $afu_m > $(basename $afu_m).txt
+  $AFUDIR/cxl_afu_dump $afu_m > $(basename $afu_m)
 done
 
-lspci -d 1014:0601 -vv | egrep "0601|LnkSta:" >> link_status.txt
-echo ""                                       >> link_status.txt
-
-for gt in $(lspci|grep 0601|awk '{print $1}')
+for gt in $(lspci|egrep "0601|0628"|awk '{print $1}')
 do
+  lspci -s $gt -vv | egrep "$gt|LnkSta:" >> link_status
+  echo ""                                >> link_status
+
   card=$(ls -d /sys/devices/*/*/$gt/cxl/card* 2>/dev/null)
   cardN=${card: -1}
-  echo "afu$cardN:"                             >> cxl_afu_status.txt
-  $AFUDIR/cxl_afu_status -d afu$cardN.0m        >> cxl_afu_status.txt
-  printf "\n"                                   >> cxl_afu_status.txt
+  echo "afu$cardN:"                             >> cxl_afu_status
+  $AFUDIR/cxl_afu_status -d afu$cardN.0m        >> cxl_afu_status
+  printf "\n"                                   >> cxl_afu_status
 done
 
 ps_fields="user,group,ruser,rgroup,pid,tid,ppid,pgid,uid,tgid,nlwp,sgi_p,nice,pri,\
@@ -155,11 +157,15 @@ fi
 /opt/ibm/capikv/afu/capi_flash.pl -l >> $DATADIR/codelevels
 /opt/ibm/capikv/bin/cflash_version   >> $DATADIR/codelevels
 
-/opt/ibm/capikv/afu/cflash_temp.pl   >> $DATADIR/cflash_temp.txt&
+/opt/ibm/capikv/afu/cflash_temp.pl   >  $DATADIR/cflash_temp&
 check_pid $!
-/opt/ibm/capikv/afu/cflash_wear.pl   >> $DATADIR/cflash_wear.txt&
+/opt/ibm/capikv/afu/cflash_wear.pl   >  $DATADIR/cflash_wear&
 check_pid $!
 /opt/ibm/capikv/bin/cxlfstatus       >  $DATADIR/cxlfstatus&
+check_pid $!
+/opt/ibm/capikv/afu/cflash_capacity.pl -v >  $DATADIR/cflash_capacity&
+check_pid $!
+/opt/ibm/capikv/afu/cflash_capacity.pl -t 04cf >> $DATADIR/cflash_capacity&
 check_pid $!
 
 if [[ ! -z $(ls -A $MISCDIR) ]]
@@ -169,7 +175,7 @@ then
   truncate --size=0 $MISCDIR/*
 fi
 
-dmesg > dmesg.txt
+dmesg > dmesg
 if [[ -e /var/log/syslog ]]
 then
   cp /var/log/syslog $DATADIR
@@ -203,7 +209,7 @@ do
   fi
 done
 
-for file in $(ls -1 /tmp/*.cflash_block_trc)
+for file in $(ls -1 /tmp/*.cflash_block_trc 2>/dev/null)
 do
   lines=$(wc -l $file | awk '{print $1}')
   if [[ $lines -gt 0 ]]
@@ -213,7 +219,7 @@ do
   fi
 done
 
-for file in $(ls -1 /tmp/*.arkdb.kv.log)
+for file in $(ls -1 /tmp/*.arkdb.kv.log 2>/dev/null)
 do
   lines=$(wc -l $file | awk '{print $1}')
   if [[ $lines -gt 0 ]]

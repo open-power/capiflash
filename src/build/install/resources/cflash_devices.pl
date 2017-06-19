@@ -84,7 +84,7 @@ $| = 1;
 #-------------------------------------------------------------------------------
 # get wwids matching $type
 #-------------------------------------------------------------------------------
-my @cards = `lspci |grep $type`;
+my @cards = `lspci |egrep "$type"`;
 my $cmd="";
 my @list;
 my @ids;
@@ -101,7 +101,7 @@ for my $adap (@cards)
   my @Acard=split / /, $adap;
   my $card=$Acard[0];
   chomp $card;
-  my @D=`ls -d /sys/devices/*/*/$card/*/*/host*/target*:*:*/*:*:*:*/scsi_generic/* 2>/dev/null|awk -F/ '{print \$13}'`;
+  my @D=`ls /sys/devices/*/*/$card/*/*/host*/target*:*:*/*:*:*:*/scsi_generic 2>/dev/null|grep ^sg`;
   for $dev (@D)
   {
     chomp $dev;

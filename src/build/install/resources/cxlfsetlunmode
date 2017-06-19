@@ -47,3 +47,5 @@ TARGETMODE=$2
 chluntable $TARGETLUN $TARGETMODE;
 #immediately set the desired LUNs to the correct mode
 $CAPIKV/bin/cxlflashutil -l $TARGETLUN -m $TARGETMODE
+
+exit 0

@@ -29,18 +29,18 @@ APPNAME?=cflash
 
 PREFIX?=${PKGDIR}/install_root
 TEST_PREFIX?=${PKGDIR}/test_root
-AFUPREFIX?=${PKGDIR}/afu_root
+AFU_PREFIX?=${PKGDIR}/afu_root
 
 ifeq ($(UNAME),AIX)
 INSTALL_ROOT=${PREFIX}/usr/local/capikv
 TEST_ROOT=${TEST_PREFIX}/usr/local/capikv
 INSTALL=/usr/bin/cp
-AFU_ROOT=${AFUPREFIX}/usr/local/capikv/afu
+AFU_ROOT=${AFU_PREFIX}/usr/local/capikv/afu
 else
 INSTALL_ROOT=${PREFIX}/opt/ibm/capikv
 TEST_ROOT=${TEST_PREFIX}/opt/ibm/capikv
 INSTALL=install
-AFU_ROOT=${AFUPREFIX}/opt/ibm/capikv/afu
+AFU_ROOT=${AFU_PREFIX}/opt/ibm/capikv/afu
 endif
 
 _LIBSRCDIR=${IMGDIR}
@@ -70,21 +70,25 @@ IMAGEH="${_RESOURCEDIR}/1410*"
 ifeq ($(UNAME),AIX)
 .PHONY: aixinstall
 aixinstall:
-	rm -rf ${INSTALL_ROOT}
-	rm -rf ${AFU_ROOT}
-	rm -rf ${TEST_ROOT}
+	rm -rf ${PREFIX}
+	rm -rf ${TEST_PREFIX}
+	rm -rf ${AFU_PREFIX}
 	${MAKE} cflash cflash-test cflashimage
 else
 codeinstall:
-	rm -rf ${INSTALL_ROOT}
-	rm -rf ${AFU_ROOT}
-	rm -rf ${TEST_ROOT}
+	rm -rf ${PREFIX}
+	rm -rf ${TEST_PREFIX}
+	rm -rf ${AFU_PREFIX}
 	${MAKE} cflash cflashimage
 
 testinstall:
-	rm -rf ${TEST_ROOT}
+	rm -rf ${TEST_PREFIX}
 	${MAKE} cflash-test
 endif
+
+
+
+ifneq ($(TARGET_PLATFORM),x86_64)
 
 LIC_FILES := $(notdir $(shell ls ${_RESOURCEDIR}/license/*.txt 2>/dev/null))
 ${LIC_FILES}:
@@ -95,12 +99,15 @@ else
 	${INSTALL} -m 644 ${_RESOURCEDIR}/license/$@ ${_LIC_DIR}
 endif
 
+
 MAN3_FILES := afu.h.3 cxl.h.3 capiblock.h.3 libcxl.h.3 arkdb.h.3 ark.h.3 cflash_tools_user.h.3
 ${MAN3_FILES}:
 	@mkdir -p ${_MAN_DIR}
 	@if [[ -e ${_DOCSRCDIR}/man/man3/$@ ]]; \
     then echo ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR};\
               ${INSTALL} ${_DOCSRCDIR}/man/man3/$@ ${_MAN_DIR}; fi
+
+endif
 
 cflash: ${LIC_FILES} ${MAN3_FILES}
 	@mkdir -p ${_BIN_DIR}
@@ -123,11 +130,7 @@ else
 	${INSTALL} -m 644 ${ROOTPATH}/src/include/zmalloc.h ${_INC_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/include/capiblock.h ${_INC_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/include/cflash_tools_user.h ${_INC_DIR}
-
 endif
-
-
-	@#Bins
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/blockio64 ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/blocksio64 ${_BIN_DIR}
@@ -149,9 +152,11 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/test/ioppt.pl ${_BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
 else
+ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} -s ${PGMDIR}/cxlfd ${_BIN_DIR}
 	${INSTALL} -s ${PGMDIR}/cxlflashutil ${_BIN_DIR}
 	${INSTALL} -s ${PGMDIR}/provtool ${_BIN_DIR}
+endif
 	${INSTALL} -s ${_TESTSRCDIR}/blockio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blocksio ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/blockr0io ${_BIN_DIR}
@@ -166,6 +171,8 @@ else
 	${INSTALL}    ${ROOTPATH}/src/test/ioppt.pl ${_BIN_DIR}
 	${INSTALL}    ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
 
+	${INSTALL} ${_RESOURCEDIR}/cflash_plinks ${_BIN_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cflash_getslot ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlfrefreshluns ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cablecheck ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlfsetlunmode ${_BIN_DIR}
@@ -177,14 +184,22 @@ else
 	${INSTALL} ${_RESOURCEDIR}/cflash_logs_cron ${_BIN_DIR}
 
 
-	#TEMPORARY install - remove this after kernel driver can run workaround
+	@#TEMPORARY install - remove this after kernel driver can run workaround
 	${INSTALL} ${_RESOURCEDIR}/afucfg.sh ${_BIN_DIR}
 
 
 	@#Dev Permissions for cxl - set mode to 644 explicitly
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxl.rules ${_UDEV_RULES_DIR}
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxlflash.rules ${_UDEV_RULES_DIR}
-	
+
+	@if [[ -e ${ROOTPATH}/src/build/version.txt ]]; then \
+       echo "${INSTALL} ${ROOTPATH}/src/build/version.txt ${INSTALL_ROOT}"; \
+       ${INSTALL} ${ROOTPATH}/src/build/version.txt ${INSTALL_ROOT}; \
+     else \
+       echo "${INSTALL} ${_TESTSRCDIR}/version.txt ${INSTALL_ROOT}"; \
+       ${INSTALL} ${_TESTSRCDIR}/version.txt ${INSTALL_ROOT}; \
+     fi
+	${INSTALL} ${_RESOURCEDIR}/afu_versions ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${PKGDIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc.debug ${_ETC_DIR}
@@ -195,9 +210,15 @@ endif
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${_LIBSRCDIR}/lib*.a ${_LIB_DIR}
 else
+ifeq ($(TARGET_PLATFORM),x86_64)
+	${INSTALL} -s ${_LIBSRCDIR}/libark*.so ${_LIB_DIR}
+	${INSTALL} -s ${_LIBSRCDIR}/libcf*.so ${_LIB_DIR}
+else
 	${INSTALL} -s ${_LIBSRCDIR}/lib*.so ${_LIB_DIR}
 endif
+endif
 
+ifneq ($(TARGET_PLATFORM),x86_64)
 	@#Sample Code
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/block/bin/blockio.c ${_EXAMPLES_DIR}
@@ -220,22 +241,21 @@ else
 	@#Linux Readme
 	${INSTALL} -m 644 ${_RESOURCEDIR}/readme.txt ${INSTALL_ROOT}
 endif
-
-	@#Version tags and useful info
-	echo "${GITREVISION}" > ${INSTALL_ROOT}/version.txt
-
+endif
 
 cflash-test:
 	@#TEST ONLY CONTENT - DO NOT SHIP
 	@mkdir -p ${_TEST_DIR}
 	@mkdir -p ${_TEST_DATA_DIR}
-	${INSTALL} ${_TESTSRCDIR}/asyncstress ${_BIN_DIR}
-	${INSTALL} ${_TESTSRCDIR}/_tst_ark ${_BIN_DIR}
+ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${_TESTSRCDIR}/blk_test ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/pvtestauto ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/pblkread ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/transport_test ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_cflash_fvt ${_TEST_DIR}
+endif
+	${INSTALL} ${_TESTSRCDIR}/asyncstress ${_BIN_DIR}
+	${INSTALL} ${_TESTSRCDIR}/_tst_ark ${_BIN_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_fvt_kv ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_fvt ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/run_block_fvt ${_TEST_DIR}
@@ -250,6 +270,7 @@ cflash-test:
 	${INSTALL} ${ROOTPATH}/src/test/run_ioppts ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${_TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${_TEST_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/run_regression ${_TEST_DIR}
 	@#Enable factory flash if the test image is installed
 	${INSTALL} ${_RESOURCEDIR}/flash_factory_image ${_TEST_DIR}
 
@@ -273,17 +294,20 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_check64 ${_TEST_DIR}
 	${INSTALL} ${_TESTSRCDIR}/fvt_ark_perf_tool64 ${_TEST_DIR}
 else
-	${INSTALL} ${_RESOURCEDIR}/cflash_inject.pl ${_TEST_DIR}
-	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst.sh ${_TEST_DIR}
-	${INSTALL} -s ${_TESTSRCDIR}/run_fvt_utils_scripts ${_TEST_DIR}
+ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_inject ${_TEST_DIR}
 	${INSTALL} -s ${_RESOURCEDIR}/flashgt_nvme_override ${_TEST_DIR}
+endif
+	${INSTALL} ${_RESOURCEDIR}/cflash_inject.pl ${_TEST_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst.sh ${_TEST_DIR}
+	${INSTALL} -s ${_TESTSRCDIR}/run_fvt_scripts ${_TEST_DIR}
 endif
 
 
 FW_FILES := $(notdir $(shell ls ${_RESOURCEDIR}/BTV*)) $(notdir $(shell ls ${_RESOURCEDIR}/1410*))
 
 ${FW_FILES}:
+ifneq ($(TARGET_PLATFORM),x86_64)
 	@mkdir -p ${_AFU_IMAGES_DIR}
 	@if [[ -e ${_RESOURCEDIR}/$@ ]]; then \
          echo ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; \
@@ -296,11 +320,13 @@ ifneq ($(UNAME),AIX)
          if [[ ! -e $@ ]]; then gzip $(subst .gz,,$(@)); fi; \
      fi
 endif
+endif
 
 cflashimage: ${FW_FILES}
 	@mkdir -p ${_AFU_IMAGES_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc ${AFU_ROOT}
 ifneq ($(UNAME),AIX)
+ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${_AFUDIR}/surelock_vpd2rbf.pl ${AFU_ROOT}
 	${INSTALL} ${_AFUDIR}/vpd_FlashGT.csv ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_dump ${AFU_ROOT}
@@ -308,6 +334,7 @@ ifneq ($(UNAME),AIX)
 	${INSTALL} -s ${_TESTSRCDIR}/flashgt_temp ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/flashgt_vpd_access ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/capi_flash.pl ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/cflash_reset.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_perst.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_perf.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_capacity.pl ${AFU_ROOT}
@@ -324,6 +351,8 @@ ifneq ($(UNAME),AIX)
 	${INSTALL} ${_RESOURCEDIR}/cxl_flash_vm ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cxl_afu_fmt_unit ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/flashgt_nvme_nsq ${AFU_ROOT}
+	${INSTALL} ${_RESOURCEDIR}/afu_versions ${_AFU_IMAGES_DIR}/.remove
+endif
 endif
 
 include ${ROOTPATH}/config.mk

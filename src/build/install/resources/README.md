@@ -16,24 +16,22 @@ INFO:      0040:01:00.0   101404cf 160512D1
 
 CXL Flash Device Status
 
-Found 0601 0000:01:00.0 U78CB.001.WZS0073-P1-C7      
-    Device:       SCSI  Block       Mode                          LUN WWID
-      sg22:   28:0:0:0,   sdq, superpipe, 60025380025382462300058000000000
-      sg23:   28:1:0:0,   sdr, superpipe, 60025380025382462300066000000000
+Found 0601 0000:01:00.0 U78CB.001.WZS0073-P1-C7
+  Device:  SCSI       Block    Mode       LUN WWID                          Persist
+  sg16:    3:0:0:0,      ,     superpipe, 60025380025382462300034000000000, sg0700,
+  sg17:    3:1:0:0,      ,     superpipe, 60025380025382463300053000000000, sg0710,
 
-Found 0601 0002:01:00.0 U78CB.001.WZS0073-P1-C6      
-    Device:       SCSI  Block       Mode                          LUN WWID
-       sg8:   25:0:0:0,   sdc, superpipe, 60025380025382463300051000000000
-       sg9:   25:1:0:0,   sdd, superpipe, 60025380025382463300036000000000
+Found 0601 0004:01:00.0 U78CB.001.WZS0073-P1-C6
+  Device:  SCSI       Block    Mode       LUN WWID                          Persist
+  sg8:     1:0:0:0,      ,     superpipe, 60025380025382462300058000000000, sg0600,
+  sg9:     1:1:0:0,      ,     superpipe, 60025380025382462300066000000000, sg0610,
 
-Found 04cf 0004:01:00.0 U78CB.001.WZS0073-P1-C5      
-    Device:       SCSI  Block       Mode                          LUN WWID
-      sg10:   26:0:0:0,   sde, superpipe, 60050768218b081820000000000004d0
-      sg11:   26:0:0:1,   sdf,    legacy, 60050768218b081820000000010004e2
-      sg12:   26:0:0:2,   sdg,    legacy, 60050768218b081820000000020004e3
-      sg13:   26:1:0:0,   sdh, superpipe, 60050768218b081820000000000004d0
-      sg14:   26:1:0:1,   sdi,    legacy, 60050768218b081820000000010004e2
-      sg15:   26:1:0:2,   sdj,    legacy, 60050768218b081820000000020004e3
+Found 04cf 0040:01:00.0 U78CB.001.WZS0073-P1-C5
+  Device:  SCSI       Block    Mode       LUN WWID                          Persist
+  sg11:    2:0:0:1,   sde,     legacy,    60050768218b0818200000000f00050a, sg0501,    sd0501
+  sg12:    2:0:0:2,   sdf,     legacy,    60050768218b0818200000001000050b, sg0502,    sd0502
+  sg14:    2:1:0:1,   sdg,     legacy,    60050768218b0818200000000f00050a, sg0511,    sd0511
+  sg15:    2:1:0:2,   sdh,     legacy,    60050768218b0818200000001000050b, sg0512,    sd0512
 ```
 ### change the state of a lun (superpipe/legacy)
 ```
@@ -45,30 +43,44 @@ SUCCESS
 INFO: Removing LUN 60050768218b081820000000010004e2 from Super IO table.
 SUCCESS
 ```
-### refresh and query the cards, luns, lun mode
+### refresh and query the cards, luns, lun mode; and create persistent links
 ```
 > /opt/ibm/capikv/bin/cxlfrefreshluns
 Refer to /tmp/cxlflog.root.log for detailed table update logs.
 CXL Flash Device Status
 
 Found 0601 0000:01:00.0 U78CB.001.WZS0073-P1-C7
-    Device:       SCSI  Block       Mode                          LUN WWID
-      sg22:   28:0:0:0,   sdq, superpipe, 60025380025382462300058000000000
-      sg23:   28:1:0:0,   sdr, superpipe, 60025380025382462300066000000000
+  Device:  SCSI       Block    Mode       LUN WWID                          Persist
+  sg16:    3:0:0:0,      ,     superpipe, 60025380025382462300034000000000, sg0700,
+  sg17:    3:1:0:0,      ,     superpipe, 60025380025382463300053000000000, sg0710,
 
-Found 0601 0002:01:00.0 U78CB.001.WZS0073-P1-C6
-    Device:       SCSI  Block       Mode                          LUN WWID
-       sg8:   25:0:0:0,   sdc, superpipe, 60025380025382463300051000000000
-       sg9:   25:1:0:0,   sdd, superpipe, 60025380025382463300036000000000
+Found 0601 0004:01:00.0 U78CB.001.WZS0073-P1-C6
+  Device:  SCSI       Block    Mode       LUN WWID                          Persist
+  sg8:     1:0:0:0,      ,     superpipe, 60025380025382462300058000000000, sg0600,
+  sg9:     1:1:0:0,      ,     superpipe, 60025380025382462300066000000000, sg0610,
 
-Found 04cf 0004:01:00.0 U78CB.001.WZS0073-P1-C5
-    Device:       SCSI  Block       Mode                          LUN WWID
-      sg10:   26:0:0:0,   sde, superpipe, 60050768218b081820000000000004d0
-      sg11:   26:0:0:1,   sdf,    legacy, 60050768218b081820000000010004e2
-      sg12:   26:0:0:2,   sdg,    legacy, 60050768218b081820000000020004e3
-      sg13:   26:1:0:0,   sdh, superpipe, 60050768218b081820000000000004d0
-      sg14:   26:1:0:1,   sdi,    legacy, 60050768218b081820000000010004e2
-      sg15:   26:1:0:2,   sdj,    legacy, 60050768218b081820000000020004e3
+Found 04cf 0040:01:00.0 U78CB.001.WZS0073-P1-C5
+  Device:  SCSI       Block    Mode       LUN WWID                          Persist
+  sg11:    2:0:0:1,   sde,     legacy,    60050768218b0818200000000f00050a, sg0501,    sd0501
+  sg12:    2:0:0:2,   sdf,     legacy,    60050768218b0818200000001000050b, sg0502,    sd0502
+  sg14:    2:1:0:1,   sdg,     legacy,    60050768218b0818200000000f00050a, sg0511,    sd0511
+  sg15:    2:1:0:2,   sdh,     legacy,    60050768218b0818200000001000050b, sg0512,    sd0512
+```
+### query the unused persistent lun names
+```
+> /opt/ibm/capikv/bin/cflash_plinks -unused
+```
+### delete a single persistent lun name
+```
+> /opt/ibm/capikv/bin/cflash_plinks -r sd0501
+```
+### delete the unused persistent lun names (use to cleanup stale names)
+```
+> /opt/ibm/capikv/bin/cflash_plinks -rmunused
+```
+### delete all the persistent lun names
+```
+> /opt/ibm/capikv/bin/cflash_plinks -rmall
 ```
 ### query the devices for an adapter type
 ```
@@ -99,7 +111,7 @@ Found CAPI device 10140601 afu1 0002:01:00.0 U78CB.001.WZS0073-P1-C6 07210024   
 Found CAPI device 101404cf afu2 0004:01:00.0 U78CB.001.WZS0073-P1-C5 YH10HT55F006   =>160512D1
 Found CAPI device 101404cf afu3 0005:01:00.0 U78CB.001.WZS0073-P1-C3 0000017800823  =>160512D1
 ```
-### run 100% random 4k read IO to exercise a device
+### run 100% random 4k read IO to exercise a vlun
 ```
 > /opt/ibm/capikv/bin/blockio -d /dev/sg8
 r:100 q:128 s:4 p:0 n:1 i:0 v:0 eto:1000000 miss:13/13528257 lat:518 mbps:955 iops:244680

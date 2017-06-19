@@ -26,6 +26,7 @@
 #include <cflash_test_utils.h>
 #include <pthread.h>
 #include <fcntl.h>
+#include <sys/resource.h>
 
 #ifndef _AIX
 #include <libudev.h>
@@ -106,18 +107,26 @@ void teminate_blk_tests()
  *******************************************************************************
  * \brief
  * if FVT_DEV_RAID0 is set, use it
- * else if cflash_devices.pl finds GT superpipe luns, use RAID0
+ * else if FVT_DEV is set and BLOCK_FILEMODE_ENABLED==1, use FVT_DEV
+ * else if cflash_devices.pl finds GT superpipe luns, use "RAID0"
  * else FVT_DEV is used
  ******************************************************************************/
 void blk_fvt_RAID0_setup(void)
 {
-    char  buf[1024] = {0};
-    char *env_r0dev = getenv("FVT_DEV_RAID0");
+    char  buf[1024]    = {0};
+    char *env_dev      = getenv("FVT_DEV");
+    char *env_r0dev    = getenv("FVT_DEV_RAID0");
+    char *env_filemode = getenv("BLOCK_FILEMODE_ENABLED");
 
     if (env_r0dev && strlen(env_r0dev)>=5)
     {
-        DEBUG_0("use FVT_DEV_RAID0\n");
+        DEBUG_0("RAID0_setup: use FVT_DEV_RAID0\n");
         strcpy(dev_paths[0],env_r0dev);
+    }
+    else if (env_dev && env_filemode && atoi(env_filemode)==1)
+    {
+        DEBUG_0("RAID0_setup: use FVT_DEV\n");
+        strcpy(dev_paths[0],env_dev);
     }
     else
     {
@@ -127,10 +136,15 @@ void blk_fvt_RAID0_setup(void)
         FILE *fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl -S 2>/dev/null",
                          "r");
 #endif
-        if (fp)               {fgets(buf, 1024, fp);}
-        if (strlen(buf)) {DEBUG_0("use RAID0\n"); strcpy(dev_paths[0],"RAID0");}
+        if (fp) {fgets(buf, 1024, fp);}
+        if (strlen(buf))
+        {
+            DEBUG_1("buf: %s\n", buf);
+            DEBUG_0("RAID0_setup: use RAID0\n");
+            strcpy(dev_paths[0],"RAID0");
+        }
     }
-    DEBUG_1("raid0 dev_paths[0] = %s \n", dev_paths[0]);
+    DEBUG_1("RAID0_setup: dev_paths[0] = %s \n", dev_paths[0]);
     return;
 }
 
@@ -243,6 +257,11 @@ int blk_fvt_setup(int size)
     num_opens = 0;
     ext       = 0;
     mode      = O_RDWR;
+
+    struct rlimit limit;
+    limit.rlim_cur = 5000;
+    limit.rlim_max = 5000;
+    setrlimit(RLIMIT_NOFILE, &limit);
 
     DEBUG_2("blk_fvt_setupi_exit: dev1 = %s, dev2 = %s\n", 
             dev_paths[0], dev_paths[1]);
@@ -1491,184 +1510,231 @@ exit:
 ********************************************************************************
 ** \brief
 *******************************************************************************/
-void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags, int eeh)
+void io_perf_tst (int *ret, int *err, int flags, int eeh)
 {
     int             rc              = -1;
-    int            *ctag            = NULL;
-    cflsh_cg_tag_t *cgtag           = NULL;
+    int             er              = -1;
+    int            *ctag[256]       = {0};
+    cflsh_cg_tag_t *cgtag[256]      = {0};
     uint64_t        ar_status       = 0;
+    uint64_t        startlba        = 0;
     uint64_t        lba             = 0;
     size_t          nblocks         = 1;
+    size_t          maxlba          = 0;
     int             fd              = 0;
     int             i               = 0;
+    int             idx             = 0;
     int             ret_code        = 0;
     int             t               = 0;
     int             x               = 0;
     int             y               = 0;
     char           *env_num_cmds    = getenv("FVT_NUM_CMDS");
     char           *env_num_loop    = getenv("FVT_NUM_LOOPS");
-    char           *env_io_comp     = getenv("FVT_VALIDATE");
-    int             size            = 4096;
+    int             bsz             = 4096;
     int             loops           = 100;
-    int             validate        = 1;
-    int             num_cmds        = 4096;
+    int             num_cmds        = 1024;
+    int             eeh_fail        = 0;
+    char           *addr            = NULL;
 
-    if (env_num_cmds && atoi(env_num_cmds)>0)
+    if (env_filemode && atoi(env_filemode)==1)
     {
-        num_cmds = atoi(env_num_cmds);
-        if (num_cmds > 4096) {num_cmds = 4096;}
+        eeh=0; loops=2; num_cmds=64;
+        if      (num_opens == 1) {loops=5; num_cmds=256;}
+        else if (num_opens > 8)  {num_cmds=32;}
     }
-    if (env_num_loop && atoi(env_num_loop)>0)  {loops = atoi(env_num_loop);}
-    if (env_io_comp  && atoi(env_io_comp)==1)  {validate = 1;}
-    if (env_filemode && atoi(env_filemode)==1) {loops=2; num_cmds=64;}
+    else if (num_opens > 8) {loops=2;}
 
-    ctag  = malloc(num_cmds*sizeof(int));
-    cgtag = malloc(num_cmds*sizeof(cflsh_cg_tag_t));
+    if (eeh)                                  {loops=2; num_cmds=128;}
+    if (env_num_cmds && atoi(env_num_cmds)>0) {num_cmds = atoi(env_num_cmds) % 1024;}
+    if (env_num_loop && atoi(env_num_loop)>0) {loops = atoi(env_num_loop);}
 
-    /* fill compare buffer with pattern */
-    fd = open ("/dev/urandom", O_RDONLY);
-    read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*num_cmds);
-    close (fd);
+    for (idx=0; idx<num_opens; idx++)
+    {
+        ctag[idx]  = malloc(num_cmds*sizeof(int));
+        cgtag[idx] = malloc(num_cmds*sizeof(cflsh_cg_tag_t));
+    }
+
+    blk_fvt_get_set_lun_size(chunks[0], &maxlba, flags, 1, &rc, &er);
+    DEBUG_2("id:%d maxlba:%ld\n", chunks[0], maxlba);
+    DEBUG_3("luns:%d loops:%d cmds:%d\n", num_opens, loops, num_cmds);
 
     errno = 0;
-
     for (x=0; x<loops; x++, y++)
     {
-        for (lba=0, i=0; i<num_cmds; i++,lba++)
-        {
-            if (flags & CBLK_GROUP_RAID0)
-            {
-                rc = cblk_cg_awrite(id, (char*)(blk_fvt_comp_data_buf+(i*size)),
-                                    lba,nblocks,&cgtag[i],NULL,
-                                    CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
-            }
-            else
-            {
-                rc = cblk_awrite(id, (char*)(blk_fvt_comp_data_buf + (i*size)),
-                              lba,nblocks,&ctag[i],NULL,CBLK_ARW_WAIT_CMD_FLAGS);
-            }
-            if (rc < 0)
-            {
-                fprintf(stderr,"awrite failed for lba = 0x%lx, rc = %d, "
-                               "errno = %d\n",lba,rc,errno);
-                *ret = rc;
-                *err = errno;
-                return;
-            }
-        }
-        DEBUG_1("awrite sent num_cmds:%d\n", i);
+        /* fill compare buffer with pattern */
+        fd = open ("/dev/urandom", O_RDONLY);
+        read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*num_cmds);
+        close (fd);
 
-        if (x==loops/2 && eeh)
+        printf("lba:%ld loop:%d of %d\r", startlba, x, loops); fflush(stdout);
+
+        for (idx=0; idx<num_opens; idx++)
         {
-            if (inject_EEH(dev_paths[0])) {*ret=-1; return;}
+            for (i=0; i<num_cmds; i++)
+            {
+                addr = (char*)(blk_fvt_comp_data_buf)+(((idx*num_cmds)+i)*bsz);
+                DEBUG_3("id:%d awrite addr:%p lba:%ld\n", chunks[idx], addr, lba);
+                if (flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_awrite(chunks[idx], addr, lba, nblocks,
+                                        &cgtag[idx][i], NULL,
+                                        CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
+                }
+                else
+                {
+                    rc = cblk_awrite(chunks[idx],addr, lba, nblocks,&ctag[idx][i],
+                                    NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+                }
+                if (rc < 0)
+                {
+                    fprintf(stderr,"awrite failed for lba = 0x%lx, rc = %d, "
+                                   "errno = %d\n",lba,rc,errno);
+                    *ret = rc;
+                    *err = errno;
+                    return;
+                }
+                ++lba; lba%=maxlba;
+            }
+            lba = startlba;
+            DEBUG_3("id:%d awrite num_cmds:%d startlba:%ld\n", chunks[idx],i,startlba);
+        }
+
+        if (x==1 && eeh)
+        {
+            DEBUG_1("do EEH inject to %s\n", dev_paths[0]);
+            if (inject_EEH(dev_paths[0])) {eeh_fail=1;}
             DEBUG_0("after eeh inject\n");
         }
 
-        i=0;
-        while (TRUE)
+        for (idx=0; idx<num_opens; idx++)
         {
-            errno=0;
-            if (flags & CBLK_GROUP_RAID0)
+            i=0;
+            while (TRUE)
             {
-                if (cgtag[i].tag == -1) {++i; continue;}
-                rc = cblk_cg_aresult(id, &cgtag[i], &ar_status, flags);
-            }
-            else
-            {
-                if (ctag[i] == -1) {++i; continue;}
-                rc = cblk_aresult(id, &ctag[i], &ar_status, flags);
-            }
-            if (rc > 0)
-            {
-                cgtag[i++].tag = -1;
-                if (i>=num_cmds)
+                errno=0;
+                if (flags & CBLK_GROUP_RAID0)
                 {
-                    DEBUG_3("awrite->aresult DONE rc:%d t:%d num_cmds:%d\n",
-                            rc, t, num_cmds);
-                    break;
+                    if (cgtag[idx][i].tag == -1) {++i; continue;}
+                    rc = cblk_cg_aresult(chunks[idx], &cgtag[idx][i],&ar_status,flags);
+                }
+                else
+                {
+                    if (ctag[idx][i] == -1) {++i; continue;}
+                    rc = cblk_aresult(chunks[idx], &ctag[idx][i], &ar_status, flags);
+                }
+                if (rc > 0)
+                {
+                    cgtag[idx][i++].tag = -1;
+                    if (i>=num_cmds)
+                    {
+                        DEBUG_4("id:%d awrite->aresult DONE rc:%d t:%d num_cmds:%d\n",
+                                chunks[idx], rc, t, num_cmds);
+                        break;
+                    }
+                }
+                else if (rc == 0) {//DEBUG_0("awrite->aresult rc=0\n");
+                    continue;}
+                else
+                {
+                    fprintf(stderr,"awrite->aresult cmdno:%d errno:%d rc:%d\n",
+                            t, errno,rc);
+                    *ret = rc;
+                    *err = errno;
+                    return;
                 }
             }
-            else if (rc == 0) {DEBUG_0("awrite->aresult rc=0\n"); continue;}
-            else
+        }
+
+        lba = startlba;
+
+        for (idx=0; idx<num_opens; idx++)
+        {
+            /* read the buffer we wrote */
+            for (i=0; i<num_cmds; i++)
             {
-                fprintf(stderr,"awrite->aresult cmdno:%d errno:%d rc:%d\n",
-                        t, errno,rc);
-                *ret = rc;
-                *err = errno;
-                return;
+                addr = (char*)(blk_fvt_data_buf)+(((idx*num_cmds)+i)*bsz);
+                DEBUG_3("id:%d aread addr:%p lba:%ld\n", chunks[idx], addr, lba);
+                if (flags & CBLK_GROUP_RAID0)
+                {
+                    rc = cblk_cg_aread(chunks[idx], addr, lba, nblocks,
+                                       &cgtag[idx][i], NULL,
+                                       CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
+                }
+                else
+                {
+                    rc = cblk_aread(chunks[idx], addr, lba, nblocks, &ctag[idx][i],
+                                    NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+                }
+                if (rc < 0)
+                {
+                    fprintf(stderr,"awrite failed for lba = 0x%lx, rc = %d, "
+                                   "errno = %d\n",lba,rc,errno);
+                    *ret = rc;
+                    *err = errno;
+                    return;
+                }
+                ++lba; lba%=maxlba;
+            }
+            lba = startlba;
+            DEBUG_3("id:%d aread num_cmds:%d startlba:%ld\n", chunks[idx], i,startlba);
+        }
+
+        for (idx=0; idx<num_opens; idx++)
+        {
+            i=0;
+            while (TRUE)
+            {
+                if (flags & CBLK_GROUP_RAID0)
+                {
+                    if (cgtag[idx][i].tag == -1) {++i; continue;}
+                    rc = cblk_cg_aresult(chunks[idx], &cgtag[idx][i],&ar_status,flags);
+                }
+                else
+                {
+                    if (ctag[idx][i] == -1) {++i; continue;}
+                    rc = cblk_aresult(chunks[idx], &ctag[idx][i], &ar_status, flags);
+                }
+                if (rc > 0)
+                {
+                    cgtag[idx][i++].tag = -1;
+                    if (i>=num_cmds) {break;}
+                }
+                else if (rc == 0) {continue;}
+                else
+                {
+                    fprintf(stderr,"aread->aresult error = %d\n",errno);
+                    *ret = rc;
+                    *err = errno;
+                    return;
+                }
             }
         }
 
-        /* read the buffer we wrote */
-        for (lba=0, i=0; i<num_cmds; i++,lba++)
+        ret_code = memcmp((char*)(blk_fvt_data_buf),
+                          (char*)(blk_fvt_comp_data_buf),
+                          num_cmds*bsz);
+        if (ret_code)
         {
-            if (flags & CBLK_GROUP_RAID0)
-            {
-                rc = cblk_cg_aread(id, (char*)(blk_fvt_data_buf + (i*size)),
-                                   lba, nblocks, &cgtag[i], NULL,
-                                   CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
-            }
-            else
-            {
-                rc = cblk_aread(id, (char*)(blk_fvt_data_buf + (i*size)),
-                             lba,nblocks,&ctag[i],NULL,CBLK_ARW_WAIT_CMD_FLAGS);
-            }
-            if (rc < 0)
-            {
-                fprintf(stderr,"awrite failed for lba = 0x%lx, rc = %d, "
-                               "errno = %d\n",lba,rc,errno);
-                *ret = rc;
-                *err = errno;
-                return;
-            }
+            fprintf(stderr,"\n memcmp failed rc = 0x%x\n",ret_code);
+            *ret = ret_code;
+            *err = errno;
+            return;
         }
+        else
+        {
+            DEBUG_1("memcmp success loop:%d\n", x);
+        }
+        /* clear the read buf for the next pass */
+        memset(blk_fvt_data_buf,0,num_cmds*bsz);
 
-        i=0;
-        while (TRUE)
-        {
-            if (flags & CBLK_GROUP_RAID0)
-            {
-                if (cgtag[i].tag == -1) {++i; continue;}
-                rc = cblk_cg_aresult(id, &cgtag[i], &ar_status, flags);
-            }
-            else
-            {
-                if (ctag[i] == -1) {++i; continue;}
-                rc = cblk_aresult(id, &ctag[i], &ar_status, flags);
-            }
-            if (rc > 0)
-            {
-                cgtag[i++].tag = -1;
-                if (i>=num_cmds) {break;}
-            }
-            else if (rc == 0) {continue;}
-            else
-            {
-                fprintf(stderr,"aread->aresult error = %d\n",errno);
-                *ret = rc;
-                *err = errno;
-                return;
-            }
-        }
-
-        if (validate)
-        {
-            ret_code = memcmp((char*)(blk_fvt_data_buf),
-                              (char*)(blk_fvt_comp_data_buf),
-                              num_cmds*size);
-            if (ret_code)
-            {
-                fprintf(stderr,"\n memcmp failed rc = 0x%x\n",ret_code);
-                *ret = ret_code;
-                *err = errno;
-                return;
-            }
-            /* clear the read buf for the next pass */
-            memset(blk_fvt_data_buf,0,num_cmds*size);
-        }
+        startlba+=num_cmds; startlba%=maxlba; lba=startlba;
     }
-    if (ctag)  {free(ctag);}
-    if (cgtag) {free(cgtag);}
+    for (idx=0; idx<num_opens; idx++)
+    {
+        if (ctag[idx])  {free(ctag[idx]);}
+        if (cgtag[idx]) {free(cgtag[idx]);}
+    }
+    if (eeh_fail) {*ret=-1;}
     DEBUG_2("Perf Test existing i = %d, x = %d\n", i, x );
     return;
 }
@@ -2012,7 +2078,7 @@ int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags)
     size_t      temp_sz,nblks;
     int         cmd;
     pid_t       child_pid;
-    int         child_status;
+    int         child_status=0;
     pid_t       w_ret;
     int         child_ret;
     int         child_err;
@@ -2071,7 +2137,7 @@ int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags)
         close(fd[0]);
 
         // child process 
-        rc = cblk_clone_after_fork(id,O_RDONLY,0);
+        rc = cblk_clone_after_fork(id,O_RDONLY,open_flags);
         if (rc) {
 
             DEBUG_2("\nfork_and_clone: clone failed rc=%x, err=%d\n",rc, errno);
@@ -2123,7 +2189,7 @@ int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags)
         // parent's process
 
         DEBUG_0("\nfork_and_clone:Parent waiting for child proc ");
-        w_ret = wait(&child_status);
+        w_ret = waitpid(child_pid, &child_status, 0);
 
         if (w_ret == -1) {
             DEBUG_1("fork_and_clone: wait failed %d\n",errno);

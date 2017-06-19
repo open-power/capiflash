@@ -27,7 +27,7 @@ UNAME=$(shell uname)
 ROOTPATH = ../../..
 
 ifeq ($(UNAME),AIX)
-codepkg: aixcxlflash aixcxlflash-test aixcxlflashimage
+aixpkg: aixcxlflash aixcxlflash-test aixcxlflashimage
 else
 
 #only add tarpkgs if we are in the DISABLED dir path
@@ -42,10 +42,8 @@ endif
 
 endif
 
-VERSIONMAJOR=4
-VERSIONMINOR=1
 SHORT_VERSION=${VERSIONMAJOR}.${VERSIONMINOR}
-VERSION=${VERSIONMAJOR}.${VERSIONMINOR}-${GITREVISION}
+VERSION=${VERSIONMAJOR}.${VERSIONMINOR}.${GITREVISION}
 
 cxlflash:
 	mkdir -p ${PKGDIR}
@@ -84,9 +82,11 @@ cxlflashimage:
 	cd ${PKGDIR}; \
 	fpm -f -s dir -t rpm -a all -n $@ -v ${VERSION} -C ./afu_root --iteration=1 \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
+		--before-remove ${SURELOCKROOT}/src/build/install/resources/preafuremove \
 		--conflicts afuimage --replaces afuimage .; \
 	fpm -f -s dir -t deb -a all -n $@ -v ${VERSION} -C ./afu_root \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
+		--before-remove ${SURELOCKROOT}/src/build/install/resources/preafuremove \
 		--conflicts afuimage --replaces afuimage .; \
 
 tarpkgs:

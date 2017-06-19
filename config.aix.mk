@@ -35,16 +35,31 @@ default:
 buildall: default
 	${MAKE} -j10 test
 
-pkgs: buildall
+allpkgs: buildall
 	${MAKE} packaging
 
-all: pkgs
-
-run_fvt: buildall
+run_fvt:
 	${MAKE} fvt
 
-run_unit: buildall
+run_unit:
 	${MAKE} unit
+
+ifneq ($(wildcard /usr/src/googletest/googletest),)
+  GTESTDIR=/usr/src/googletest/googletest
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard /usr/src/gtest),)
+  GTESTDIR=/usr/src/gtest
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/gtest-1.7.0),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/gtest-1.7.0
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
+  GTESTINC=${GTESTDIR}/include
+endif
+
+VERSIONMAJOR=4
+VERSIONMINOR=2
 
 #generate VPATH based on these dirs.
 VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img /lib
@@ -68,9 +83,6 @@ TESTDIR = ${ROOTPATH}/obj/tests
 GENDIR  = ${ROOTPATH}/obj/genfiles
 IMGDIR  = ${ROOTPATH}/img
 PKGDIR  = ${ROOTPATH}/pkg
-
-GTESTDIR = ${ROOTPATH}/src/test/framework/gtest-1.7.0
-GTESTINC = ${GTESTDIR}/include
 
 ifdef MODULE
 OBJDIR  = ${ROOTPATH}/obj/modules/${MODULE}
@@ -441,12 +453,10 @@ tests:
 	${MAKE} -j10 test
 
 install:
-	rm -rf ${PKGDIR}/install_root/*
-	cd ${ROOTPATH}/src/build/install && ${MAKE}
+	cd ${ROOTPATH}/src/build/install && ${MAKE} aixinstall
 
-packaging:
-	${MAKE} install
-	cd ${ROOTPATH}/src/build/packaging && ${MAKE}
+packaging: install
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} aixpkg
 
 cscope:
 	@mkdir -p ${ROOTPATH}/obj/cscope

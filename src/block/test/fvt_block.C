@@ -1658,7 +1658,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_plun_async_polling_perf_test)
     blk_open_tst(&id, max_reqs, &er_no, open_cnt, open_flags, mode);
     ASSERT_NE(NULL_CHUNK_ID, id);
 
-    io_perf_tst(id, &ret, &er_no, io_flags, 0);
+    io_perf_tst(&ret, &er_no, io_flags, 0);
     EXPECT_EQ(0, ret);
 
     blk_open_tst_cleanup(open_flags, &ret,&er_no);
@@ -1688,7 +1688,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_plun_async_blocking_perf_test)
     blk_open_tst(&id, max_reqs, &er_no, open_cnt, open_flags, mode);
     ASSERT_NE(NULL_CHUNK_ID, id);
 
-    io_perf_tst(id, &ret, &er_no, io_flags, 0);
+    io_perf_tst(&ret, &er_no, io_flags, 0);
     EXPECT_EQ(0, ret);
 
     blk_open_tst_cleanup(open_flags, &ret,&er_no);
@@ -2001,10 +2001,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_set_get_size)
     int         er_no        = 0;
     int         open_cnt     = 1;
     int         ret          = 0;
+    int         width        = 0;
     size_t      _4096        = 4096;
     size_t      lun_sz       = 0;
     size_t      ret_size     = 0;
-    int         get_set_flag = 0;  // 0 = get phys
+    int         get_set_flag = 1;  // 0 = get phys
                                    // 1 = get chunk
                                    // 2 = set size
     ASSERT_EQ(0,blk_fvt_setup(1));
@@ -2013,21 +2014,17 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_set_get_size)
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, flags, mode);
     ASSERT_NE(NULL_CHUNK_ID, id);
 
+    width = cblk_cg_get_num_chunks(id, flags);
+
     // Get lun size
     blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag,
                              &ret,&er_no);
     EXPECT_EQ(0, ret);
-    EXPECT_NE((size_t)0, lun_sz);
-
-    // get size on vlun should report whole phys lun size
-    get_set_flag = 1;
-    blk_fvt_get_set_lun_size(id, &ret_size, sz_flags, get_set_flag,
-                             &ret,&er_no);
-    EXPECT_EQ(0, ret);
+    EXPECT_EQ((size_t)0, lun_sz);
 
     /* set lun size to 4096 */
     get_set_flag = 2;
-    lun_sz       = _4096;
+    lun_sz       = _4096 * width;
     blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag,
                              &ret,&er_no);
     EXPECT_EQ(0, ret);
@@ -2037,58 +2034,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_set_get_size)
     blk_fvt_get_set_lun_size(id, &ret_size, sz_flags, get_set_flag,
                              &ret,&er_no);
     EXPECT_EQ(0, ret);
-
-    // test chunk size should be equal 4096
-    EXPECT_EQ(_4096, ret_size);
-
-    /* set lun size to 4097 */
-    get_set_flag = 2;
-    lun_sz       = _4096+1;
-    blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag,
-                             &ret,&er_no);
-    EXPECT_EQ(0, ret);
-
-    // get size for vlun
-    get_set_flag = 1;
-    blk_fvt_get_set_lun_size(id, &ret_size, sz_flags, get_set_flag,
-                             &ret,&er_no);
-    EXPECT_EQ(0, ret);
-
-    // test chunk size should be equal 4096 + num_chunks
-    EXPECT_EQ(_4096 + cblk_cg_get_num_chunks(id, flags), ret_size);
-
-    blk_open_tst_cleanup(flags, &ret,&er_no);
-    EXPECT_EQ(0, ret);
-}
-
-/**
-********************************************************************************
-** \brief
-*******************************************************************************/
-TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_set_size)
-{
-    chunk_id_t  id         = 0;
-    int         flags      = CBLK_GROUP_RAID0 | CBLK_OPN_VIRT_LUN;
-    int         sz_flags   = CBLK_GROUP_RAID0;
-    int         max_reqs   = 64;
-    int         er_no      = 0;
-    int         open_cnt   = 1;
-    int         ret        = 0;
-    size_t      lun_sz     = 0;
-    int         get_set_flag = 0;  // 0 = get phys
-                                   // 1 = get chunk
-                                   // 2 = set size
-    ASSERT_EQ(0,blk_fvt_setup(1));
-    blk_fvt_RAID0_setup();
-
-    blk_open_tst( &id, max_reqs, &er_no, open_cnt, flags, mode);
-    ASSERT_NE(NULL_CHUNK_ID,  id );
-
-    get_set_flag = 2;
-    lun_sz       = 4096;
-    blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag,
-                             &ret,&er_no);
-    EXPECT_EQ(0, ret);
+    EXPECT_EQ(ret_size, _4096*width);
 
     blk_open_tst_cleanup(flags, &ret,&er_no);
     EXPECT_EQ(0, ret);
@@ -2144,6 +2090,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_rd_wr_outside_chunksz)
     int         er_no      = 0;
     int         open_cnt   = 1;
     int         ret        = 0;
+    int         width      = 0;
     uint64_t    lba;
     size_t      lun_sz,nblks;
     int         io_flags   = CBLK_GROUP_RAID0;
@@ -2157,9 +2104,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_rd_wr_outside_chunksz)
     blk_open_tst(&id, max_reqs, &er_no, open_cnt, open_flags, mode);
     ASSERT_NE(NULL_CHUNK_ID, id);
 
+    width = cblk_cg_get_num_chunks(id, open_flags);
+
     /* set lun size to 4096 */
     get_set_flag = 2;
-    lun_sz       = 4096;
+    lun_sz       = 4096*width;
     blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag,
                              &ret,&er_no);
     EXPECT_EQ(0, ret);
@@ -2233,6 +2182,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_async_rd_wr_outside_lunsz)
     int         er_no        = 0;
     int         open_cnt     = 1;
     int         ret          = 0;
+    int         width        = 0;
     uint64_t    lba          = 0;
     size_t      lun_sz,nblks = 1;
     int         io_flags     = CBLK_GROUP_RAID0;
@@ -2246,9 +2196,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_async_rd_wr_outside_lunsz)
     blk_open_tst(&id, max_reqs, &er_no, open_cnt, open_flags, mode);
     ASSERT_NE(NULL_CHUNK_ID, id);
 
+    width = cblk_cg_get_num_chunks(id, open_flags);
+
     /* set lun size to 4096 */
     get_set_flag = 2;
-    lun_sz       = 4096;
+    lun_sz       = 4096*width;
     blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag,
                              &ret,&er_no);
     EXPECT_EQ(0, ret);
@@ -2395,7 +2347,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_async_polling_perf_test)
     blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag, &ret,&er_no);
     EXPECT_EQ(0, ret);
 
-    io_perf_tst(id, &ret, &er_no, io_flags, 0);
+    io_perf_tst(&ret, &er_no, io_flags, 0);
     EXPECT_EQ(0, ret);
 
     blk_open_tst_cleanup(open_flags, &ret,&er_no);
@@ -2435,7 +2387,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_async_blocking_perf_test)
     blk_fvt_get_set_lun_size(id, &lun_sz, sz_flags, get_set_flag, &ret,&er_no);
     EXPECT_EQ(0, ret);
 
-    io_perf_tst(id, &ret, &er_no, io_flags, 0);
+    io_perf_tst(&ret, &er_no, io_flags, 0);
     EXPECT_EQ(0, ret);
 
     blk_open_tst_cleanup(open_flags, &ret,&er_no);
@@ -2460,6 +2412,59 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_clone_chunk)
     ASSERT_NE(-1, rc);
     EXPECT_EQ(1,  ret);
     EXPECT_EQ(0,  er_no);
+
+    blk_open_tst_cleanup(open_flags,  &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_multi_vlun_perf_test)
+{
+    int         open_flags  = CBLK_GROUP_RAID0  | \
+                              CBLK_OPN_VIRT_LUN | \
+                              CBLK_OPN_NO_INTRP_THREADS;
+    int         sz_flags    = CBLK_GROUP_RAID0;
+    int         io_flags    = CBLK_GROUP_RAID0;
+    chunk_id_t  id          = 0;
+    int         num_cmds    = 1024;
+    int         er_no       = 0;
+    int         ret         = 0;
+    int         i           = 0;
+    size_t      psize       = 0;
+    size_t      set_size    = 5000;
+    int         MULTI_VLUNS = 128;
+    int         vluns_in    = 0;
+    char       *env_vluns   = getenv("FVT_MULTI_VLUNS");
+    char       *env_filemode = getenv("BLOCK_FILEMODE_ENABLED");
+
+    if (env_vluns)
+    {
+        vluns_in = atoi(env_vluns);
+        if (vluns_in > 0 && vluns_in < 256) {MULTI_VLUNS=vluns_in;}
+    }
+    if (env_filemode && atoi(env_filemode)==1) {MULTI_VLUNS=32;}
+
+    ASSERT_EQ(0,blk_fvt_setup(MULTI_VLUNS*num_cmds));
+    blk_fvt_RAID0_setup();
+
+    blk_open_tst(&id, num_cmds, &er_no, MULTI_VLUNS, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID,  id );
+
+    blk_fvt_get_set_lun_size(id, &psize, sz_flags, 0, &ret, &er_no);
+    ASSERT_NE(-1 , ret);
+    set_size = (psize/(MULTI_VLUNS*2));
+
+    for (i=0; i<MULTI_VLUNS; i++)
+    {
+        blk_fvt_get_set_lun_size(chunks[i], &set_size, sz_flags, 2, &ret, &er_no);
+        ASSERT_NE(-1 , ret);
+    }
+
+    io_perf_tst(&ret, &er_no, io_flags, 0);
+    EXPECT_EQ(0 , ret);
 
     blk_open_tst_cleanup(open_flags,  &ret,&er_no);
     EXPECT_EQ(0, ret);
@@ -5527,7 +5532,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_virt_lun_perf_test)
     
     int num_cmds = 4096;
 
-    ASSERT_EQ(0,blk_fvt_setup(num_cmds+1));
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
     // open virt lun
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
@@ -5538,7 +5543,97 @@ TEST(Block_FVT_Suite, BLK_API_FVT_virt_lun_perf_test)
     blk_fvt_get_set_lun_size(id, &temp_sz, sz_flags, get_set_flag, &ret,&er_no);
     ASSERT_NE(-1 , ret);
 
-    io_perf_tst(id, &ret, &er_no, 0, 0);
+    io_perf_tst(&ret, &er_no, 0, 0);
+    EXPECT_EQ(0 , ret);
+
+    blk_open_tst_cleanup(0,  &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_blocking_perf_test)
+{
+    chunk_id_t  id          = 0;
+    int         open_flags  = CBLK_OPN_VIRT_LUN;
+    int         num_cmds    = 1024;
+    int         er_no       = 0;
+    int         ret         = 0;
+    int         i           = 0;
+    int         sz_flags    = 0;
+    size_t      psize       = 0;
+    size_t      set_size    = 5000;
+    int         MULTI_VLUNS = 128;
+    int         vluns_in    = 0;
+    char       *env_vluns   = getenv("FVT_MULTI_VLUNS");
+    char       *env_filemode = getenv("BLOCK_FILEMODE_ENABLED");
+
+    if (env_vluns)
+    {
+        vluns_in = atoi(env_vluns);
+        if (vluns_in > 0 && vluns_in < 256) {MULTI_VLUNS=vluns_in;}
+    }
+    if (env_filemode && atoi(env_filemode)==1) {set_size=1024; MULTI_VLUNS=32;}
+
+    ASSERT_EQ(0,blk_fvt_setup(MULTI_VLUNS*num_cmds));
+
+    blk_open_tst(&id, num_cmds, &er_no, MULTI_VLUNS, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID,  id );
+
+    blk_fvt_get_set_lun_size(id, &psize, 0, 0, &ret, &er_no);
+    ASSERT_NE(-1 , ret);
+    set_size = (psize/(MULTI_VLUNS*2));
+
+    for (i=0; i<MULTI_VLUNS; i++)
+    {
+        blk_fvt_get_set_lun_size(chunks[i], &set_size, sz_flags, 2, &ret, &er_no);
+        ASSERT_NE(-1 , ret);
+    }
+
+    io_perf_tst(&ret, &er_no, 0, 0);
+    EXPECT_EQ(0 , ret);
+
+    blk_open_tst_cleanup(0,  &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_polling_perf_test)
+{
+    chunk_id_t  id          = 0;
+    int         open_flags  = CBLK_OPN_VIRT_LUN | CBLK_OPN_NO_INTRP_THREADS;
+    int         num_cmds    = 1024;
+    int         er_no       = 0;
+    int         ret         = 0;
+    int         i           = 0;
+    int         sz_flags    = 0;
+    size_t      psize       = 0;
+    size_t      set_size    = 5000;
+    int         MULTI_VLUNS = 128;
+    int         vluns_in    = 0;
+    char       *env_vluns   = getenv("FVT_MULTI_VLUNS");
+    char       *env_filemode = getenv("BLOCK_FILEMODE_ENABLED");
+
+    if (env_vluns)
+    {
+        vluns_in = atoi(env_vluns);
+        if (vluns_in > 0 && vluns_in < 256) {MULTI_VLUNS=vluns_in;}
+    }
+    if (env_filemode && atoi(env_filemode)==1) {set_size=1024; MULTI_VLUNS=32;}
+
+    ASSERT_EQ(0,blk_fvt_setup(MULTI_VLUNS*num_cmds));
+
+    blk_open_tst(&id, num_cmds, &er_no, MULTI_VLUNS, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID,  id );
+
+    blk_fvt_get_set_lun_size(id, &psize, 0, 0, &ret, &er_no);
+    ASSERT_NE(-1 , ret);
+    set_size = (psize/(MULTI_VLUNS*2));
+
+    for (i=0; i<MULTI_VLUNS; i++)
+    {
+        blk_fvt_get_set_lun_size(chunks[i], &set_size, sz_flags, 2, &ret, &er_no);
+        ASSERT_NE(-1 , ret);
+    }
+
+    io_perf_tst(&ret, &er_no, 0, 0);
     EXPECT_EQ(0 , ret);
 
     blk_open_tst_cleanup(0,  &ret,&er_no);
@@ -5561,7 +5656,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phy_lun_perf_test)
                                         // 2 = set chunk sz
     int num_cmds = 4096;
 
-    ASSERT_EQ(0,blk_fvt_setup(num_cmds+1));
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
     // open virt lun
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
@@ -5580,7 +5675,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phy_lun_perf_test)
         return;
     }
 
-    io_perf_tst(id, &ret, &er_no, CBLK_ARESULT_BLOCKING, 0);
+    io_perf_tst(&ret, &er_no, CBLK_ARESULT_BLOCKING, 0);
     EXPECT_EQ(0 , ret);
 
     blk_open_tst_cleanup(0,  &ret,&er_no);
@@ -5826,63 +5921,6 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_aresult_explicit_ret_code_tst)
     EXPECT_EQ(0, ret);
     EXPECT_EQ(0, er_no);
 
-}
-
-/*** new **/
-TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_virt_multi_luns_single_thread_rw_tst)
-{
-    int         flags = CBLK_OPN_VIRT_LUN;
-    int         er_no = 0;
-    int         ret   = 0;
-
-    ASSERT_EQ(0,blk_fvt_setup(1));
-    num_loops   = 2;
-    num_threads = 1;
-    thread_flag = 1;
-    blk_thread_tst(&ret, &er_no, flags, 0, 0);
-    EXPECT_EQ(0 , ret);
-}
-
-TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_phys_multi_luns_single_thread_rw_tst)
-{
-    int         flags = 0;
-    int         er_no = 0;
-    int         ret   = 0;
-
-    ASSERT_EQ(0,blk_fvt_setup(1));
-    num_loops   = 2;
-    num_threads = 1;
-    thread_flag = 1;
-    blk_thread_tst(&ret, &er_no, flags, 0, 0);
-    EXPECT_EQ(0, ret);
-}
-
-TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_virt_multi_luns_multi_thread_rw_tst)
-{
-    int         flags = CBLK_OPN_VIRT_LUN;
-    int         er_no = 0;
-    int         ret   = 0;
-
-    ASSERT_EQ(0,blk_fvt_setup(1));
-    num_loops   = 2;
-    num_threads = 10;
-    thread_flag = 1;
-    blk_thread_tst(&ret, &er_no, flags, 0, 0);
-    EXPECT_EQ(0, ret);
-}
-
-TEST(Block_FVT_Suite, BLK_API_FVT_FM_phy_lun_multi_thread_rw_tst)
-{
-    int         flags = 0;
-    int         er_no = 0;
-    int         ret   = 0;
-
-    ASSERT_EQ(0,blk_fvt_setup(1));
-    num_loops   = 2;
-    num_threads = 10;
-    thread_flag = 1;
-    blk_thread_tst(&ret, &er_no, flags, 0, 0);
-    EXPECT_EQ(0, ret);
 }
 
 TEST(Block_FVT_Suite, BLK_API_FVT_virt_lun_share_cntxt_rw_tst)
@@ -7744,7 +7782,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phy_mpio_cabl_pull_io)
             return;
     }
 
-    io_perf_tst(id, &ret, &er_no, 0, 0);
+    io_perf_tst(&ret, &er_no, 0, 0);
 
     EXPECT_EQ(0 , ret);
     EXPECT_EQ(0 , er_no);
@@ -7777,7 +7815,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_blocking_EEH)
 
     TESTCASE_SKIP_IF_NO_EEH;
 
-    ASSERT_EQ(0,blk_fvt_setup(num_cmds+1));
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
     // open virt lun
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
@@ -7788,7 +7826,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_blocking_EEH)
     blk_fvt_get_set_lun_size(id, &temp_sz, sz_flags, get_set_flag, &ret,&er_no);
     ASSERT_NE(-1 , ret);
 
-    io_perf_tst(id, &ret, &er_no, 0, 1);
+    io_perf_tst(&ret, &er_no, 0, 1);
     EXPECT_EQ(0 , ret);
 
     blk_open_tst_cleanup(0,  &ret,&er_no);
@@ -7811,13 +7849,13 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_async_blocking_EEH)
 
     TESTCASE_SKIP_IF_NO_EEH;
 
-    ASSERT_EQ(0,blk_fvt_setup(num_cmds+1));
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
     // open virt lun
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
     ASSERT_NE(NULL_CHUNK_ID,  id );
 
-    io_perf_tst(id, &ret, &er_no, 0, 1);
+    io_perf_tst(&ret, &er_no, 0, 1);
     EXPECT_EQ(0 , ret);
 
     blk_open_tst_cleanup(0,  &ret,&er_no);
@@ -7868,6 +7906,51 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_sync_blocking_EEH)
 ********************************************************************************
 ** \brief
 *******************************************************************************/
+TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_async_blocking_EEH)
+{
+    chunk_id_t  id          = 0;
+    int         open_flags  = CBLK_OPN_VIRT_LUN;
+    int         num_cmds    = 1024;
+    int         er_no       = 0;
+    int         ret         = 0;
+    int         i           = 0;
+    int         sz_flags    = 0;
+    size_t      set_size    = 5000;
+    int         MULTI_VLUNS = 128;
+    int         vluns_in    = 0;
+    char       *env_vluns   = getenv("FVT_MULTI_VLUNS");
+
+    TESTCASE_SKIP_IF_NO_EEH;
+
+    if (env_vluns)
+    {
+        vluns_in = atoi(env_vluns);
+        if (vluns_in > 0 && vluns_in < 128) {MULTI_VLUNS=vluns_in;}
+    }
+
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds*MULTI_VLUNS));
+
+    blk_open_tst(&id, num_cmds, &er_no, MULTI_VLUNS, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID,  id );
+
+    for (i=0; i<MULTI_VLUNS; i++)
+    {
+        blk_fvt_get_set_lun_size(chunks[i], &set_size, sz_flags, 2, &ret,&er_no);
+        ASSERT_NE(-1 , ret);
+    }
+
+    io_perf_tst(&ret, &er_no, 0, 1);
+    EXPECT_EQ(0 , ret);
+
+    blk_open_tst_cleanup(0,  &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_polling_EEH)
 {
     chunk_id_t  id      = 0;
@@ -7885,7 +7968,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_polling_EEH)
 
     TESTCASE_SKIP_IF_NO_EEH;
 
-    ASSERT_EQ(0,blk_fvt_setup(num_cmds+1));
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
     // open virt lun
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
@@ -7896,7 +7979,51 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_polling_EEH)
     blk_fvt_get_set_lun_size(id, &temp_sz, sz_flags, get_set_flag, &ret,&er_no);
     ASSERT_NE(-1 , ret);
 
-    io_perf_tst(id, &ret, &er_no, 0, 1);
+    io_perf_tst(&ret, &er_no, 0, 1);
+    EXPECT_EQ(0 , ret);
+
+    blk_open_tst_cleanup(0,  &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_async_polling_EEH)
+{
+    chunk_id_t  id          = 0;
+    int         open_flags  = CBLK_OPN_VIRT_LUN | CBLK_OPN_NO_INTRP_THREADS;
+    int         num_cmds    = 1024;
+    int         er_no       = 0;
+    int         ret         = 0;
+    int         i           = 0;
+    int         sz_flags    = 0;
+    size_t      set_size    = 5000;
+    int         MULTI_VLUNS = 128;
+    int         vluns_in    = 0;
+    char       *env_vluns   = getenv("FVT_MULTI_VLUNS");
+
+    TESTCASE_SKIP_IF_NO_EEH;
+
+    if (env_vluns)
+    {
+        vluns_in = atoi(env_vluns);
+        if (vluns_in > 0 && vluns_in < 128) {MULTI_VLUNS=vluns_in;}
+    }
+
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds*MULTI_VLUNS));
+
+    blk_open_tst(&id, num_cmds, &er_no, MULTI_VLUNS, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID,  id );
+
+    for (i=0; i<MULTI_VLUNS; i++)
+    {
+        blk_fvt_get_set_lun_size(chunks[i], &set_size, sz_flags, 2, &ret,&er_no);
+        ASSERT_NE(-1 , ret);
+    }
+
+    io_perf_tst(&ret, &er_no, 0, 1);
     EXPECT_EQ(0 , ret);
 
     blk_open_tst_cleanup(0,  &ret,&er_no);
@@ -7919,13 +8046,13 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_async_polling_EEH)
 
     TESTCASE_SKIP_IF_NO_EEH;
 
-    ASSERT_EQ(0,blk_fvt_setup(num_cmds+1));
+    ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
     // open virt lun
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
     ASSERT_NE(NULL_CHUNK_ID,  id );
 
-    io_perf_tst(id, &ret, &er_no, 0, 1);
+    io_perf_tst(&ret, &er_no, 0, 1);
     EXPECT_EQ(0 , ret);
 
     blk_open_tst_cleanup(0,  &ret,&er_no);

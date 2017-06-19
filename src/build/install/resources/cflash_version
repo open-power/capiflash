@@ -40,8 +40,10 @@ then
   CF_VER=$(cat ver.txt)
 fi
 
-CORSA_VER=0512D1
-GT_VER=1114N4
+CORSA_VER=$(cat /opt/ibm/capikv/etc/afu_versions|grep CORSA_IMAGE|awk '{print $2}'|cut -c26-33)
+GT_VER=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
+GTP_VER=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
+
 err_rc=0
 
 if [[ $ubuntu ]]
@@ -198,8 +200,9 @@ elif [[ $redhat ]]
 then
   if [[ -z $CF_VER ]]
   then
-    CF_VER=$(rpm -aq | egrep -v "test|image"| grep cxlflash | tail -1 | sed 's,_,-,g'| awk -F'-' '{print $3"-"$4}')
+    CF_VER=$(rpm -aq | egrep -v "test|image"| grep "cxlflash-" | head -1 | awk -F- '{print $2}')
   fi
+  CF_VER=$(echo $CF_VER|sed 's,-,_,g')
 
   EXISTS_OS_VER=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
   if [[ ! $EXISTS_OS_VER =~ $OS_VER ]]
@@ -212,14 +215,14 @@ then
 
   if [[ ! -z $1 ]]; then K_VER=$1; fi
 
-  EXISTS_CF_TEST_VER=$(rpm -qa | grep cxlflash-test| tail -1| sed 's,_,-,g'| awk -F'-' '{print $2"-"$3"-"$4}')
-  if [[ -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
+  EXISTS_CF_TEST_VER=$(rpm -qa | grep cxlflash-test| head -1| awk -F- '{print $3}')
+  if [[ ! -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
   then
     err_rc=2
     echo "ERROR:     cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
   fi
 
-  EXISTS_CF_VER=$(rpm -qa |egrep -v "image|test"|grep cxlflash|tail -1| sed 's,_,-,g'| awk -F'-' '{print $2"-"$3"-"$4}')
+  EXISTS_CF_VER=$(rpm -aq | egrep -v "test|image"| grep "cxlflash-" | grep -v test| head -1 | awk -F- '{print $2}')
   if [[ -z $EXISTS_CF_VER ]]
   then
     err_rc=3
@@ -232,7 +235,7 @@ then
     echo "INFO:      cxlflash:      $EXISTS_CF_VER"
   fi
 
-  EXISTS_CF_IMAGE_VER=$(rpm -qa |grep cxlflashimage|tail -1| sed 's,_,-,g'| awk -F'-' '{print $2"-"$3"-"$4}')
+  EXISTS_CF_IMAGE_VER=$(rpm -qa |grep cxlflashimage|head -1 | awk -F- '{print $2}')
   if   [[ -z $EXISTS_CF_IMAGE_VER ]]
   then
     err_rc=4
@@ -240,7 +243,7 @@ then
   elif [[ ! $EXISTS_CF_IMAGE_VER =~ $CF_VER ]]
   then
     err_rc=4
-    echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) Required($CF_VER)"
+    echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) != Required($CF_VER)"
   fi
 
   EXISTS_K_VER=$(rpm -q kernel)

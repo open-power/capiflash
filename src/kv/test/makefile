@@ -34,7 +34,6 @@ BITS =
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
 LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 VPATH   += ..
@@ -130,4 +129,4 @@ cleanruns:
 	$(TESTDIR)/run_err
 
 unit:
-	@$(TESTDIR)/run_fvt_kv$(BITS)  --gtest_output=xml:$(TESTDIR)/kv_fvt_results.xml;
+	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt_kv$(BITS) --gtest_output=xml:$(TESTDIR)/kv_fvt_results.xml;

@@ -178,7 +178,7 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh);
 void blk_multi_luns_thread_tst(int *ret, int *err);
 void blocking_io_tst (chunk_id_t id, int *ret, int *err);
 void user_tag_io_tst (chunk_id_t id, int *ret, int *err, int flags);
-void io_perf_tst (chunk_id_t id, int *ret, int *err, int flags, int eeh);
+void io_perf_tst (int *ret, int *err, int flags, int eeh);
 int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags);
 int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode);
 int fork_and_clone_my_test(int *ret, int *err, int pmode, int cmode);

@@ -1,0 +1,76 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/tools/build_ppa $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+if [[ ! $PWD =~ surelock-sw &&-z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
+source env.bash >/dev/null 2>&1
+
+branch=$(git branch|grep ^*)
+if [[ $branch =~ master ]]
+then
+  branch=4.3;
+elif [[ $branch =~ GA4.2 ]]
+then 
+  branch=4.2;
+fi
+
+ver=$branch.$(git rev-list HEAD 2>/dev/null| wc -l)-$(git rev-parse --short HEAD 2>/dev/null)
+orig=cxlflash_$branch.$(git rev-list HEAD 2>/dev/null| wc -l).orig.tar
+pkg=cxlflash_$ver
+
+if [[ ! -z $1 ]]; then pkg+=.$1; fi
+
+cd $SURELOCKROOT
+make setversion
+
+if [[ -e build ]]; then rm -fR build; fi
+mkdir -p build/$pkg
+cp * build/$pkg 2>/dev/null
+if [[ -e build/$pkg/customrc ]]; then rm -f build/$pkg/customrc; fi
+cp customrc.p8elblkkermc build/$pkg/customrc
+
+cp -R src build/$pkg
+cp obj/tests/version.txt build/$pkg/src/build
+cd build
+tar -cf $orig $pkg
+gzip -f $orig
+
+cp -R $SURELOCKROOT/src/build/debian $pkg
+cd $pkg
+
+if [[ -e debian/changelog ]]; then rm debian/changelog; fi
+dch --create --distribution xenial --package cxlflash -v $ver "latest update"
+if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
+
+echo "<enter> to build, q to quit"
+read char
+if [[ $char = [qQ] ]]; then exit 0; fi
+
+debuild
+if [[ $? -ne 0 ]]; then echo "debuild failed"; exit -1; fi
+debuild -S -sa
+if [[ $? -ne 0 ]]; then echo "debuild -S -sa failed"; exit -1; fi
+
+exit 0

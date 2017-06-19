@@ -29,6 +29,7 @@ extern "C"
 #include <fvt_kv.h>
 #include <fvt_kv_utils.h>
 #include <fvt_kv_utils_async_cb.h>
+#include <cflash_test_utils.h>
 #include <errno.h>
 }
 
@@ -36,7 +37,7 @@ extern "C"
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, PERSIST_FIXED_512x128x50000)
+TEST(FVT_KV_GOOD_PATH, PERSIST_100000_KV)
 {
     ARK     *ark  = NULL;
     kv_t    *fdb  = NULL;
@@ -130,6 +131,7 @@ TEST(FVT_KV_GOOD_PATH, PERSIST_FIXED_512x128x50000)
     }
 
     kv_db_destroy(fdb, LEN);
+    kv_db_destroy(mdb, LEN);
     ARK_DELETE;
 }
 
@@ -137,7 +139,7 @@ TEST(FVT_KV_GOOD_PATH, PERSIST_FIXED_512x128x50000)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, PERSIST)
+TEST(FVT_KV_GOOD_PATH, PERSIST_COMPLEX)
 {
     ARK     *ark    = NULL;
     kv_t    *fdb    = NULL;
@@ -320,4 +322,109 @@ TEST(FVT_KV_GOOD_PATH, PERSIST)
     kv_db_destroy(fdb, LEN);
     kv_db_destroy(mdb, LEN);
     kv_db_destroy(bdb, BLEN);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, PERSIST_EEH)
+{
+    ARK     *ark   = NULL;
+    kv_t    *fdb   = NULL;
+    kv_t    *mdb   = NULL;
+    uint32_t fklen = 5000;
+    uint32_t fvlen = 257;
+    uint32_t klen  = 512;
+    uint32_t fLEN  = 5000;
+    uint32_t vlen  = 128;
+    uint32_t LEN   = 50000;
+    uint32_t i     = 0;
+    int64_t  res   = 0;
+    char    *dev   = getenv("FVT_DEV_PERSIST");
+    uint8_t  gvalue[fvlen];
+    struct stat sbuf;
+
+    if (NULL == dev ||
+        (!(strncmp(dev,"/dev",4)==0 ||
+           strncmp(dev,"RAID",4)==0 ||
+           stat(dev,&sbuf) == 0))
+       )
+    {
+        TESTCASE_SKIP("FVT_DEV_PERSIST==NULL or file not found");
+        return;
+    }
+
+    TESTCASE_SKIP_IF_NO_EEH;
+
+    printf("create k/v databases\n"); fflush(stdout);
+    fdb = (kv_t*)kv_db_create_fixed(fLEN, fklen, fvlen);
+    ASSERT_TRUE(fdb != NULL);
+    mdb = (kv_t*)kv_db_create_mixed(LEN, klen-1, vlen);
+    ASSERT_TRUE(mdb != NULL);
+
+    printf("create ark\n"); fflush(stdout);
+    ARK_CREATE_NEW_PERSIST;
+
+    printf("run 5 sec mixed REP_LOOP\n"); fflush(stdout);
+    fvt_kv_utils_REP_LOOP(ark,
+                          kv_db_create_mixed,
+                          kv_db_mixed_regen_values,
+                          fklen+1,
+                          fvlen,
+                          1000,
+                          5);
+
+    printf("load ark with fixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, fdb, fLEN);
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, fvlen, fLEN);
+
+    printf("load ark with the mixed db\n"); fflush(stdout);
+    fvt_kv_utils_load (ark, mdb, LEN);
+    printf("query mixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, mdb, fvlen, LEN);
+
+    printf("persist ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    inject_EEH(dev); sleep(3);
+
+    printf("re-open ark and read persisted data\n"); fflush(stdout);
+    ARK_CREATE_PERSIST;
+
+    printf("query fixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, fdb, fvlen, fLEN);
+
+    printf("query mixed db\n"); fflush(stdout);
+    fvt_kv_utils_query(ark, mdb, fvlen, LEN);
+
+    printf("delete fixed db from ark\n"); fflush(stdout);
+    fvt_kv_utils_del(ark, fdb, fLEN);
+
+    printf("delete mixed db from ark\n"); fflush(stdout);
+    fvt_kv_utils_del(ark, mdb, LEN);
+
+    printf("persist ark\n"); fflush(stdout);
+    ARK_DELETE;
+
+    printf("re-open ark without LOAD\n"); fflush(stdout);
+    ARK_CREATE_NEW_PERSIST;
+
+    printf("verify ark is empty\n"); fflush(stdout);
+
+    for (i=0; i<fLEN; i++)
+    {
+        ASSERT_EQ(ENOENT, ark_get(ark,
+                                  fdb[i].klen,
+                                  fdb[i].key,
+                                  fdb[i].vlen,
+                                  gvalue,
+                                  0,
+                                  &res));
+    }
+
+    kv_db_destroy(fdb, fLEN);
+    kv_db_destroy(mdb, fLEN);
+    ARK_DELETE;
 }

@@ -74,12 +74,20 @@ chluntable()
             echo "INFO: LUN $targetlun is already in SIO mode. No action needed.";
         ;;
         * )
-            echo "LUN $targetlun has unknown LUN Status ($currmode) or target mode ($targetmode)."
+            echo "INFO: LUN $targetlun has unknown LUN Status ($currmode) or target mode ($targetmode)."
             return $EINVAL;
         ;;
     esac
-   #check if the LUN's there, and if we're deleting, delete it. If its not and adding, add it.
-   #exclusive lock  
+
+    #do bind/unbind if required
+    local _SGDEVS=`ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/host*/target*:*:*/*:*:*:*/scsi_generic 2>/dev/null| grep sg`
+    local wwid
+    for dev in $_SGDEVS; do
+        getlunid wwid $dev
+        if [[ $wwid = $targetlun ]]; then
+          ctrlblockdevmap $dev $targetmode
+        fi
+    done
 }    
 
 #@desc map a block device to its underlying sg device
@@ -94,7 +102,7 @@ getsgfromblock()
     if [[ -e /sys/class/block/$blockdev/device/scsi_generic ]]; then
         sgdev=`ls /sys/class/block/$blockdev/device/scsi_generic`;
     else
-        echo "Invalid sg device: $dev"
+        echo "INFO: Invalid sg device: $dev"
         return $ENOENT;
     fi
     eval $__resultvar="'$sgdev'"
@@ -141,13 +149,9 @@ getblockdev()
 {
     local __resultvar=$1;
     local dev=$2;
-    local block="unknown";
+    local block="   ";
     if [[ -e /sys/class/scsi_generic/$dev/device/block ]]; then
         local block=`ls /sys/class/scsi_generic/$dev/device/block`;
-    else
-        #echo "Invalid block device: $dev"
-        #this will naturally occur if we are in superpipe mode, or if the LUN mappings are discontinuous (e.g. LUN1 exists, but LUN0 does not).
-        return $ENOENT;
     fi
     eval $__resultvar="'$block'"
 }
@@ -172,31 +176,34 @@ ctrlblockdevmap()
     local scsitopo=0;
     local tgmode=$2;
     local scsiaction="noop";
-    local blockdev="unknown";
-    getblockdev blockdev $dev || blockdev="unknown";
+    local blockdev=;
+    getblockdev blockdev $dev;
     getscsitopo scsitopo $dev;
     #only unmap the device if the block device is NOT unknown, and we want to go to SIO mode
-    if [[ ( "$tgmode" == "$LUNMODE_SIO" ) &&  ( "$blockdev" != "unknown" ) ]]; then
+    if [[ ( "$tgmode" == "$LUNMODE_SIO" ) &&  ( "$blockdev" != "   " ) ]]; then
         scsiaction="unbind";
     #only map the device if the block device is unknown, and want to go to LEGACY mode
-    elif [[ ("$tgmode" == "$LUNMODE_LEGACY") &&  ("$blockdev" == "unknown") ]]; then
+    elif [[ ("$tgmode" == "$LUNMODE_LEGACY") &&  ("$blockdev" == "   ") ]]; then
         scsiaction="bind";
     fi
+    echo "INFO: sgdev:$dev mode:$tgmode action:${scsiaction} sddev:$blockdev" >> $LOGFILE;
     #if there's something to do, call either bind or unbind appropriately
-    if [ "$scsiaction" != "noop" ]; then
-        echo "INFO: ${scsiaction}ing $dev's block device, currently $blockdev" >> $LOGFILE;
-        echo -n "$scsitopo" > /sys/bus/scsi/drivers/sd/$scsiaction || echo "WARNING: error attempting to control block device for $dev" >> $LOGFILE;
+    if [[ "$scsiaction" != "noop" && $blockdev ]]; then
+        out=$(echo -n "$scsitopo" > /sys/bus/scsi/drivers/sd/$scsiaction 2>&1)
+        echo "INFO: action:${scsiaction} sgdev:$dev sddev:$blockdev scsitopo:$scsitopo rc:$?" >> $LOGFILE;
     fi
 }
-    
+
 #@desc print out a status table of the current LUN modes / mappings
 #@returns sets rc to 0 on success, OR sets return code to non-zero value on error
 printstatus()
 {
+    declare -A GMAP
+    declare -A DMAP
     echo   "CXL Flash Device Status"
     if [[ -z $_VM ]]
     then
-      _capis=$(lspci|egrep "0601|04cf" 2>/dev/null|awk '{print $1}')
+      _capis=$(lspci|egrep "0628|0601|04cf" 2>/dev/null|awk '{print $1}')
     else
       _capis=$(ls -d /sys/bus/pci/drivers/cxlflash/*:* 2>/dev/null|awk -F/ '{print $7}')
     fi
@@ -220,7 +227,7 @@ printstatus()
       then
         _SGDEVS=$(ls -d /sys/devices/pci*/*/$capi/pci*/*/host*/target*/*/scsi_generic/sg* 2>/dev/null|awk -F/ '{print $13}')
       else
-         _SGDEVS=$(ls -d /sys/devices/platform/*ibm,coherent-platform-facility/*/$capi/*/*/*/scsi_generic/sg* 2>/dev/null |awk -F/ '{print $12}')
+         _SGDEVS=$(ls -d /sys/devices/platform/*ibm,coherent-platform-facility/*/$capi/*/*/*/scsi_generic/sg* 2>/dev/null |awk -F/ '{print $12}'|sort -V)
       fi
 
       local lunid=0;
@@ -231,14 +238,24 @@ printstatus()
       then
         continue
       fi
-      printf "%10s: %10s  %5s  %9s  %32s\n" "Device" "SCSI" "Block" "Mode" "LUN WWID";
+      sgdevs=$(ls -1 /dev|grep sg)
+      sddevs=$(ls -1 /dev|grep sd)
+      for dev in $sgdevs; do link=$(readlink /dev/$dev); if [[ ! -z $link ]]; then GMAP[$link]=$dev; sgpdevs=1; fi; done
+      for dev in $sddevs; do link=$(readlink /dev/$dev); if [[ ! -z $link ]]; then DMAP[$link]=$dev; sdpdevs=1; fi; done
+
+      printf "  %-8s %-10s %-8s %-10s %-33s %-s" "Device:" "SCSI" "Block" "Mode" "LUN WWID"
+      if [[ $sgpdevs || $sdpdevs ]]; then printf "Persist"; fi
+      printf "\n";
       for dev in $_SGDEVS
       do
           getlunid lunid $dev;
           getmode lunmode $dev;
-          getblockdev blockdev $dev || blockdev="n/a";
+          getblockdev blockdev $dev;
           getscsitopo scsitopo $dev;
-          printf "%10s: %10s, %5s, %9s, %32s\n" "$dev" "$scsitopo" "$blockdev" "$lunmode" "$lunid";
+          printf "  %-8s %-10s %-8s %-10s %-34s" "$dev:" "$scsitopo," "$blockdev," "$lunmode," "$lunid,"
+          if [[ $sgpdevs ]]; then printf "%-11s" "${GMAP[$dev]},";      fi
+          if [[ $sdpdevs ]]; then printf "%-11s" "${DMAP[$blockdev]}"; fi
+          printf "\n"
       done
     done
     printf "\n"
@@ -252,9 +269,10 @@ setdevmode()
     #$1: target sg device
     #$2: target mode
     local dev=$1;
+    local targetmode=$2
     #causes the block device above this sg device to become mapped or unmapped
-    #ctrlblockdevmap $dev $targetmode; #@TODO: disable to keep HTX happy
-    echo "INFO: Setting $dev mode" >> $LOGFILE;
+    ctrlblockdevmap $dev $targetmode
+    echo "INFO: Setting $dev mode:$targetmode" >> $LOGFILE;
     #call with the config option, which causes the tool to read the config
     $CAPIKVROOT/bin/cxlflashutil -d /dev/$dev --config >> $LOGFILE;
 }
@@ -266,20 +284,18 @@ setdevmode()
 getluntablestate()
 {
     local __resultvar=$1;
-    local lunid=$2;
+    local wwid=$2;
     local targetmode=$LUNMODE_LEGACY; #default to legacy
 
     if [[ ! -f $SIOTABLE ]]; then
-        echo "Unable to access '$SIOTABLE'";
+        echo "ERROR: Unable to access '$SIOTABLE'";
         return $ENOENT;
     fi
-    #echo "searching for '$lunid'";
     #match any LUN entry that is lun=1 or lun=01
-    if grep -xq "$lunid=0\?*1.\?*" $SIOTABLE ; then
-        #echo "lun in SIO mode";
-        targetmode=$LUNMODE_SIO; #set to SIO mode since it's in the SIO table
+    if [[ $(grep $wwid $SIOTABLE | awk -F= '{print $2}') -eq 1 ]]; then
+        targetmode=$LUNMODE_SIO;
     fi
-    eval $__resultvar="'$targetmode'"
+    eval $__resultvar=$targetmode
 }
 
 
@@ -302,15 +318,20 @@ dotableupdate()
     local _SGDEVS=`ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/host*/target*:*:*/*:*:*:*/scsi_generic 2>/dev/null| grep sg`
     date >> $LOGFILE;
     if [[ ! -f $SIOTABLE ]]; then
-        echo "Unable to access '$SIOTABLE'";
+        echo "ERROR: Unable to access '$SIOTABLE'";
         return $ENOENT;
     else
         echo "SIO LUN TABLE CONTENTS:" >> $LOGFILE;
         cat $SIOTABLE >> $LOGFILE;
     fi
     echo "Refer to $LOGFILE for detailed table update logs."
+
+    local mode
+    local wwid
     for dev in $_SGDEVS; do
-        setdevmode $dev $targetmode
+        getlunid wwid $dev
+        getluntablestate mode $wwid
+        setdevmode $dev $mode
     done
 }
 

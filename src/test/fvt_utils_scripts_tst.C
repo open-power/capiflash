@@ -587,6 +587,44 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_STICK_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
+ *  Run script: cflash_resett.pl expect rc == 0
+ ****************************************************************/
+TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_RC_TEST)
+{
+   int rc = 0;
+   std::string cmd= SCRIPT_PATH;
+
+   CHECK_TESTCASE_SKIP;
+
+   cmd.append(" -t CFLASH_RESET_RC_TEST ");
+   cmd.append(STDOUT_REDIRECTION);
+
+   rc = system (cmd.c_str());
+   EXPECT_EQ(0,rc);
+}
+
+/**
+ ****************************************************************
+ * \brief
+ *   Run script: cflash_reset.pl expect no ERROR string
+ ****************************************************************/
+TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_ERRSTR_TEST)
+{
+   int rc = 0;
+   std::string cmd= SCRIPT_PATH;
+
+   CHECK_TESTCASE_SKIP;
+
+   cmd.append(" -t CFLASH_RESET_ERRSTR_TEST ");
+   cmd.append(STDOUT_REDIRECTION);
+
+   rc = system (cmd.c_str());
+   EXPECT_EQ(0,rc);
+}
+
+/**
+ ****************************************************************
+ * \brief
  *  Run script: cflash_perst.pl expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_RC_TEST)

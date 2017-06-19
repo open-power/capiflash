@@ -116,7 +116,7 @@ static int cflsh_blk_term = 0;
  *              pointer = chunk found.
  *              
  */
-inline cflsh_chunk_t *CBLK_GET_CHUNK_HASH(chunk_id_t chunk_id, int check_rdy)
+static inline cflsh_chunk_t *CBLK_GET_CHUNK_HASH(chunk_id_t chunk_id, int check_rdy)
 {
     cflsh_chunk_hash_t *p_hash = NULL;
     cflsh_chunk_t      *chunk  = NULL;
@@ -194,7 +194,7 @@ inline cflsh_chunk_t *CBLK_GET_CHUNK_HASH(chunk_id_t chunk_id, int check_rdy)
  *              
  */
 
-inline int CBLK_VALIDATE_RW(chunk_id_t chunk_id, void *buf, cflash_offset_t lba,size_t nblocks)
+static inline int CBLK_VALIDATE_RW(chunk_id_t chunk_id, void *buf, cflash_offset_t lba,size_t nblocks)
 
 {
 
@@ -608,7 +608,7 @@ static void cflsh_blk_init(void)
  *              
  */
 
-inline int CBLK_IN_CACHE(cflsh_chunk_t *chunk,void *buf, cflash_offset_t lba, size_t nblocks)
+static inline int CBLK_IN_CACHE(cflsh_chunk_t *chunk,void *buf, cflash_offset_t lba, size_t nblocks)
 {
     int rc = FALSE;
     cflsh_cache_line_t *line;
@@ -1292,6 +1292,7 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
     int cleanup_depth;
     cflsh_chunk_t *chunk = NULL;
     int rc = 0;
+    char devstr[PATH_MAX]={0};
 
 #ifdef _AIX
     int ext_flags = 0;
@@ -1302,20 +1303,31 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
     cflsh_blk_init();
 #endif /* AIX */
 
+#ifdef _AIX
+    if (path) {sprintf(devstr, "%s", path);}
+#else
+    /* if path is a symlink, follow it to allow persistent names */
+    if (path)
+    {
+        char *tpath=realpath(path, NULL);
+        if (tpath) {sprintf(devstr, "%s", tpath);}
+    }
+#endif
+
     if (flags & CBLK_OPN_GROUP)
     {
         flags &= ~CBLK_OPN_GROUP;
-        rc     = cblk_cg_open(path,max_num_requests,mode,(int)ext,ext,flags);
+        rc     = cblk_cg_open(devstr,max_num_requests,mode,(int)ext,ext,flags);
         return (rc);
     }
 
     CFLASH_BLOCK_WR_RWLOCK(cflsh_blk.global_lock);
 
     CBLK_TRACE_LOG_FILE(4,"opening %s with max_num_requests = %d, mode = 0x%x, flags = 0x%x for pid = 0x%llx",
-			path,max_num_requests,mode,flags,(uint64_t)cflsh_blk.caller_pid);
+			devstr,max_num_requests,mode,flags,(uint64_t)cflsh_blk.caller_pid);
 
 
-    if (strlen(path) > PATH_MAX) {
+    if (strlen(devstr) > PATH_MAX) {
 
         CBLK_TRACE_LOG_FILE(1,"opening failed because filename too long");
 
@@ -1406,12 +1418,12 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
 	 * Don't use libafu
 	 */
 
-	strcpy(chunk->dev_name,path);
+	strcpy(chunk->dev_name,devstr);
 
 #ifdef BLOCK_FILEMODE_ENABLED
 	open_flags = mode & O_ACCMODE;  
 
-	if (!strncmp("/dev/",path,5)) {
+	if (!strncmp("/dev/",devstr,5)) {
 
 
 	    errno = EINVAL;
@@ -1431,7 +1443,7 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
 #else
 
 
-	if (strncmp("/dev/",path,5)) {
+	if (strncmp("/dev/",devstr,5)) {
 
 
 	    errno = EINVAL;
@@ -1614,7 +1626,7 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
     }
 
 
-    CBLK_TRACE_LOG_FILE(5,"opening for %s, returned rc = %d",path,ret_chunk_id);
+    CBLK_TRACE_LOG_FILE(5,"opening for %s, returned rc = %d",devstr,ret_chunk_id);
 
     return ret_chunk_id;
 }

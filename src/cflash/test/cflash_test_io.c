@@ -703,6 +703,8 @@ int test_rw_close_hndl(int cmd)
     __u64 chunks=128;
     __u64 actual_size;
 
+    dont_displa_err_msg=1;
+
     pid = getpid();
     signal(SIGSEGV, sig_handle);
     signal(SIGABRT, sig_handle);

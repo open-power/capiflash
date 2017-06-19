@@ -31,4 +31,4 @@ DATA_DIR=$CAPIKV_ROOT/data
 
 cd $FLASH_ROOT/images
 echo "Uncompressing..."
-for f in $(ls -1|grep gz); do gunzip -f $f; done
+for f in $(ls -1|grep gz); do gunzip -f $f; rm -f $f; done

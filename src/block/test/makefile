@@ -34,7 +34,6 @@ TESTDIR  = ${ROOTPATH}/obj/tests
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
 LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflsh_block -lm
 
@@ -75,11 +74,11 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 unit:
 ifeq ($(BLOCK_FILEMODE_ENABLED), 1)
-	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_FM_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_FM_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else ifeq ($(BLOCK_MC_ENABLED), 1)
-	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_UMC_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_UMC_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else ifeq ($(BLOCK_KERNEL_MC_ENABLED), 1)
-	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else
-	-ulimit -n 5000; $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 endif

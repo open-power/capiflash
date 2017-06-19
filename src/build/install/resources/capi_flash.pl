@@ -97,6 +97,7 @@ my $vpd = "";
 my $parm_verbose=1;
 my $verbose;
 my $force;
+my $concurrent;
 
 my $ADDR_REG = 0x920;                    # Flash Address Configuration Register
 my $SIZE_REG = 0x924;                    # Flash Size Configuration Register
@@ -528,6 +529,7 @@ if (! GetOptions ("f=s"        => \$filename,
                   "t|target=s" => \$target,
                   "h|help!"    => \$prthelp,
                   "force"      => \$force,
+                  "concurrent" => \$concurrent,
                   "v"          => \$verbose
                   ))
 {
@@ -673,7 +675,7 @@ if (!$_VM)
 
 #ensure cxlflash is not loaded before continuing
 `lsmod|grep cxlflash`;
-if ($? == 0) {print "rmmod cxlflash before doing the download\n"; exit 0;}
+if (! $concurrent && $? == 0) {print "rmmod cxlflash before doing the download\n"; exit 0;}
 
 #-------------------------------------------------------------------------------
 # VM - Finish - call binary to do the AFU FW Download
@@ -728,7 +730,7 @@ elsif ($cfg_devid eq "10140601")
 
   if ( ($vsec & 0x08000000) == 0x08000000 )
   {
-    $vsec_msg="    FlashGT 0601: Xilinx flash";
+    $vsec_msg="    FlashGT: Xilinx flash";
     $ADDR_REG = 0x450;                   # Flash Address Configuration Register
     $SIZE_REG = 0x454;                   # Flash Size Configuration Register
     $CNTL_REG = 0x458;                   # Flash Control / Status Config Reg
@@ -736,7 +738,7 @@ elsif ($cfg_devid eq "10140601")
   }
   else
   {
-    $vsec_msg="    FlashGT 0601: Altera flash";
+    $vsec_msg="    FlashGT: Altera flash";
     $ADDR_REG = 0x920;                   # Flash Address Configuration Register
     $SIZE_REG = 0x924;                   # Flash Size Configuration Register
     $CNTL_REG = 0x928;                   # Flash Control / Status Config Reg

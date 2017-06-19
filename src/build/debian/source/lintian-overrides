@@ -1,0 +1,7 @@
+# pre-built binaries needed 
+cxlflash source: source-contains-prebuilt-binary src/lib/libcxl-be/libcxl.so
+cxlflash source: source-is-missing src/lib/libcxl-be/libcxl.so
+cxlflash source: source-contains-prebuilt-binary src/build/install/resources/flashgt_nvme_override
+cxlflash source: source-is-missing src/build/install/resources/flashgt_nvme_override
+cxlflash source: source-contains-prebuilt-binary src/build/install/resources/psl_trace_dump
+cxlflash source: source-is-missing src/build/install/resources/psl_trace_dump

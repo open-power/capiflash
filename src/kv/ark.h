@@ -124,13 +124,13 @@ typedef struct
 #define GEN_VAL(_val,_num,_len)                                                \
   do                                                                           \
   {                                                                            \
-      int64_t   _i   = 0;                                                      \
-      uint64_t  _d   = (uint64_t)(_num);                                       \
-      uint8_t  *_s   = (uint8_t*)&_d;                                          \
-      uint8_t  *_t   = (uint8_t*)(_val);                                       \
-      int64_t   _div = (_len)/8;                                               \
-      int64_t   _mod = (_len)%8;                                               \
-      uint64_t *_p   = (uint64_t*)(_t+_mod);                                   \
+      volatile int64_t   _i   = 0;                                             \
+      volatile uint64_t  _d   = (uint64_t)(_num);                              \
+      volatile uint8_t  *_s   = (uint8_t*)&_d;                                 \
+      volatile uint8_t  *_t   = (uint8_t*)(_val);                              \
+      volatile int64_t   _div = (_len)/8;                                      \
+      volatile int64_t   _mod = (_len)%8;                                      \
+      volatile uint64_t *_p   = (uint64_t*)(_t+_mod);                          \
       GEN_VAL_MOD                                                              \
       for (_i=0; _i<_div; _i++) {*(_p++)=_d;}                                  \
   } while (0)

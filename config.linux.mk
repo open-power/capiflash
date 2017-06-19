@@ -32,49 +32,67 @@ default:
 	${MAKE} -j10 SKIP_TEST=1 dep
 	${MAKE} -j10 SKIP_TEST=1 code_pass
 	${MAKE} -j10 SKIP_TEST=1 bin
-	@if [[ $(notdir $(PWD)) = test ]]; then ${MAKE} -j10 test; fi
+	@if [[ dir_$(notdir $(PWD)) = dir_test ]]; then ${MAKE} -j10 test; fi
 
 buildall: default
 	${MAKE} -j10 test
 
-pkgs: default
+run_fvt:
+	${MAKE} fvt
+
+run_unit:
+	${MAKE} unit
+
+setversion:
+	@-mkdir -p $(ROOTPATH)/obj/tests
+	@if [[ EMPTY$(shell git rev-list HEAD 2>/dev/null| wc -l) != EMPTY ]]; then\
+       echo ${VERSIONMAJOR}.${VERSIONMINOR}.${GITREVISION} > $(ROOTPATH)/obj/tests/version.txt; \
+     fi
+
+prod: setversion
+	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 SKIP_TEST=1 code_pass
+	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 SKIP_TEST=1 bin
+
+prodall: prod
+	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 test
+
+prodpkgs: prod
 	${MAKE} docs
 	${MAKE} pkg_code
 
-all: buildall
+allpkgs: prodall
 	${MAKE} docs
 	${MAKE} pkg_code
 	${MAKE} pkg_test
 
-run_fvt: buildall
-	${MAKE} fvt
+installsb:
+	@echo ""
+	@echo "INSTALLing from $(SURELOCKROOT)"
+	@sudo $(SURELOCKROOT)/src/build/install/resources/cflash_installsb $(SURELOCKROOT)
 
-run_unit:buildall
-	${MAKE} unit
+install: prodall install_code install_test installsb
 
-#setup package version
-ifeq (0,$(shell git rev-list HEAD 2>/dev/null| wc -l))
-GITREVISION:=2354-aaaDebian
-else
-GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
+#ensure build env is setup
+ifndef SURELOCKROOT
+$(error run: "source env.bash")
 endif
 
-ifneq ($(wildcard /usr/src/googletest/googletest),)
+#setup package version
+VERSIONMAJOR=4
+VERSIONMINOR=2
+GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
+
+ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard /usr/src/googletest/googletest),)
   GTESTDIR=/usr/src/googletest/googletest
   GTESTINC=/usr/include
 else ifneq ($(wildcard /usr/src/gtest),)
   GTESTDIR=/usr/src/gtest
   GTESTINC=/usr/include
-else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/gtest-1.7.0),)
-  GTESTDIR=${ROOTPATH}/src/test/framework/gtest-1.7.0
-  GTESTINC=${GTESTDIR}/include
-else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
-  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
-  GTESTINC=${GTESTDIR}/include
 endif
 
-#needed to provide linker rpath hints for installed code
-DEFAULT_LIB_INSTALL_PATH = /opt/ibm/capikv/lib
 #generate VPATH based on these dirs.
 VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img
 #generate the VPATH, subbing :'s for spaces
@@ -137,7 +155,7 @@ ifeq ($(USE_ADVANCED_TOOLCHAIN),yes)
 	#see the ld flags below (search for rpath). This puts the atx.x stuff on the front
 	#which is REQUIRED by the toolchain.
 	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS} ${ARCHFLAGS} ${INCFLAGS}
-	LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,${ADV_TOOLCHAIN_PATH}/lib64:$(DEFAULT_LIB_INSTALL_PATH)
+    LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,${ADV_TOOLCHAIN_PATH}/lib64
 else
 	CC_RAW = gcc 
 	CXX_RAW = g++ 
@@ -146,7 +164,14 @@ else
 	LD = gcc
 	OBJDUMP = objdump
 	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} ${INCFLAGS}
-	LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,$(DEFAULT_LIB_INSTALL_PATH)
+    LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,
+endif
+
+OPT_LDFLAGS="${LDFLAGS}:/opt/ibm/capikv/lib"
+
+ifdef DBG
+	CFLAGS += -g
+	NO_O3=1
 endif
 
 #TODO: Find correct flags for surelock
@@ -388,18 +413,15 @@ tests:
 	${MAKE} -j10 test
 
 install_code:
-	rm -rf ${PKGDIR}/install_root/*
 	cd ${ROOTPATH}/src/build/install && ${MAKE} codeinstall
 
 install_test:
 	cd ${ROOTPATH}/src/build/install && ${MAKE} testinstall
 
-pkg_code:
-	${MAKE} install_code
+pkg_code: install_code
 	cd ${ROOTPATH}/src/build/packaging && ${MAKE} codepkg
 
-pkg_test:
-	${MAKE} install_test
+pkg_test: install_test
 	cd ${ROOTPATH}/src/build/packaging && ${MAKE} testpkg
 
 pkg_tar:
@@ -452,8 +474,10 @@ clean: cleanud ${SUBDIRS:.d=.clean}
 
 cleanall:
 	@if [[ -e ${ROOTPATH}/obj ]]; then rm -Rf ${ROOTPATH}/obj/*; fi
+	@if [[ -e ${ROOTPATH}/build ]]; then rm -Rf ${ROOTPATH}/build/*; fi
 	@if [[ -e $(IMGDIR) ]]; then rm -Rf $(IMGDIR)/*; fi
 	@if [[ -e $(PKGDIR) ]]; then rm -Rf $(PKGDIR)/*; fi
+	@if [[ -e ${ROOTPATH}/doxywarnings.log ]]; then rm -f *.log; fi
 	@echo "clean done"
 
 ifdef IMAGES

@@ -1,0 +1,200 @@
+#!/bin/bash
+#  IBM_PROLOG_BEGIN_TAG
+#  This is an automatically generated prolog.
+#
+#  $Source: src/build/install/resources/cflash_plinks.sh $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2017
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+rules="/etc/udev/rules.d/10-local.rules"
+fstatus="$(/opt/ibm/capikv/bin/cxlfstatus)"
+
+if [[ $1 = "-h" ]]
+then
+  echo "cflash_plinks.sh  [<prefix>] [-v] [-vv] [-r <parm>] [-unused] [-rmunused] [-rmall]"
+  exit 0
+elif [[ $1 =~ unused ]]
+then
+  udevadm control --reload-rules && udevadm trigger
+  devs="$(cat $rules|grep KERNEL|grep KERNELS|grep SLOT|grep wwid|grep SYMLINK|awk '{print $5}'|grep SYMLINK|awk -F"SYMLINK" '{print $2}'|sed 's/+=//;s/"//g')"
+  for d in $devs
+  do
+    sdev=$(readlink /dev/$d)
+    if   [[ $? -ne 0 ]]
+    then
+      if [[ $1 =~ rmunused ]]; then sed -i "/$d/d" $rules;
+      else                          echo "$d"; fi
+    fi
+  done
+  exit 0
+elif [[ $1 = "-r" ]]
+then
+  if [[ ($2 =~ sd || $2 =~ sg) && -e $rules ]]
+  then
+    sed -i "/$2/d" $rules
+    udevadm control --reload-rules && udevadm trigger
+    exit 0
+  fi
+elif [[ $1 = "-rmall" ]]
+then
+  if [[ -e $rules ]]
+  then
+    rm -f $rules
+    touch $rules
+    udevadm control --reload-rules && udevadm trigger
+    exit 0
+  fi
+elif [[ $1 = "-v" ]]
+then
+  verbose=1
+elif [[ $1 = "-vv" ]]
+then
+  verbose=1
+  vv=1
+elif [[ a$1 != a ]]
+then
+  prefix=$1
+fi
+
+udevadm control --reload-rules && udevadm trigger
+
+if [[ -z $(grep DRIVERS $rules|grep cxl|grep PROGRAM|grep SLOT) ]]
+then
+  echo 'DRIVERS=="cxl-pci", PROGRAM="/opt/ibm/capikv/bin/cflash_getslot %b", ENV{SLOT}="%c"' > $rules
+fi
+
+cards=$(lspci |egrep "0601|04cf"|awk '{print $1}');
+
+##############
+# main
+##############
+for card in $cards
+do
+  if [[ $vv ]]; then echo "Process Card $card"; fi
+
+  out=$(echo "$fstatus" | grep $card| awk '{print $NF}')
+  if [[ $out =~ Slot ]]
+  then
+    slot=$(echo $out| sed 's/Slot//'| sed 's/^ *//;s/ *$//')
+  else
+    slot=$(echo "$out"|awk -F"-C" '{print $NF}'| sed 's/^ *//;s/ *$//')
+  fi
+  sgdevs=$(ls -d /sys/devices/*/*/$card/*/*/host*/target*:*:*/*:*:*:*/scsi_generic/* 2>/dev/null|awk -F/ '{print $13}'|sort -V)
+
+  for dev in $sgdevs
+  do
+    if [[ $vv ]]; then echo "Process $dev"; fi
+    fs=$(echo "$fstatus"|grep "$dev:")
+
+    port=$(echo $fs|awk -F: '{print $3}'| sed 's/^ *//;s/ *$//')
+    wwid=$(udevadm info --attribute-walk --name /dev/${dev} |grep "wwid")
+    if [[ -z $wwid ]]; then continue; fi
+
+    unset sdadd
+    unset sgadd
+
+    #do sg luns
+    lun=$(printf "sg%02d%d" $slot $port)
+
+    if [[ ! $fs =~ $lun ]]
+    then
+      cnt=0
+      if [[ ! -z $(grep "$wwid" $rules|grep $lun) ]]
+      then
+        if [[ $vv ]]; then echo "Found $dev:$lun in rules"; fi
+        continue
+      fi
+      while [[ 1 ]]
+      do
+        lname=$lun$cnt
+        if [[ -z $(echo "$fstatus" | grep $lname) && \
+              -z $(grep $lname $rules)            && \
+            ! -e /dev/$lun ]]
+        then
+          #device name does not exist, use it
+          break
+        fi
+        cnt=$((cnt+1))
+      done
+
+      out='KERNEL=="sg*", KERNELS=="*:'
+      out+=$port
+      out+=':*:*",  ENV{SLOT}=="'
+      out+=$slot
+      out+='", '
+      out+=$wwid
+      out+=', SYMLINK+="'
+      out+=$prefix$lname
+      out+='"'
+      sgadd=" $prefix$lname"
+      echo "$out" >> $rules
+    fi
+
+    if [[ $fs =~ superpipe ]]; then continue; fi
+
+    #do sd luns
+    lun=$(printf "sd%02d%d" $slot $port)
+
+    if [[ ! $fs =~ $lun ]]
+    then
+      cnt=0
+      if [[ ! -z $(grep "$wwid" $rules|grep $lun) ]]
+      then
+        if [[ $vv ]]; then echo "Found $dev:$lun in rules"; fi
+        continue
+      fi
+      while [[ 1 ]]
+      do
+        lname=$lun$cnt
+        if [[ -z $(echo "$fstatus" | grep $lname) && \
+              -z $(grep $lname $rules)            && \
+            ! -e /dev/$lun ]]
+                then
+          #device name does not exist, use it
+          break
+        fi
+        cnt=$((cnt+1))
+      done
+
+      out='KERNEL=="sd*", KERNELS=="*:'
+      out+=$port
+      out+=':*:*",  ENV{SLOT}=="'
+      out+=$slot
+      out+='", '
+      out+=$wwid
+      out+=', SYMLINK+="'
+      out+=$prefix$lname
+      out+='"'
+      sdadd=" $prefix$lname"
+      echo "$out" >> $rules
+    fi
+
+    if [[ $verbose && (! -z $sgadd || ! -z $sdadd) ]]
+    then
+      echo "ADD$sgadd$sdadd for $(echo "$fstatus"|grep "$dev:"|awk '{print $5}')"
+    fi
+
+  done
+done
+
+udevadm control --reload-rules && udevadm trigger
+
+exit 0

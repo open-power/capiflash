@@ -330,7 +330,7 @@ static int (*real_aio_suspend)(const struct aiocb *const list[], int nent,
  *              
  */
 
-inline cflsh_usfs_wrap_fd_t *CUSFS_GET_WRAPPER_FD_HASH(int fd)
+static inline cflsh_usfs_wrap_fd_t *CUSFS_GET_WRAPPER_FD_HASH(int fd)
 {
     cflsh_usfs_wrap_fd_t *fd_wrapper = NULL;
 
@@ -375,7 +375,7 @@ inline cflsh_usfs_wrap_fd_t *CUSFS_GET_WRAPPER_FD_HASH(int fd)
  *              
  */
 
-inline int CUSFS_IS_USFS_PATH(char *path)
+static inline int CUSFS_IS_USFS_PATH(char *path)
 {
     int rc = 0;
 

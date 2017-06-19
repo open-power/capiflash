@@ -31,11 +31,38 @@ CAPIKV_ROOT=/opt/ibm/capikv
 BIN_DIR=$CAPIKV_ROOT/bin
 ETC_DIR=$CAPIKV_ROOT/etc
 SIO_FILE=$ETC_DIR/sioluntable.ini
+LD=.EaienF48ajfFgBMIhsalfc
+HD=.Jfa82FBMIhsalfc
 
 #Creating empty SIO lun table and etc dir
 echo "INFO: Ensuring SIO LUN Table exists..."
 echo "INFO: Creating system cxl user / group..."
 useradd --system --user-group $USERNAME 2>/dev/null
+
+echo "INFO: enabling cxlfd service for LUN Management"
+systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+systemctl start cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+
+if [[ -e /tmp/cxlflash_headless ]]
+then
+  echo "INFO: running headless"
+  if [[ ! -e /opt/.lic/$LD ]]; then date > /opt/.lic/$LD; fi
+else
+  if [[ ! -e /opt/.lic/$LD ]]
+  then
+    if [[ $CFLASH_CONFIGURE -ne 1 ]]
+    then
+      echo "************************************************************************"
+      echo "*** run /opt/ibm/capikv/etc/cflash_configure to complete the install ***"
+      echo "************************************************************************"
+    fi
+    if [[ -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
+    then
+      if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
+      mv /opt/ibm/capikv/lib/* /opt/$HD >/dev/null 2>&1
+    fi
+  fi
+fi
 
 set -e #halt on error
 
@@ -50,7 +77,3 @@ chown $USERNAME:$GROUPNAME $SIO_FILE
 chmod 660 $SIO_FILE
 
 if [[ -e $BIN_DIR/cflash_logs_cron ]]; then cp $BIN_DIR/cflash_logs_cron /etc/cron.hourly; fi
-
-echo "INFO: enabling cxlfd service for LUN Management"
-systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
-systemctl start cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."

@@ -1,0 +1,4 @@
+./pkg/install_root/opt/* /opt
+./pkg/install_root/usr/* /usr
+./pkg/install_root/lib/* /lib
+./pkg/install_root/var/* /var

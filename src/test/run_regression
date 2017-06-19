@@ -1,0 +1,131 @@
+#!/bin/bash
+#  IBM_PROLOG_BEGIN_TAG
+#  This is an automatically generated prolog.
+#
+#  $Source: src/test/run_regression $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2017
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+dev=$1
+
+if [[ ! -e $dev || ! -e /dev/cxl ]]
+then
+  echo "No capi-flash adapter found";
+  echo "  Usage: run_regression /dev/sgX"
+  exit -1;
+fi
+
+set -o pipefail
+export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/test:/opt/ibm/capikv/afu
+echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes
+echo "module cxlflash +p" > /sys/kernel/debug/dynamic_debug/control
+unset FVT_EEH
+success=1
+
+#######################################################################################
+#determine distro
+#######################################################################################
+if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
+if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+
+#######################################################################################
+# setup output dir/filename
+#######################################################################################
+start=$(date +"%Y%m%d_%H%M")
+out=$start
+if [[ ! -z $USER ]]; then out+=_$USER; fi
+out+=_$(cat /opt/ibm/capikv/version.txt|awk -F- '{print $1}')
+dir=/var/log/cflash/regr
+if [[ ! -e /var/log/cflash/regr ]]; then mkdir -p $dir; fi
+out=$dir/$out
+
+#######################################################################################
+#run Block/KV to $dev
+#######################################################################################
+export FVT_DEV=$dev
+export FVT_DEV_PERSIST=$dev
+unset parms
+if [[ $redhat ]]; then parms="--gtest_filter=-*rw_tst"; fi
+
+run_block_fvt $parms | tee -a $out
+[[ $? -ne 0 ]] && success=0
+
+run_fvt_kv | tee -a $out
+[[ $? -ne 0 ]] && success=0
+
+#######################################################################################
+#run KV to RAID0
+#######################################################################################
+export FVT_DEV=RAID0
+export FVT_DEV_PERSIST=RAID0
+run_fvt_kv | tee -a $out
+[[ $? -ne 0 ]] && success=0
+
+#######################################################################################
+#run cflash to $dev
+#######################################################################################
+export FVT_DEV=$dev
+parms="--gtest_filter=-*ioarcb_invalid_flags:*E_test_vlun_max_transfer:*ioarcb_ea_null:*bad_ioasa_address"
+run_cflash_fvt $parms | tee -a $out
+[[ $? -ne 0 ]] && success=0
+
+#######################################################################################
+#run EEH tests for Block/KV
+#######################################################################################
+export FVT_EEH=1
+export FVT_DEV=$dev
+export FVT_DEV_PERSIST=$dev
+if [[ $redhat ]]
+then
+  parms="--gtest_filter=*multi*EEH"
+else
+  parms="--gtest_filter=*EEH"
+fi
+run_block_fvt $parms | tee -a $out
+[[ $? -ne 0 ]] && success=0
+
+run_fvt_kv --gtest_filter=*EEH* | tee -a $out
+[[ $? -ne 0 ]] && success=0
+unset FVT_EEH
+
+#######################################################################################
+#run scripts to $dev
+#######################################################################################
+if [[ $(cflash_version) =~ missing ]]; then parms="--gtest_filter=-*CFLVER*"; fi
+run_fvt_scripts $parms | tee -a $out
+[[ $? -ne 0 ]] && success=0
+
+#######################################################################################
+#do an extended run of Block multi-vlun IO
+#######################################################################################
+export FVT_NUM_LOOPS=20
+export FVT_DEV=RAID0
+run_block_fvt --gtest_filter=*BLK_API_FVT_RAID0_multi_vlun_perf_test | tee -a $out
+[[ $? -ne 0 ]] && success=0
+
+if [[ $success -eq 1 ]]
+then
+  echo SUCCESS
+  touch $out.success
+else
+  echo "some tests failed"
+fi

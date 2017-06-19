@@ -100,4 +100,5 @@ if [ -n "${SANDBOXROOT}" ]; then
 fi
 
 #set the default ulimit -c for a developer
-ulimit -c unlimited
+ulimit -c unlimited 2>/dev/null
+ulimit -n 5000      2>/dev/null

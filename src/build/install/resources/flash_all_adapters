@@ -26,18 +26,27 @@
 
 KERNEL_MOD="cxlflash"
 CAPI_FLASH_PL=capi_flash.pl
-PERST_PL=cflash_perst.pl
-CORSA_IMAGE=1410f0041410f004.00000001160512D1
-GT_F_IMAGE=1410000614100006.00000001160903N0
-GT_IMAGE=1410000614100006.00000001161114N4
+RESET_PL=cflash_reset.pl
 IMAGES_DIR=images #relative to the cwd of the script
 FLASH_ROOT=/opt/ibm/capikv/afu
 MINCAPMASK="0003"
 CAPABILITYKW="V3"
 e_rc=0
-do_perst=0
+do_reset=0
 load_factory=0
 opt=""
+
+#determine distro
+if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
+if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+
+#if [[ $redhat ]]; then
+RESET_PL=cflash_perst.pl
+#fi
+#if [[ $ubuntu ]]; then
+#concurrent="--concurrent"
+#fi
 
 checkidle()
 {
@@ -154,16 +163,16 @@ flashadapters()
             continue
           fi
           printf "       Replacing %s with %s\n\n" $afuver $CORSA_IMAGE
-          $FLASH_ROOT/$CAPI_FLASH_PL -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$CORSA_IMAGE
+          $FLASH_ROOT/$CAPI_FLASH_PL -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$CORSA_IMAGE $concurrent
           rc=$?
           if [[ $rc -ne 0 ]]
           then
             e_rc=$rc
             echo "       ERROR: Failed flashing $adap"
           else
-            if [[ $do_perst -eq 1 ]]
+            if [[ $do_reset -eq 1 ]]
             then
-              $FLASH_ROOT/$PERST_PL -t $adap
+              $FLASH_ROOT/$RESET_PL -t $adap
               rc=$?
               if [[ $rc -ne 0 ]]
               then
@@ -195,16 +204,16 @@ flashadapters()
               printf "       Replacing %s with %s\n\n" $afuver $GT_IMAGE
             fi
           fi
-          $FLASH_ROOT/$CAPI_FLASH_PL $opt -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$GT_IMAGE
+          $FLASH_ROOT/$CAPI_FLASH_PL $opt -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$GT_IMAGE $concurrent
           rc=$?
           if [[ $rc -ne 0 ]]
           then
             e_rc=$rc
             echo "       ERROR: Failed flashing $adap"
           else
-            if [[ $do_perst -eq 1 ]]
+            if [[ $do_reset -eq 1 ]]
             then
-              $FLASH_ROOT/$PERST_PL -t $adap
+              $FLASH_ROOT/$RESET_PL -t $adap
               rc=$?
               if [ $rc -ne 0 ]
               then
@@ -255,11 +264,19 @@ flashadapters_VM()
 #########
 # main
 #########
+CORSA_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep CORSA_IMAGE|awk '{print $2}')
+GT_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_F_IMAGE |awk '{print $2}')
+GTP_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_F_IMAGE|awk '{print $2}')
+GT_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_IMAGE   |awk '{print $2}')
+GTP_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_IMAGE  |awk '{print $2}')
+
 grep pSeries /proc/cpuinfo >/dev/null 2>&1 && _VM=1
-checkidle
+#if [[ $redhat ]]; then
+  checkidle
+#fi
 echo "module cxlflash +p" > /sys/kernel/debug/dynamic_debug/control
 
-if [[ $1 =~ reload  || $2 =~ reload  ]]; then do_perst=1; fi
+if [[ $1 =~ reload  || $2 =~ reload  ]]; then do_reset=1; fi
 if [[ $1 =~ factory || $2 =~ factory ]]
 then
   opt=" -p0 "

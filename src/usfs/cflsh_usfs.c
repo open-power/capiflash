@@ -1394,7 +1394,7 @@ int cusfs_rmdir(char *pathname)
  *              
  */
 
-inline cflsh_usfs_data_obj_t *CUSFS_GET_FILE_HASH(int file_index, int check_rdy)
+static inline cflsh_usfs_data_obj_t *CUSFS_GET_FILE_HASH(int file_index, int check_rdy)
 {
     cflsh_usfs_data_obj_t *file = NULL;
     cflsh_usfs_t *cufs;

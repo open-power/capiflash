@@ -33,7 +33,6 @@ TESTDIR  = ${ROOTPATH}/obj/tests
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
 LIBPATHS = -L${ROOTPATH}/img
 
 BTESTS=
@@ -78,7 +77,7 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 unit:
 	-@if [[ -e /dev/cxl ]]; then \
-       $(TESTDIR)/run_cflash_fvt  --gtest_output=xml:$(TESTDIR)/cflash_fvt_results.xml; \
+       LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_cflash_fvt --gtest_output=xml:$(TESTDIR)/cflash_fvt_results.xml; \
     else \
       echo "SKIPPING run_cflash_fvt"; \
     fi

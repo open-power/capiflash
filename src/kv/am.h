@@ -33,4 +33,7 @@ void *am_realloc(void *ptr, size_t size);
 
 void *ptr_align(void *ptr);
 
+#define PTR_ALIGN(_p, _a) \
+  (((uintptr_t)(_p) + _a - 1) & ~(uintptr_t)(_a - 1));
+
 #endif

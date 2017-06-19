@@ -23,6 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 #include "cflash_test.h"
+#include <cflash_test_utils.h>
 #include <stdbool.h>
 #include <pthread.h>
 #include <signal.h>
@@ -3163,13 +3164,11 @@ int do_eeh(struct ctx *p_ctx)
     //but some cases if no ctx_rrq_rx started
     //better read adapter register here
 
-    int rc            = 0;
     eehCmd_t eehCmdVar;
     eehCmd_t *eehCmdP = &eehCmdVar;
     pthread_t thread_eeh;
     pthread_mutexattr_t mattrVar;
     pthread_condattr_t cattrVar;
-    char tmpBuff[MAXBUFF];
 
     if (  manEEHonoff != 0 )
     {
@@ -3195,12 +3194,7 @@ int do_eeh(struct ctx *p_ctx)
         pthread_mutex_init(&eehCmdP->eeh_mutex , &mattrVar);
         pthread_cond_init(&eehCmdP->eeh_cv , &cattrVar);
 
-
-        rc = diskToPCIslotConv(p_ctx->dev , tmpBuff );
-        CHECK_RC(rc, "diskToPCIslotConv failed \n");
-
-        rc = prepEEHcmd( tmpBuff, eehCmdP->cmdToRun);
-        CHECK_RC(rc, " prepEEHcmd failed \n");
+        get_inject_EEH_cmd(p_ctx->dev, eehCmdP->cmdToRun);
 
         eehCmdP->eehSync = 0;
 
@@ -4816,47 +4810,14 @@ int ctx_init_reuse(struct ctx *p_ctx)
 
 void displayBuildinfo()
 {
-    int i=0;
     static int entrycounter=0;
-    FILE *fptr;
-    char buf[1024];
-    char cmd[1024];
 
     if ( entrycounter > 0 ) return;
     entrycounter++;
 
-    printf("Kernel Level:\n");
     printf("-------------------------------------------\n");
-    fflush(stdout);
     system("uname -a");
-    system("dpkg -l | grep -w `uname -a | awk '{print $3}'|cut -f2 -d-` | grep -i linux");
-    printf("\ncat /opt/ibm/capikv/version.txt:\n");
-    printf("-------------------------------------------\n");
-    fflush(stdout);
-    system("cat /opt/ibm/capikv/version.txt");
-    printf("\nAFU level:\n");
-    printf("-------------------------------------------\n");
-    fflush(stdout);
-    system("ls /dev/cxl/afu[0-9]*.0m > /tmp/afuF");
-
-    fptr = fopen("/tmp/afuF", "r");
-    while (fgets(buf,1024, fptr) != NULL)
-    {
-        i=0;
-        while (i < 1024)
-        {
-            if (buf[i] =='\n')
-            {
-                buf[i]='\0';
-                break;
-            }
-            i++;
-        }
-
-        sprintf(cmd, "/opt/ibm/capikv/afu/cxl_afu_dump %s | grep Version", buf);
-        system(cmd);
-    }
-    fclose(fptr);
+    system("/opt/ibm/capikv/bin/cflash_version");
     printf("-------------------------------------------\n");
     fflush(stdout);
     system("update_flash -d");
@@ -5232,34 +5193,23 @@ int diskSizeCheck(char * diskName , float recDiskSize)
    FILE *filePtr = NULL;
    char tmBuff[1024];
 
-   sprintf(tmBuff,"lsscsi -sg | grep %s | grep GB >/dev/null 2>&1",diskName);
-   if( system( tmBuff ))
-   { 
-      sprintf(tmBuff," lsscsi -sg | grep %s | awk -F' ' '{print $NF}' | sed 's/TB//g'", diskName);
-      filePtr = popen(tmBuff, "r");
-      fscanf(filePtr, "%f", &diskSize);
-      diskSize = diskSize * 1024; // convert to GB 
-   }
-   else
-   {
-      sprintf(tmBuff," lsscsi -sg | grep %s | awk -F' ' '{print $NF}' | sed 's/GB//g'", diskName);
-      filePtr = popen(tmBuff, "r");
-      fscanf(filePtr, "%f", &diskSize);
-   }
-
+   sprintf(tmBuff,
+           "sg_readcap %s 2>/dev/null|grep size|awk '{print $3}'", diskName);
+   filePtr = popen(tmBuff, "r");
+   fscanf(filePtr, "%f", &diskSize);
    pclose(filePtr);
+   if (diskSize) diskSize/= (1024*1024*1024);
 
-   if(  diskSize <  recDiskSize)
+   if (diskSize < recDiskSize)
    {
-      rc = 1; // User will be warned as disk size is less or lsscsi package is not installed
-      printf(" *********WARNING : Recommended  disk size for this test %f GB and used disk size is %f"
-      " OR SYSTEM does not have lsscsi package installed**********************\n",recDiskSize,diskSize);
+      rc = 1;
+      printf(" *WARNING : Recommended disk size is %f GB, but disk size is %f\n",
+             recDiskSize,diskSize);
    }
 
-   debug("***** disk size required for this test %f GB and used disk size is %f GB****\n",recDiskSize,diskSize);
-
-   return rc ;
+   return rc;
 }
+
 
 #endif
 

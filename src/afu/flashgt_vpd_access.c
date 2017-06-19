@@ -310,11 +310,12 @@ int ready_status = 1;
   uint32_t vpd_f_addr_struct = 0x00000000;
   int rawbinaddr = 0;
   int readvalid = 1;
+  int j         = 0;
 //  uint32_t vpd[32];
 
   //Loop to read original vpd contents
   printf("Current VPD contents are: \n");
-  for(int j = 0; j < 64; j++) {
+  for(j = 0; j < 64; j++) {
     lseek(CFG, addr_reg, SEEK_SET);
     write(CFG, &vpd_f_addr_struct,4);
 
@@ -332,7 +333,7 @@ int ready_status = 1;
   //Loop to write new vpd contents
   printf("Writing in new VPD contents:\n");
   vpd_f_addr_struct = 0x80000000;
-  for(int j = 0; j < 64; j++) {
+  for(j = 0; j < 64; j++) {
     if (readvalid)
     {
       lseek(VPDRBF, rawbinaddr, SEEK_SET);

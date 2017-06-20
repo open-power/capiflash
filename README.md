@@ -6,38 +6,7 @@ Read more, including API guides at:
 
 * [IBM Data Engine for NoSQL Whitepaper](http://ibm.biz/capiflash)
 
-To configure a build environment on Ubuntu:
-```
-#!/bin/bash
-#a ready-to-go toolchain exists in the IBM Toolchain for Linux. Configure its repo and download it
-sudo apt-get -y install software-properties-common #needed for the next few lines...
-#set up at10.0 repo
-wget ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu/dists/precise/6976a827.gpg.key
 
-sudo apt-key add 6976a827.gpg.key
-sudo add-apt-repository "deb ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu xenial at10.0 "
-
-sudo apt-get -y update
-sudo apt-get -y install advance-toolchain-at10.0-runtime advance-toolchain-at10.0-perf advance-toolchain-at10.0-devel advance-toolchain-at10.0-mcore-libs libudev1
-```
-To configure a build environment on RHEL or Fedora:
-```
-#!/bin/bash
-cat >/etc/yum.repos.d/atX.X.repo
-# Beginning of configuration file
-[atX.X]
-name=Advance Toolchain Unicamp FTP
-baseurl=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7
-failovermethod=priority
-enabled=1
-gpgcheck=1
-gpgkey=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-6976a827-5164221b
-# End of configuration file
-
-<CTRL-D>
-yum install make cscope ctags doxygen git gitk links
-yum install advance-toolchain-at10.0-runtime   advance-toolchain-at10.0-devel   advance-toolchain-at10.0-perf  advance-toolchain-at10.0-mcore-libs
-```
 ### API Guide
 The IBM Data Engine for NoSQL provides two major sets of public APIs. These are described in:
 - [cflash - Block Layer APIs](src/block/README.md)
@@ -55,8 +24,9 @@ As a developer, to get started:
 3. select a customrc file (see below)
 4. source env.bash
 5. src/build/install/resources/gtest_add.sh  #insert the Google Test framework
-6. make cleanall
-7. make install
+6. make configure
+7. make cleanall
+8. make install
 ```
 Build Targets that set rpath=/opt/ibm/capikv/lib
 ```
@@ -70,7 +40,7 @@ make             #build the code, excluding test code
 make test        #build only the test code
 make buildall    #build all the code
 ```
-*if all the code is built, "make install" then installs the objects as they are.
+*if all the code is built, then use "make installsb" to install your build objects to /opt/ibm/capikv/*.
 
 #### Targeting a specific platform or tuning - the "customrc" file 
 
@@ -100,7 +70,7 @@ Prebuilt customrc files exist for different environments. Most users will want t
 
 Example on a POWER8 Little-endian system:
 ```
-#setup and build
+#build
 cd .../capiflash
 ln -s customrc.p8el customrc
 source env.bash
@@ -109,7 +79,7 @@ make install
 #create a 4gb test file in /tmp
 fallocate -l 4g /tmp/testfile
 #run the FVT
-sudo -E FVT_DEV=/tmp/testfile /opt/ibm/capikv/test/run_fvt
+FVT_DEV=/tmp/testfile /opt/ibm/capikv/test/run_fvt
 #run FILE IO
 /opt/ibm/capikv/bin/blockio -d /tmp/testfile
 ```
@@ -118,7 +88,7 @@ sudo -E FVT_DEV=/tmp/testfile /opt/ibm/capikv/test/run_fvt
 
 Example on a POWER8 Little-endian system:
 ```
-#setup and build
+#build
 cd .../capiflash
 ln -s customrc.p8elblkkermc customrc
 source env.bash

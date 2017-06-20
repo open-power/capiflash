@@ -68,7 +68,7 @@ fi
 if [ -d $ATPATH ]; then
     export ADV_TOOLCHAIN_PATH=$ATPATH
 else
-    echo "WARNING: no toolchain was found. Will fall back to system defaults. YMMV."
+    echo "INFO: no toolchain was found"
 fi
 
 #don't add MCP path to the $PATH... this isn't absolutely necessary

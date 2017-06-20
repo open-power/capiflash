@@ -65,10 +65,13 @@ allpkgs: prodall
 	${MAKE} pkg_code
 	${MAKE} pkg_test
 
+configure:
+	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_configsb
+
 installsb:
 	@echo ""
 	@echo "INSTALLing from $(SURELOCKROOT)"
-	@sudo $(SURELOCKROOT)/src/build/install/resources/cflash_installsb $(SURELOCKROOT)
+	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_installsb $(SURELOCKROOT)
 
 install: prodall install_code install_test installsb
 

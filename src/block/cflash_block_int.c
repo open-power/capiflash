@@ -321,8 +321,8 @@ void cblk_setup_trace_files(int new_process)
  *     
  *      
  *
- * RETURNS:  1  Host endianess matches compile flags
- *           0  Host endianess is invalid based on compile flags
+ * RETURNS:  1  Host endianness matches compile flags
+ *           0  Host endianness is invalid based on compile flags
  *     
  * ----------------------------------------------------------------------------
  */
@@ -5393,7 +5393,7 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 	    
     } /* for */    
 
-    // TOD0:?? What about reseting one AFU and using the other?
+    // TOD0:?? What about resetting one AFU and using the other?
 
 
 
@@ -5487,7 +5487,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
     CFLASH_BLOCK_UNLOCK(afu->lock);
 	
 	
-    CBLK_TRACE_LOG_FILE(9,"reseting context...");
+    CBLK_TRACE_LOG_FILE(9,"resetting context...");
 
     path = afu->head_path;
 

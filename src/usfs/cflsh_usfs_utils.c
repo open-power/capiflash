@@ -414,8 +414,8 @@ void cusfs_setup_trace_files(int new_process)
  *     
  *      
  *
- * RETURNS:  1  Host endianess matches compile flags
- *           0  Host endianess is invalid based on compile flags
+ * RETURNS:  1  Host endianness matches compile flags
+ *           0  Host endianness is invalid based on compile flags
  *     
  * ----------------------------------------------------------------------------
  */

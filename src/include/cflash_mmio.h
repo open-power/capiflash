@@ -35,7 +35,7 @@
 /*
  * TODO: ?? remove the out_be, and in_be functions, since 
  *       we should routines that can under the covers 
- *       handle the host endianess.
+ *       handle the host endianness.
  */
 
 // MMIO write, 64 bit

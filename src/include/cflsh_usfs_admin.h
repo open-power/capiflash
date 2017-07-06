@@ -65,7 +65,7 @@ struct cusfs_query_fs {
     int version;
     int flags;
 #define CUSFS_QRY_DIF_ENDIAN   0x1  /* Filesystem has different  */
-				    /* endianess that this host  */
+				    /* endianness that this host  */
     int os_type;
     int reserved;
     uint64_t fs_block_size;

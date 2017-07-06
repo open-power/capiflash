@@ -164,8 +164,8 @@ inline void  INC_RRQ()
  *     
  *      
  *
- * RETURNS:  1  Host endianess matches compile flags
- *           0  Host endianess is invalid based on compile flags
+ * RETURNS:  1  Host endianness matches compile flags
+ *           0  Host endianness is invalid based on compile flags
  *     
  * ----------------------------------------------------------------------------
  */
@@ -1178,7 +1178,7 @@ int main (int argc, char **argv)
 
 
     if (!valid_endianess()) {
-	fprintf(stderr,"This program is compiled for different endianess then the host is is running\n");
+	fprintf(stderr,"This program is compiled for different endianness then the host is is running\n");
 	 
     }
 

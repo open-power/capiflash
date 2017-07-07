@@ -68,9 +68,9 @@ echo "<enter> to build, q to quit"
 read char
 if [[ $char = [qQ] ]]; then exit 0; fi
 
-debuild -us -uc
+debuild
 if [[ $? -ne 0 ]]; then echo "debuild failed"; exit -1; fi
-#debuild -S -sa
-#if [[ $? -ne 0 ]]; then echo "debuild -S -sa failed"; exit -1; fi
+debuild -S -sa
+if [[ $? -ne 0 ]]; then echo "debuild -S -sa failed"; exit -1; fi
 
 exit 0

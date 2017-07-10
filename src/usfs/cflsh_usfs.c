@@ -175,7 +175,7 @@ void _cflsh_usfs_init(void)
 
     if (!cusfs_valid_endianess()) {
 	
-	 CUSFS_TRACE_LOG_FILE(1,"This program is compiled for different endianess then the host is is running");
+	 CUSFS_TRACE_LOG_FILE(1,"This program is compiled for different endianness then the host is is running");
     }
 
     CUSFS_TRACE_LOG_FILE(2,"cusfs_global = %p",&cusfs_global);
@@ -648,7 +648,7 @@ int cusfs_query_fs(char *device_name, struct cusfs_query_fs *query,int flags)
 
 	    if (CFLASH_REV64(cusfs_super_block.start_marker) == CLFSH_USFS_SB_SM) {
 
-		CUSFS_TRACE_LOG_FILE(1,"Actually superblock is valid for different endianess host",
+		CUSFS_TRACE_LOG_FILE(1,"Actually superblock is valid for different endianness host",
 				     cusfs_super_block.start_marker);
 		query->flags |= CUSFS_QRY_DIF_ENDIAN;
 		query->os_type = CFLASH_REV32(cusfs_super_block.os_type);

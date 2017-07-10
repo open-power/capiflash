@@ -314,7 +314,7 @@ ini_dict_t* cxlfIniParse(char* i_inifilename, uint32_t* o_failed_line)
         }//end while(fgets...)
         if(l_err)
         {
-            TRACEE("Error occured parsing cfg file.\n");
+            TRACEE("Error occurred parsing cfg file.\n");
             break;
         }
         

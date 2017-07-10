@@ -369,7 +369,7 @@ void _cflsh_blk_init(void)
 
     if (!cblk_valid_endianess()) {
 	
-	 CBLK_TRACE_LOG_FILE(1,"This program is compiled for different endianess then the host is is running");
+	 CBLK_TRACE_LOG_FILE(1,"This program is compiled for different endianness then the host is is running");
     }
 
 

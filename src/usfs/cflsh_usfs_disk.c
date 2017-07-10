@@ -325,7 +325,7 @@ int cusfs_create_superblock(cflsh_usfs_t *cufs, int flags)
     if (cusfs_super_block->num_blocks < 
 	(CFLSH_USFS_FREE_BLOCK_TABLE_LBA + 2*cufs->fs_block_size)) {
 
-	CUSFS_TRACE_LOG_FILE(1,"Disk is too small for fileystem num_blocks = 0x%llx needds to be 0xllx",
+	CUSFS_TRACE_LOG_FILE(1,"Disk is too small for filesystem num_blocks = 0x%llx needds to be 0xllx",
                             cusfs_super_block->num_blocks,
 			    (CFLSH_USFS_FREE_BLOCK_TABLE_LBA + 2*cufs->fs_block_size));
 	return -1;
@@ -729,7 +729,7 @@ int cusfs_validate_superblock(cflsh_usfs_t *cufs, int flags)
 			 cusfs_super_block->fs_unique_id.val3,
 			 cusfs_super_block->fs_unique_id.val4);
 
-    //?? Need check for endianess maybe just look at cusfs_super_block->start_marker ?
+    //?? Need check for endianness maybe just look at cusfs_super_block->start_marker ?
 
 
     if (cusfs_super_block->start_marker != CLFSH_USFS_SB_SM) {
@@ -743,7 +743,7 @@ int cusfs_validate_superblock(cflsh_usfs_t *cufs, int flags)
 	errno = EINVAL;
 	if (CFLASH_REV64(cusfs_super_block->start_marker) == CLFSH_USFS_SB_SM) {
 	    
-	    CUSFS_TRACE_LOG_FILE(1,"Actually superblock is valid for different endianess host",
+	    CUSFS_TRACE_LOG_FILE(1,"Actually superblock is valid for different endianness host",
 				cusfs_super_block->start_marker);
 
 	    CUSFS_TRACE_LOG_FILE(1,"version = 0x%x, status = 0x%x, os_type = 0x%x flags = 0x%x",

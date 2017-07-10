@@ -1919,7 +1919,7 @@ int cusfs_rdwr_block_inode_pointers(cflsh_usfs_t *cufs,
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"%s at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"%s at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     ((flags & CFLSH_USFS_RDWR_WRITE) ? "Write":" Read"),
 			    disk_lba,inode->type, cufs->device_name);
 	
@@ -2806,7 +2806,7 @@ int cusfs_num_data_blocks_single_indirect_inode_ptr(cflsh_usfs_t *cufs, cflsh_us
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			    disk_lba,inode->type, cufs->device_name);
 	
 	
@@ -2938,7 +2938,7 @@ int cusfs_num_data_blocks_double_indirect_inode_ptr(cflsh_usfs_t *cufs, cflsh_us
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 	
 	
@@ -3081,7 +3081,7 @@ int cusfs_num_data_blocks_triple_indirect_inode_ptr(cflsh_usfs_t *cufs, cflsh_us
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			    disk_lba,inode->type, cufs->device_name);
 	
 	
@@ -3477,7 +3477,7 @@ int cusfs_add_fs_blocks_to_single_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_inode
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 
 	free(inode_single_block_list);
@@ -3537,7 +3537,7 @@ int cusfs_add_fs_blocks_to_single_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_inode
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			    disk_lba,inode->type, cufs->device_name);
 	
 	rc = -1;
@@ -3649,7 +3649,7 @@ int cusfs_add_fs_blocks_to_double_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_inode
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 
 	free(inode_double_block_list);
@@ -3719,7 +3719,7 @@ int cusfs_add_fs_blocks_to_double_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_inode
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			    disk_lba,inode->type, cufs->device_name);
 	
 	rc = -1;
@@ -3831,7 +3831,7 @@ int cusfs_add_fs_blocks_to_triple_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_inode
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 
 	free(inode_triple_block_list);
@@ -3902,7 +3902,7 @@ int cusfs_add_fs_blocks_to_triple_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_inode
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 	
 	rc = -1;
@@ -4263,7 +4263,7 @@ int cusfs_remove_fs_blocks_from_single_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			    disk_lba,inode->type, cufs->device_name);
 	
 	
@@ -4293,7 +4293,7 @@ int cusfs_remove_fs_blocks_from_single_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			    disk_lba,inode->type, cufs->device_name);
 	
 	
@@ -4398,7 +4398,7 @@ int cusfs_remove_fs_blocks_from_double_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 	
 	
@@ -4439,7 +4439,7 @@ int cusfs_remove_fs_blocks_from_double_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 	
 	rc = -1;
@@ -4543,7 +4543,7 @@ int cusfs_remove_fs_blocks_from_triple_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Read at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			    disk_lba,inode->type, cufs->device_name);
 	
 	
@@ -4582,7 +4582,7 @@ int cusfs_remove_fs_blocks_from_triple_inode_ptr(cflsh_usfs_t *cufs, cflsh_usfs_
     if (rc < nblocks) {
 	
 	
-	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx faild for indirect_inode_ptrt %d for inode of type %d on disk %s",
+	CUSFS_TRACE_LOG_FILE(1,"Write at lba 0x%llx failed for indirect_inode_ptrt %d for inode of type %d on disk %s",
 			     disk_lba,inode->type, cufs->device_name);
 	
 	

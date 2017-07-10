@@ -200,7 +200,7 @@ typedef struct cflsh_usfs_super_block_s {
 #define CFLSH_USFS_SB_ROOT_DIR 0x010 /* Root directory inode written    */
 
 /* ?? how to handle multiple mounts */
-/* ?? Need some indication of endianess of FS creator */
+/* ?? Need some indication of endianness of FS creator */
 /* ?? need filesystem identifier                      */
 
     uint64_t   fs_block_size;       /* Block size referenced by inodes */
@@ -242,16 +242,16 @@ typedef struct cflsh_usfs_super_block_s {
 				     /* filesystem.                    */
 
 #if !defined(__64BIT__) && defined(_AIX)
-    time64_t create_time;            /* Creation time of fileystem     */
-    time64_t mount_time;             /* Last time fileystem was mounted*/
-    time64_t write_time;             /* Last time fileystem was written*/
-    time64_t fsck_time;              /* Last time fileystem had fsck   */
+    time64_t create_time;            /* Creation time of filesystem     */
+    time64_t mount_time;             /* Last time filesystem was mounted*/
+    time64_t write_time;             /* Last time filesystem was written*/
+    time64_t fsck_time;              /* Last time filesystem had fsck   */
                                      /* run.                           */
 #else
-    time_t create_time;              /* Creation time of fileystem     */
-    time_t mount_time;               /* Last time fileystem was mounted*/
-    time_t write_time;               /* Last time fileystem was written*/
-    time_t fsck_time;                /* Last time fileystem had fsck   */
+    time_t create_time;              /* Creation time of filesystem     */
+    time_t mount_time;               /* Last time filesystem was mounted*/
+    time_t write_time;               /* Last time filesystem was written*/
+    time_t fsck_time;                /* Last time filesystem had fsck   */
                                      /* run.                           */
 #endif
 

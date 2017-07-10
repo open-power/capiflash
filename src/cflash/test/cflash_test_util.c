@@ -640,7 +640,7 @@ void *ctx_rrq_rx(void *arg)
             if (bad_address)
                 err_afu_intrpt=true; //set to check process
             else
-                fprintf(stderr, "%d: adapt poll POLLPRI occured\n",pid);
+                fprintf(stderr, "%d: adapt poll POLLPRI occurred\n",pid);
             p_ctx->flags = DK_QEF_ADAPTER;
             ioctl_dk_capi_query_exception(p_ctx);
             if (DK_AET_EEH_EVENT == p_ctx->adap_except_type)
@@ -665,7 +665,7 @@ void *ctx_rrq_rx(void *arg)
         if (poll_list[CFLASH_DISK_POLL_INDX].revents & POLLPRI)
         {
             //disk exception
-            fprintf(stderr, "%d: disk poll POLLPRI occured\n",pid);
+            fprintf(stderr, "%d: disk poll POLLPRI occurred\n",pid);
             p_ctx->flags = DK_QEF_ALL_RESOURCE;
             ioctl_dk_capi_query_exception(p_ctx);
             //TBD dump exception detail or forward above
@@ -681,7 +681,7 @@ void *ctx_rrq_rx(void *arg)
         {
             //adapter error interrupt
             //this is SISL_MSI_SYNC_ERROR
-            fprintf(stderr, "%d: adopt poll POLLMSG SISL_MSI_SYNC_ERROR occured\n",pid);
+            fprintf(stderr, "%d: adopt poll POLLMSG SISL_MSI_SYNC_ERROR occurred\n",pid);
             ctx_sync_intr(p_ctx);
             //return NULL;
         }
@@ -2786,7 +2786,7 @@ int get_flash_disks(struct flash_disk disks[], int type)
                 fprintf(stderr,"%d: test aborted \n",pid);
                 return 0;
             }
-            // reseting errno
+            // resetting errno
             if (errno)
                 errno = 0;
 
@@ -2808,7 +2808,7 @@ int get_flash_disks(struct flash_disk disks[], int type)
                 fprintf(stderr,"%d: test aborted \n",pid);
                 return 0;
             }
-            // reseting errno
+            // resetting errno
             if (errno)
                 errno = 0;
         }

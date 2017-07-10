@@ -1686,7 +1686,7 @@ int cblk_process_sisl_adap_intrpt(cflsh_chunk_t *chunk,
     default:
 
 	rc = -1;
-	CBLK_TRACE_LOG_FILE(1,"Unknown interupt number = %d",intrpt_num);
+	CBLK_TRACE_LOG_FILE(1,"Unknown interrupt number = %d",intrpt_num);
 		
 
     }
@@ -1740,7 +1740,7 @@ int cblk_process_sisl_adap_convert_intrpt(cflsh_chunk_t *chunk,
     default:
 
 	rc = -1;
-	CBLK_TRACE_LOG_FILE(1,"Unknown interupt number = %d",intrpt_num);
+	CBLK_TRACE_LOG_FILE(1,"Unknown interrupt number = %d",intrpt_num);
 		
 
     }

@@ -1004,7 +1004,7 @@ int query_fs(void)
 
 	if (query.flags & CUSFS_QRY_DIF_ENDIAN) {
 
-	    printf("flags            = 0x%x: !Different endianess!\n",query.flags);
+	    printf("flags            = 0x%x: !Different endianness!\n",query.flags);
 	} else {
 	    printf("flags            = 0x%x\n",query.flags);
 	}
@@ -1410,7 +1410,7 @@ int copy_file(void)
     if (Dflag) {
 	/*
 	 * A device name was specified, so this
-	 * file is on a CAPI flash fileystem.
+	 * file is on a CAPI flash filesystem.
 	 */
 
 
@@ -1465,7 +1465,7 @@ int copy_file(void)
     if (dflag) {
 	/*
 	 * A device name was specified, so this
-	 * file is on a CAPI flash fileystem.
+	 * file is on a CAPI flash filesystem.
 	 */
 	
 	dest_capi = TRUE;
@@ -1687,7 +1687,7 @@ int aio_copy_file(void)
     if (Dflag) {
 	/*
 	 * A device name was specified, so this
-	 * file is on a CAPI flash fileystem.
+	 * file is on a CAPI flash filesystem.
 	 */
 
 
@@ -1738,7 +1738,7 @@ int aio_copy_file(void)
     if (dflag) {
 	/*
 	 * A device name was specified, so this
-	 * file is on a CAPI flash fileystem.
+	 * file is on a CAPI flash filesystem.
 	 */
 	
 	dest_capi = TRUE;

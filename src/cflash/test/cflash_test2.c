@@ -601,7 +601,7 @@ int chunk_regress()
         return -1;
     }
     rc = ctx_init(p_ctx);
-    CHECK_RC(rc, "ctx_init faild");
+    CHECK_RC(rc, "ctx_init failed");
 
     pthread_create(&thread,NULL,ctx_rrq_rx, p_ctx);
     //initialize the mutex

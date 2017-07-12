@@ -193,13 +193,13 @@ endif
 	${INSTALL} -m 644 ${_RESOURCEDIR}/80-cxlflash.rules ${_UDEV_RULES_DIR}
 
 	@if [[ -e ${ROOTPATH}/src/build/version.txt ]]; then \
-       echo "${INSTALL} ${ROOTPATH}/src/build/version.txt ${INSTALL_ROOT}"; \
-       ${INSTALL} ${ROOTPATH}/src/build/version.txt ${INSTALL_ROOT}; \
+       echo "${INSTALL} -m 644 ${ROOTPATH}/src/build/version.txt ${INSTALL_ROOT}"; \
+       ${INSTALL} -m 644 ${ROOTPATH}/src/build/version.txt ${INSTALL_ROOT}; \
      else \
-       echo "${INSTALL} ${_TESTSRCDIR}/version.txt ${INSTALL_ROOT}"; \
-       ${INSTALL} ${_TESTSRCDIR}/version.txt ${INSTALL_ROOT}; \
+       echo "${INSTALL} -m 644${_TESTSRCDIR}/version.txt ${INSTALL_ROOT}"; \
+       ${INSTALL} -m 644 ${_TESTSRCDIR}/version.txt ${INSTALL_ROOT}; \
      fi
-	${INSTALL} ${_RESOURCEDIR}/afu_versions ${_ETC_DIR}
+	${INSTALL} -m 644 ${_RESOURCEDIR}/afu_versions ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${PKGDIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cxlffdc.debug ${_ETC_DIR}
@@ -310,8 +310,8 @@ ${FW_FILES}:
 ifneq ($(TARGET_PLATFORM),x86_64)
 	@mkdir -p ${_AFU_IMAGES_DIR}
 	@if [[ -e ${_RESOURCEDIR}/$@ ]]; then \
-         echo ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; \
-              ${INSTALL} ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; \
+         echo ${INSTALL} -m 644 ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; \
+              ${INSTALL} -m 644 ${_RESOURCEDIR}/$@ ${_AFU_IMAGES_DIR}; \
          if [[ $@ =~ gz ]]; then gunzip ${_AFU_IMAGES_DIR}/$@; fi; \
      fi
 ifneq ($(UNAME),AIX)
@@ -328,7 +328,7 @@ cflashimage: ${FW_FILES}
 ifneq ($(UNAME),AIX)
 ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${_AFUDIR}/surelock_vpd2rbf.pl ${AFU_ROOT}
-	${INSTALL} ${_AFUDIR}/vpd_FlashGT.csv ${AFU_ROOT}
+	${INSTALL} -m 644 ${_AFUDIR}/vpd_FlashGT.csv ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_dump ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/cxl_afu_status ${AFU_ROOT}
 	${INSTALL} -s ${_TESTSRCDIR}/flashgt_temp ${AFU_ROOT}
@@ -344,14 +344,14 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${_RESOURCEDIR}/cflash_stick.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_perfcheck.pl ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cflash_mfg_init.pl ${AFU_ROOT}
-	${INSTALL} ${_RESOURCEDIR}/blacklist-cxlflash.conf ${AFU_ROOT}
+	${INSTALL} -m 644 ${_RESOURCEDIR}/blacklist-cxlflash.conf ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/flash_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/reload_all_adapters ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/psl_trace_dump ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cxl_flash_vm ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/cxl_afu_fmt_unit ${AFU_ROOT}
 	${INSTALL} ${_RESOURCEDIR}/flashgt_nvme_nsq ${AFU_ROOT}
-	${INSTALL} ${_RESOURCEDIR}/afu_versions ${_AFU_IMAGES_DIR}/.remove
+	${INSTALL} -m 644 ${_RESOURCEDIR}/afu_versions ${_AFU_IMAGES_DIR}/.remove
 endif
 endif
 

@@ -3,7 +3,7 @@ Maintainer: IBM Corp. <mpvageli@us.ibm.com>
 Uploaders:  Mike Vageline <mpvageli@us.ibm.com>
 Section: utils
 Priority: extra
-Standards-Version: 3.9.8
+Standards-Version: 4.0.0
 Build-Depends: debhelper (>=9), doxygen, libudev1, libudev-dev,
                gcc-5, g++-5, lsb-release
 Homepage: https://github.com/open-power
@@ -11,7 +11,7 @@ Vcs-Git: https://github.com/open-power/cxlflash.git
 
 Package: cxlflash
 Architecture: ppc64 ppc64el
-Depends: ${shlibs:Depends}, libudev-dev, cxlflash (= ${binary:Version})
+Depends: ${shlibs:Depends}, libudev-dev, ${misc:Depends}
 Conflicts: ibmcapikv
 Replaces: ibmcapikv
 Description: IBM Data Engine for NoSQL Software Libraries : cxlflash
@@ -30,7 +30,7 @@ Description: IBM Data Engine for NoSQL Software Libraries : cxlflash
 
 Package: cxlflashimage
 Architecture: ppc64 ppc64el
-Depends: cxlflash (= ${binary:Version}), ${shlibs:Depends}
+Depends: cxlflash (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
 Conflicts: afuimage
 Replaces: afuimage
 Description: IBM Data Engine for NoSQL Software Libraries : cxlflash afu library

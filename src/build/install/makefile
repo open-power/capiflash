@@ -169,7 +169,7 @@ endif
 	${INSTALL} -s ${_TESTSRCDIR}/run_kv_benchmark ${_BIN_DIR}
 	${INSTALL} -s ${_TESTSRCDIR}/kv_perf ${_BIN_DIR}
 	${INSTALL}    ${ROOTPATH}/src/test/ioppt.pl ${_BIN_DIR}
-	${INSTALL} -m 644 ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
+	${INSTALL}    ${ROOTPATH}/src/test/ioppts.qd ${_BIN_DIR}
 
 	${INSTALL} ${_RESOURCEDIR}/cflash_plinks ${_BIN_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_getslot ${_BIN_DIR}
@@ -202,8 +202,8 @@ endif
 	${INSTALL} -m 644 ${_RESOURCEDIR}/afu_versions ${_ETC_DIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${PKGDIR}
 	${INSTALL} ${_RESOURCEDIR}/cflash_configure ${_ETC_DIR}
-	${INSTALL} -m 644 ${_RESOURCEDIR}/cxlffdc.debug ${_ETC_DIR}
-	${INSTALL} -m 644 ${_RESOURCEDIR}/cxlffdc.cleardebug ${_ETC_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cxlffdc.debug ${_ETC_DIR}
+	${INSTALL} ${_RESOURCEDIR}/cxlffdc.cleardebug ${_ETC_DIR}
 endif
 	
 	@#Libs

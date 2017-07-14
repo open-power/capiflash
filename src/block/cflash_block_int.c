@@ -62,6 +62,7 @@ void cblk_setup_trace_files(int new_process)
     char *env_trace_append = getenv("CFLSH_BLK_TRC_APPEND");
     char *log_pid  = getenv("CFLSH_BLK_TRACE_PID");
     char *env_num_thread_logs  = getenv("CFLSH_BLK_TRACE_TID");
+    char *env_show_thread_id_logs  = getenv("CFLSH_BLK_SHOW_TRACE_TID");
     char *env_user     = getenv("USER");
     uint32_t thread_logs = 0;
     char filename[PATH_MAX];
@@ -115,6 +116,17 @@ void cblk_setup_trace_files(int new_process)
 
 	strcpy(filename,cblk_log_filename);
     }
+
+    if (env_show_thread_id_logs) {
+
+	/*
+	 * This environment wants us to display
+	 * thread ids in the trace.
+	 */
+
+	show_thread_id_logs = TRUE;
+    }
+
 
     if (env_trace_append) {
 
@@ -609,6 +621,7 @@ void cblk_reopen_after_fork(cflsh_chunk_t *chunk, int flags)
 #ifndef BLOCK_FILEMODE_ENABLED
     int mode = 0;
     int i;
+    int num_attached_paths = 0;
 #endif /* BLOCK_FILEMODE_ENABLED */
     cflsh_cmd_info_t *cmdi;
     cflsh_cmd_info_t *next_cmdi;
@@ -688,6 +701,10 @@ void cblk_reopen_after_fork(cflsh_chunk_t *chunk, int flags)
     for (i=0;i < chunk->num_paths;i++) {
 
 
+	if (chunk->path[i] == NULL) {
+	    continue;
+	}
+
 	if (cblk_chunk_attach_process_map_path(chunk,i,mode,
 					       chunk->path[i]->afu->adap_devno,
 					       chunk->dev_name,
@@ -695,13 +712,32 @@ void cblk_reopen_after_fork(cflsh_chunk_t *chunk, int flags)
 					       &cleanup_depth,FALSE)) {
 
 	    CBLK_TRACE_LOG_FILE(1,"Unable to attach errno = %d",errno);
-	    chunk->path[i]->flags &= ~CFLSH_PATH_ACT;
 
-	    chunk->flags |= CFLSH_CHUNK_FAIL_IO;
 
-	    return;
+		
+	} else {
+
+	    num_attached_paths++;
 	}
     }
+
+    if (num_attached_paths == 0) {
+	
+	/*
+	 * If we were not able to attach 
+	 * to any paths after fork, then
+	 * mark the chunk as failed.
+	 */
+	chunk->flags |= CFLSH_CHUNK_FAIL_IO;
+	
+	CFLASH_BLOCK_UNLOCK(chunk->lock);
+	
+	return;
+
+    }
+
+
+
     
     CBLK_TRACE_LOG_FILE(9,"reopening attach/map successful for %s",chunk->dev_name);
     
@@ -925,6 +961,7 @@ void  cblk_child_post_fork (void)
 {
     cflsh_chunk_t *chunk = NULL;
     cflsh_afu_t *afu = NULL;
+    char *env_eras_thread = getenv("CFLSH_BLK_ERAS_THREAD");
     int i;
     int rc;
 
@@ -1013,6 +1050,14 @@ void  cblk_child_post_fork (void)
 	
 	CBLK_TRACE_LOG_FILE(9,"child_fork");
 
+
+	if (env_eras_thread) {
+
+	    if (cblk_start_eras_thread(0)) {
+
+		CBLK_TRACE_LOG_FILE(1,"Failed to start eras thread");
+	    }
+	}
 
 	for (i=0; i < MAX_NUM_CHUNKS_HASH; i++) {
 	    
@@ -4295,7 +4340,8 @@ int cblk_listio_arg_verify(chunk_id_t chunk_id,
 	    }
 	    
 	    if ((io->request_type != CBLK_IO_TYPE_READ) &&
-		(io->request_type != CBLK_IO_TYPE_WRITE)) {
+		(io->request_type != CBLK_IO_TYPE_WRITE) &&
+		(io->request_type != CBLK_IO_TYPE_UNMAP)) {
 
 
 		CBLK_TRACE_LOG_FILE(1,"Invalid request_type = %d  chunk_id = %d and index = %d",
@@ -4368,8 +4414,9 @@ int cblk_listio_arg_verify(chunk_id_t chunk_id,
 		
 	    }
 	    
-	    if ((io->request_type != CBLK_IO_TYPE_READ) &&
-		(io->request_type != CBLK_IO_TYPE_WRITE)) {
+	    if ((io->request_type != CBLK_IO_TYPE_READ) && 
+		(io->request_type != CBLK_IO_TYPE_WRITE) &&
+		(io->request_type != CBLK_IO_TYPE_UNMAP)) {
 
 
 		CBLK_TRACE_LOG_FILE(1,"Invalid request_type = %d  chunk_id = %d and index = %d",
@@ -4444,7 +4491,8 @@ int cblk_listio_arg_verify(chunk_id_t chunk_id,
 	    }
 	    
 	    if ((io->request_type != CBLK_IO_TYPE_READ) &&
-		(io->request_type != CBLK_IO_TYPE_WRITE)) {
+		(io->request_type != CBLK_IO_TYPE_WRITE) &&
+		(io->request_type != CBLK_IO_TYPE_UNMAP)) {
 
 
 		CBLK_TRACE_LOG_FILE(1,"Invalid request_type = %d  chunk_id = %d and index = %d",
@@ -4631,7 +4679,8 @@ int cblk_listio_result(cflsh_chunk_t *chunk,chunk_id_t chunk_id,
 		}
 
 		if ((io->request_type != CBLK_IO_TYPE_READ) &&
-		    (io->request_type != CBLK_IO_TYPE_WRITE)) {
+		    (io->request_type != CBLK_IO_TYPE_WRITE) &&
+		    (io->request_type != CBLK_IO_TYPE_UNMAP)) {
 
 
 		    CBLK_TRACE_LOG_FILE(1,"Invalid request_type = %d  chunk_id = %d and index = %d",
@@ -5529,6 +5578,10 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 	     */
 	    reset_context_success = FALSE;
 	    
+	    
+
+	    CBLK_TRACE_LOG_FILE(9,"reset context failed for path_index of %d",path_index);
+
 	    /*
 	     * Check for adapter reset 
 	     */
@@ -5541,7 +5594,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 
 	    CFLASH_BLOCK_UNLOCK(chunk->lock);
 
-	    CBLK_TRACE_LOG_FILE(1,"reset context failed for path_index of %d, status = %d",path_index,status);
+	    CBLK_TRACE_LOG_FILE(1,"reset context failed2 for path_index of %d, status = %d",path_index,status);
 
 	    if (status != CFLSH_BLK_CHK_OS_NO_RESET) {
 
@@ -7011,8 +7064,22 @@ void cblk_trace_log_data_ext(trace_log_ext_arg_t *ext_arg, FILE *logfp,char *fil
 
 	curtime = time(NULL);
 	fprintf(logfp,"Trace started at %s\n",ctime_r(&curtime,timebuf));
-        fprintf(logfp,"Index   Sec   msec  delta dmsec      Filename            function, line ...\n");
-        fprintf(logfp,"------- ----- ----- ----- ----- --------------------  ---------------------\n");
+
+	if (cflsh_blk.flags & CFLSH_G_SYSLOG) {
+	    fprintf(logfp,"Index   Sec   msec  delta dmsec      Filename            function, line ...\n");
+	    fprintf(logfp,"------- ----- ----- ----- ----- --------------------  ---------------------\n");
+	} else {
+
+	    if (show_thread_id_logs) {
+
+		fprintf(logfp,"Index   Sec   msec  delta dmsec    PID     TID         Filename            function, line ...\n");
+		fprintf(logfp,"------- ----- ----- ----- ----- -------- -------- --------------------  ---------------------\n");
+
+	    } else {
+		fprintf(logfp,"Index   Sec   msec  delta dmsec    PID        Filename            function, line ...\n");
+		fprintf(logfp,"------- ----- ----- ----- ----- -------- --------------------  ---------------------\n");
+	    }
+	}
 
     } else {
 
@@ -7027,8 +7094,28 @@ void cblk_trace_log_data_ext(trace_log_ext_arg_t *ext_arg, FILE *logfp,char *fil
         delta_time.millitm = log_time.millitm - ext_arg->last_time.millitm;
     }
 
-    fprintf(logfp,"%7d %5d.%05d %5d.%05d %-25s  %-35s line:%5d :",
-            print_log_number,(int)log_time.time,log_time.millitm,(int)delta_time.time,delta_time.millitm,filename, function, line_num);
+    if (cflsh_blk.flags & CFLSH_G_SYSLOG) {
+	fprintf(logfp,"%7d %5d.%05d %5d.%05d %-25s  %-35s line:%5d :",
+		print_log_number,(int)log_time.time,log_time.millitm,(int)delta_time.time,delta_time.millitm,filename, function, line_num);
+    
+    } else {
+
+
+	
+	    if (show_thread_id_logs) {
+		fprintf(logfp,"%7d %5d.%05d %5d.%05d %08d %08d %-25s  %-35s line:%5d :",
+		print_log_number,(int)log_time.time,log_time.millitm,(int)delta_time.time,
+			delta_time.millitm,cflsh_blk.caller_pid,(int)CFLSH_BLK_GETTID,filename, function, line_num);
+
+
+	    } else {
+		fprintf(logfp,"%7d %5d.%05d %5d.%05d %08d %-25s  %-35s line:%5d :",
+		print_log_number,(int)log_time.time,log_time.millitm,(int)delta_time.time,delta_time.millitm,cflsh_blk.caller_pid,filename, function, line_num);
+
+	    }
+    
+    }
+
     /*
      * Initialize ap to store arguments after msg
      */
@@ -7381,6 +7468,20 @@ void  cblk_dump_debug_data(const char *reason,const char *reason_filename,const 
 
     for (i=0;i<MAX_NUM_CHUNKS_HASH; i++) {
 
+
+
+	/*
+	 * Each hash bucket has its own lock. So
+	 * display information on the hash bucket
+	 * lock here.
+	 */
+
+	fprintf(cblk_dumpfp,"      hash[%03d].lock.file       = 0x%x\n",i,cflsh_blk.hash[i].lock.file); 
+	fprintf(cblk_dumpfp,"      hash[%03d].lock.fname      = %s\n",i,cflsh_blk.hash[i].lock.filename);
+	fprintf(cblk_dumpfp,"      hash[%03d].lock.line       = %d\n",i,cflsh_blk.hash[i].lock.line); 
+	fprintf(cblk_dumpfp,"      hash[%03d].lock.thread &   = %p\n",i,&(cflsh_blk.hash[i].lock.thread));
+	fprintf(cblk_dumpfp,"      hash[%03d].lock.thread     = 0x%x\n",i,(uint32_t)(cflsh_blk.hash[i].lock.thread));
+
 	chunk = cflsh_blk.hash[i].head;
 
 	while (chunk) {
@@ -7636,6 +7737,7 @@ void  cblk_dump_debug_data(const char *reason,const char *reason_filename,const 
 		fprintf(cblk_dumpfp,"                path_id           = 0x%x\n",chunk->path[j]->path_id);
 		fprintf(cblk_dumpfp,"                path_id_mask      = 0x%x\n",chunk->path[j]->path_id_mask);
 		fprintf(cblk_dumpfp,"                num_ports         = 0x%x\n",chunk->path[j]->num_ports);
+		fprintf(cblk_dumpfp,"                type              = 0x%x\n",chunk->path[j]->type);
 #ifndef _AIX
 		fprintf(cblk_dumpfp,"                dev_name          = %s\n",chunk->path[j]->dev_name);
 #endif /* !_AIX */
@@ -7662,9 +7764,10 @@ void  cblk_dump_debug_data(const char *reason,const char *reason_filename,const 
 	    fprintf(cblk_dumpfp,"\n");
 
 	    chunk = chunk->next;
-	}
 
-    }
+	} /* while */
+
+    }  /* for */
 
     fflush(cblk_dumpfp);
 
@@ -8420,6 +8523,36 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 	}
 
     } /* for */
+
+    return;
+}
+
+/*
+ * NAME: cblk_afu_dump
+ *
+ * FUNCTION: This routine will force an AFU dump
+ *  
+ *
+ *
+ * RETURNS: None
+ *     
+ *    
+ */
+
+void  cblk_afu_dump(cflsh_chunk_t *chunk, int flags)
+{
+
+    int rc;
+
+#ifdef _AIX
+
+    rc = system("livedumpstart -c -r cflashdd:fw symptom=afu_dump");
+#else
+
+    rc = system("/usr/bin/cxlffdc");
+#endif
+
+    CBLK_TRACE_LOG_FILE(9,"system rc = %d, errno = %d",rc, errno);
 
     return;
 }

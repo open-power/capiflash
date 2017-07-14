@@ -3,7 +3,7 @@
 
 export FVT_ARK_IO_MIN=30
 
-cd /opt/ibm/capikv/test
+cd /usr/bin
 
 FVT_DEV=/dev/cxl/afu0.0s; ./fvt_ark_io&
 FVT_DEV=/dev/cxl/afu0.0s; ./fvt_ark_io&

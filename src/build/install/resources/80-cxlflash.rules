@@ -1,4 +1,4 @@
 #match the cxlflash driver, and locate all sg* devices. Note that this cannot depend on the sysfs attributes for cxlflash
 #as they may not be set up yet (e.g. listing all sg* devices under cxlflash)
-SUBSYSTEM=="scsi_generic", DRIVERS=="cxlflash", GROUP="cxl", MODE="0660", RUN+="/opt/ibm/capikv/bin/cxlflashutil --config --device=/dev/$kernel"
+SUBSYSTEM=="scsi_generic", DRIVERS=="cxlflash", GROUP="cxl", MODE="0660", RUN+="/usr/bin/cxlflashutil --config --device=/dev/$kernel"
 SUBSYSTEM=="block", DRIVERS=="cxlflash", GROUP="cxl", MODE="0660"

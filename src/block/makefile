@@ -22,10 +22,9 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-ROOTPATH = ../..
 
-CFLAGS   += -I$(ROOTPATH)/src/include -Wno-format-security
-CFLAGS64 += -I$(ROOTPATH)/src/include
+UNAME    = $(shell uname)
+ROOTPATH = ../..
 
 #enable file mode by default, if the env var is not set.
 #to disable file mode, set BLOCK_FILEMODE_ENABLED=0 in surelock-sw/customrc
@@ -53,37 +52,24 @@ endif
 MODULE = cflsh_block
 
 OBJS = cflash_scsi_user.o cflash_tools_user.o cflash_block.o cflash_block_int.o\
-       cflash_block_sisl.o cflash_block_cgroup.o cflash_block_raid0.o
+       cflash_block_sisl.o cflash_block_cgroup.o cflash_block_raid0.o\
+       cflash_block_eras_client.o cflash_block_eras_serv.o
 
 ifeq ($(BLOCK_KERNEL_MC_ENABLED),1)
-
 CUSTOMFLAGS += -D_KERNEL_MASTER_CONTXT
 OBJS += cflash_block_kern_mc.o
-
 else
-
 OBJS += cflash_block_linux.o
-
 endif
 
-OBJS64 = $(subst .o,.64o,$(OBJS))
-
-UNAME=$(shell uname)
 ifeq ($(UNAME),AIX)
-MODLIBS = -lpthreads
-MODULE_LINKLIBS = ${MODLIBS} 
 EXPFLAGS = -bE:exportfile
 else
-ifeq ($(BLOCK_KERNEL_MC_ENABLED),1)
-MODLIBS = -lpthread -ludev
-else
-MODLIBS = -lpthread
-endif
-MODULE_LINKLIBS = ${MODLIBS} -Wl,--version-script=libcflash_exportmap
+LCFLAGS         = -Wno-format-security
+MODULE_LINKLIBS = -Wl,--version-script=libcflash_exportmap
 endif
 
 LINKLIBS = -l${MODULE}
-LIBPATHS = -L${ROOTPATH}/img
 
 SUBDIRS =  bin.d test.d
 

@@ -44,22 +44,37 @@ run_fvt:
 run_unit:
 	${MAKE} unit
 
-ifneq ($(wildcard /usr/src/googletest/googletest),)
-  GTESTDIR=/usr/src/googletest/googletest
-  GTESTINC=${GTESTDIR}/include
-else ifneq ($(wildcard /usr/src/gtest),)
-  GTESTDIR=/usr/src/gtest
-  GTESTINC=${GTESTDIR}/include
-else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/gtest-1.7.0),)
-  GTESTDIR=${ROOTPATH}/src/test/framework/gtest-1.7.0
-  GTESTINC=${GTESTDIR}/include
-else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
-  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
-  GTESTINC=${GTESTDIR}/include
+
+#ensure build env is setup
+ifndef SURELOCKROOT
+$(error run: ". env.bash")
 endif
 
 VERSIONMAJOR=4
-VERSIONMINOR=2
+VERSIONMINOR=3
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
+
+
+CFLAGS          += ${LCFLAGS}
+LINKLIBS        += -lpthreads
+BITS            = 64
+MODLIBS         += -lpthreads
+MODULE_LINKLIBS += -lpthreads
+PROGRAMS         = $(addprefix ${PGMDIR}/, ${PGMS})
+GTESTS_DIR       = $(addprefix $(TESTDIR)/, $(GTESTS))
+BIN_TESTS        = $(addprefix ${TESTDIR}/, ${BTESTS})
+GTESTS_NM_DIR    = $(addprefix $(TESTDIR)/, $(GTESTS_NO_MAIN))
+
+CFLAGS64        += ${LCFLAGS}
+OBJS64           = $(subst .o,.64o,$(OBJS))
+PROGRAMS64       = $(addsuffix 64, ${PGMS})
+GTESTS64         = $(addsuffix 64, $(GTESTS))
+GTESTS64_DIR     = $(addprefix $(TESTDIR)/, $(GTESTS64))
+GTESTS64_NO_MAIN = $(addsuffix 64, ${GTESTS_NO_MAIN})
+GTESTS64_NM_DIR  = $(addprefix $(TESTDIR)/, $(GTESTS64_NO_MAIN))
+BTESTS64         = $(addsuffix 64, ${BTESTS})
+BIN_TESTS64      = $(addprefix ${TESTDIR}/, ${BTESTS64})
 
 #generate VPATH based on these dirs.
 VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img /lib
@@ -80,7 +95,6 @@ LDFLAGS64_PROGRAMS = -b64 ${LDFLAGS_PROGRAMS}
 
 PGMDIR  = ${ROOTPATH}/obj/programs
 TESTDIR = ${ROOTPATH}/obj/tests
-GENDIR  = ${ROOTPATH}/obj/genfiles
 IMGDIR  = ${ROOTPATH}/img
 PKGDIR  = ${ROOTPATH}/pkg
 
@@ -98,17 +112,16 @@ endif
 #CUSTOMFLAGS += -D__SURELOCK_MODULE=${MODULE}
 #For AIX use the following istead.
 #Suppress infinite loop warnings on AIX (1500-010)
-CUSTOMFLAGS += -qcpluscmt -Dinline=__inline -D_AIX \
+_CFLAGS_ = -qcpluscmt -Dinline=__inline -D_AIX \
 -D__SURELOCK_MODULE=${MODULE} -qsuppress=1500-010 -D_REENTRANT
-CUSTOMFLAGS64 += -q 64 ${CUSTOMFLAGS}
+CFLAGS += ${_CFLAGS_}
+CFLAGS64 += -q64 ${_CFLAGS_}
+
 LIBS += $(addsuffix .so, $(addprefix lib, ${MODULE}))
 LIBS64 += $(addsuffix .64so, $(addprefix lib, ${MODULE}))
 AR_LIBS += $(addsuffix .a, $(addprefix lib, ${MODULE}))
-EXTRAINCDIR += ${GENDIR} ${CURDIR}
-#EXPFLAGS = -bE:exportfile
 LDFLAGS = -bnoentry -bM:SRE $(EXPFLAGS) ${LIBPATHS}
 POSTLDFLAGS = -lc
-#LDFLAGS = -bnoentry -bM:SRE -bexpall ${LIBPATHS} -lc
 LDFLAGS64 = -b64 ${LDFLAGS}
 LIBRARIES = $(addprefix ${OBJDIR}/, ${MEMBER})
 ifdef OBJS64
@@ -118,12 +131,11 @@ else
 OBJDIR  = ${ROOTPATH}/obj/surelock
 BEAMDIR = ${ROOTPATH}/obj/beam/surelock
 
-CUSTOMFLAGS += -qcpluscmt -Dinline=__inline -D_AIX
-CUSTOMFLAGS64 += -q64 -qcpluscmt -Dinline=__inline -D_AIX
-EXTRAINCDIR += ${GENDIR} ${CURDIR}
+_CFLAGS_= -qcpluscmt -Dinline=__inline -D_AIX
+CFLAGS += ${_CFLAGS_}
+CFLAGS64 += -q64 ${_CFLAGS_}
 LDFLAGS = -L${LIBPATHS} -lc ${LINKLIBS}
 LDFLAGS64 = -b64 ${LDFLAGS}
-#GTESTFDIR=${ROOTPATH}/src/test
 endif
 
 __internal__comma= ,
@@ -183,22 +195,15 @@ endif
 
 #add support for the rev ID header
 GITREVISION:=$(shell git rev-list HEAD | wc -l | sed -e 's/^ *//')-$(shell git rev-parse --short HEAD)
-CUSTOMFLAGS += -DGITREVISION='"${GITREVISION}"'
+CFLAGS += -DGITREVISION='"${GITREVISION}"'
 
-
-CFLAGS += ${COMMONFLAGS} \
-	 ${CUSTOMFLAGS} \
-	  ${ARCHFLAGS} \
-	${INCFLAGS}
-CFLAGS64 += ${COMMONFLAGS} \
-	 ${CUSTOMFLAGS64} \
-	  ${ARCHFLAGS} \
-	${INCFLAGS}
-ASMFLAGS = ${COMMONFLAGS} 
+CFLAGS   += ${COMMONFLAGS} ${CUSTOMFLAGS} ${ARCHFLAGS}
+CFLAGS64 += ${COMMONFLAGS} ${CUSTOMFLAGS} ${ARCHFLAGS}
+ASMFLAGS  = ${COMMONFLAGS}
 
 # TODO: avoid LD error for XCOFF64 with 32 bit objets
-#CXXFLAGS += ${CFLAGS64}
-CXXFLAGS += ${CFLAGS}
+CXXFLAGS   += ${CFLAGS}
+CXXFLAGS64 += ${CFLAGS64}
 #LDFLAGS = --sort-common ${COMMONFLAGS}
 
 
@@ -208,7 +213,7 @@ else
     TESTGEN = ${ROOTPATH}/src/usr/cxxtest/cxxtestgen.pl
 endif
 
-INCDIR = ${ROOTPATH}/src/include /usr/include /usr/include/sys
+INCDIR = ${ROOTPATH}/src/include /usr/include /usr/include/sys .
 _INCDIRS = ${INCDIR} ${EXTRAINCDIR}
 INCFLAGS = $(addprefix -I, ${_INCDIRS} )
 ASMINCFLAGS = $(addprefix $(lastword -Wa,-I), ${_INCDIRS})
@@ -236,11 +241,11 @@ ${OBJDIR}/%.o ${OBJDIR}/%.list : %.c
 
 ${OBJDIR}/%.64o ${OBJDIR}/%.list : %.C
 	@mkdir -p ${OBJDIR}
-	${CXX} -q64 -c ${CXXFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
+	${CXX} -c ${CXXFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 
 ${OBJDIR}/%.64o ${OBJDIR}/%.list : %.c
 	@mkdir -p ${OBJDIR}
-	${CC} -q64 -c ${CFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
+	${CC} -c ${CFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 
 ${OBJDIR}/%.o : %.S
 	@mkdir -p ${OBJDIR}
@@ -270,10 +275,10 @@ ${PGMDIR}/%.o : %.C
 	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 ${PGMDIR}/%.64o : %.c
 	@mkdir -p ${PGMDIR}
-	${CC} -q64 -c ${CFLAGS} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
+	${CC} -c ${CFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 ${PGMDIR}/%.64o : %.C
 	@mkdir -p ${PGMDIR}
-	${CXX} -q64 -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
+	${CXX} -c ${CXXFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 
 ${TESTDIR}/%.o : %.c
 	@mkdir -p ${TESTDIR}
@@ -283,10 +288,10 @@ ${TESTDIR}/%.o : %.C
 	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 ${TESTDIR}/64obj/%.o : %.c
 	@mkdir -p ${TESTDIR}/64obj
-	${CC} -q64 -c ${CFLAGS} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
+	${CC} -c ${CFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 ${TESTDIR}/64obj/%.o : %.C
 	@mkdir -p ${TESTDIR}/64obj
-	${CXX} -q64 -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
+	${CXX} -c ${CXXFLAGS64} $< -o $@ ${INCFLAGS} -qmakedep -MF $(@:.o=.u)
 
 ${BEAMDIR}/%.beam : %.C
 	@mkdir -p ${BEAMDIR}
@@ -337,7 +342,7 @@ endef
 $(foreach pgm64,$(PROGRAMS64),$(eval $(call PROGRAMS64_template,$(pgm64))))
 
 $(PROGRAMS64):
-	$(CC) -q64 $(CFLAGS) $(LDFLAGS64_PROGRAMS) $($(@)_PGMS64_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(CC) $(CFLAGS64) $(LDFLAGS64_PROGRAMS) $($(@)_PGMS64_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
 
 #-------------------------------------------------------------------------------
 #Build a C-file main, build the *_OFILES into TESTDIR, and link them together
@@ -361,7 +366,7 @@ endef
 $(foreach bin_test,$(BIN_TESTS64),$(eval $(call BIN_TESTS64_template,$(bin_test))))
 
 $(BIN_TESTS64):
-	$(CC) -q64 $(CFLAGS) $(LDFLAGS64_PROGRAMS) $($(@)_BTEST_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(CC) $(CFLAGS64) $(LDFLAGS64_PROGRAMS) $($(@)_BTEST_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
 
 #-------------------------------------------------------------------------------
 #Build a C++ file that uses gtest, build the *_OFILES defined, and link with gtest_main
@@ -387,7 +392,7 @@ endef
 $(foreach _gtest,$(GTESTS64_DIR),$(eval $(call GTESTS64_template,$(_gtest))))
 
 $(GTESTS64_DIR):
-	$(CXX) -q64 $(CFLAGS) $(LDFLAGS64_PROGRAMS) $($(@)_GTESTS64_OFILES) $(GTESTS64_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(CXX) $(CFLAGS64) $(LDFLAGS64_PROGRAMS) $($(@)_GTESTS64_OFILES) $(GTESTS64_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
 
 #-------------------------------------------------------------------------------
 #Build a C++ file that uses gtest, build *_OFILES into TESTDIR, link with gtest
@@ -413,7 +418,7 @@ endef
 $(foreach _gtest64_nm,$(GTESTS64_NM_DIR),$(eval $(call GTESTS64_NM_template,$(_gtest64_nm))))
 
 $(GTESTS64_NM_DIR):
-	$(CXX) -q64 $(CFLAGS) $(LDFLAGS64_PROGRAMS) $($(@)_GTESTS64_NM_OFILES) $(GTESTS64_NM_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(CXX) $(CFLAGS64) $(LDFLAGS64_PROGRAMS) $($(@)_GTESTS64_NM_OFILES) $(GTESTS64_NM_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
 
 #-------------------------------------------------------------------------------
 
@@ -498,7 +503,7 @@ clean: cleanud ${SUBDIRS:.d=.clean}
 	       ${IMAGES:.bin=.bin.modinfo} ${IMAGES:.ruhx=.lid} \
 	       ${IMAGES:.ruhx=.lidhdr} ${IMAGES:.bin=_extended.bin} \
 	       ${IMAGE_EXTRAS} ${TESTDIR}/* \
-	       ${EXTRA_OBJS} ${_GENFILES} ${EXTRA_PARTS} ${EXTRA_CLEAN}\
+	       ${EXTRA_OBJS} ${EXTRA_PARTS} ${EXTRA_CLEAN}\
 	       ${PROGRAMS} ${PROGRAMS64} ${ALL_OFILES} \
 	       *.a *.o *~* )
 

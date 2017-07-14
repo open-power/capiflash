@@ -24,25 +24,15 @@
 # IBM_PROLOG_END_TAG
 
 ROOTPATH = ../../..
-
-CFLAGS += -g
-
-MODULE = prov
+UNAME=$(shell uname)
 
 ALLOW_WARNINGS = yes
 
-OBJS = provafu.o provutil.o provvpd.o
-
-OBJS64 = provafu.64o provutil.64o provvpd.64o
-
+ifneq ($(UNAME),AIX)
+MODLIBS  = -lcxl
+MODULE   = prov
+OBJS     = provafu.o provutil.o provvpd.o
 EXPFLAGS = -bexpall
-
-UNAME=$(shell uname)
-ifeq ($(UNAME),AIX)
-MODLIBS = -lcxl
-else
-MODLIBS = -lcxl
 endif
-
 
 include ${ROOTPATH}/config.mk

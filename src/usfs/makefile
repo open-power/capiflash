@@ -22,16 +22,16 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-ROOTPATH = ../..
 
-CFLAGS   += -I$(ROOTPATH)/src/include -Wno-format-security
-CFLAGS64 += -I$(ROOTPATH)/src/include
+UNAME=$(shell uname)
+
+ROOTPATH = ../..
 
 #if BLOCK_FILEMODE is enabled, then tell the userspace code as much
 #pass down as a #define to the underlying code
 ifdef BLOCK_FILEMODE_ENABLED
 ifeq ($(BLOCK_FILEMODE_ENABLED),1)
-    CUSTOMFLAGS += -DBLOCK_FILEMODE_ENABLED 
+    CUSTOMFLAGS += -DBLOCK_FILEMODE_ENABLED
 endif
 endif
 
@@ -44,35 +44,21 @@ endif
 #CUSTOMFLAGS += -D_MASTER_LOCK -D_MASTER_LOCK_CLIENT
 
 MODULE = cflsh_usfs
+OBJS   = cflsh_usfs.o cflsh_usfs_utils.o cflsh_usfs_disk.o cflsh_usfs_inode.o cflsh_usfs_client.o cflsh_usfs_wrapper.o
+PGMS   = cusfs_serv
 
-OBJS = cflsh_usfs.o cflsh_usfs_utils.o cflsh_usfs_disk.o cflsh_usfs_inode.o cflsh_usfs_client.o cflsh_usfs_wrapper.o
-
-OBJS64 = cflsh_usfs.64o cflsh_usfs_utils.64o cflsh_usfs_disk.64o cflsh_usfs_inode.64o cflsh_usfs_client.64o cflsh_usfs_wrapper.64o
-
-
-UNAME=$(shell uname)
 ifeq ($(UNAME),AIX)
-MODLIBS = -lpthreads -lcflsh_block
+MODLIBS         = -lcflsh_block
 MODULE_LINKLIBS = ${MODLIBS} 
-EXPFLAGS = -bE:libcflsh_usfs.exp
+LINKLIBS       += -lcflsh_block -l${MODULE}
+EXPFLAGS        = -bE:libcflsh_usfs.exp
 else
-MODLIBS = -lpthread -lcflsh_block -ldl
+MODLIBS         = -lcflsh_block -ldl
 MODULE_LINKLIBS = ${MODLIBS} -Wl,--version-script=libcflsh_usfs_exportmap
+LINKLIBS       += -lcflsh_block -ldl -l${MODULE} -lrt
+LCFLAGS         = -Wno-format-security
 endif
-
-ifeq ($(UNAME),AIX)
-LINKLIBS +=-lpthreads -lcflsh_block -l${MODULE}
-else
-LINKLIBS +=-lpthread  -lcflsh_block -ldl -l${MODULE} -lrt
-endif
-
-
-LIBPATHS = -L${ROOTPATH}/img
-
-#SUBDIRS =  test.d
-
-PGMS       = cusfs_serv
-PROGRAMS   = $(addprefix ${PGMDIR}/, ${PGMS})
-#PROGRAMS64 = $(addprefix ${PGMDIR}/, ${PGMS})
 
 include ${ROOTPATH}/config.mk
+
+

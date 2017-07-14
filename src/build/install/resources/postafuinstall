@@ -26,9 +26,9 @@
 set -e #halt on error
 USERNAME=cxl
 GROUPNAME=$USERNAME
-FLASH_ROOT=/opt/ibm/capikv/afu
-DATA_DIR=$CAPIKV_ROOT/data
 
-cd $FLASH_ROOT/images
+cd /lib/firmware/cxlflash
 echo "Uncompressing..."
 for f in $(ls -1|grep gz); do gunzip -f $f; rm -f $f; done
+
+exit 0

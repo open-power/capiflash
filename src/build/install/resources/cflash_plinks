@@ -25,7 +25,7 @@
 # IBM_PROLOG_END_TAG
 
 rules="/etc/udev/rules.d/10-local.rules"
-fstatus="$(/opt/ibm/capikv/bin/cxlfstatus)"
+fstatus="$(/usr/bin/cxlfstatus)"
 
 if [[ $1 = "-h" ]]
 then
@@ -78,7 +78,7 @@ udevadm control --reload-rules && udevadm trigger
 
 if [[ -z $(grep DRIVERS $rules|grep cxl|grep PROGRAM|grep SLOT) ]]
 then
-  echo 'DRIVERS=="cxl-pci", PROGRAM="/opt/ibm/capikv/bin/cflash_getslot %b", ENV{SLOT}="%c"' > $rules
+  echo 'DRIVERS=="cxl-pci", PROGRAM="/usr/bin/cflash_getslot %b", ENV{SLOT}="%c"' > $rules
 fi
 
 cards=$(lspci |egrep "0601|04cf"|awk '{print $1}');

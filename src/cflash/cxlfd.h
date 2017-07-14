@@ -38,7 +38,7 @@
 /*----------------------------------------------------------------------------*/
 /* Constants                                                                  */
 /*----------------------------------------------------------------------------*/
-#define LUNTABLEINI "/opt/ibm/capikv/etc/sioluntable.ini"
+#define LUNTABLEINI "/etc/cxlflash/sioluntable.ini"
 #define DEFAULT_TIMER_INTERVAL 30 //seconds
 
 /*----------------------------------------------------------------------------*/

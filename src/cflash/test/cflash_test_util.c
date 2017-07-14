@@ -103,7 +103,7 @@ int get_fvt_dev_env()
 
     int rc;
     char * manualEehP   = getenv("MANUAL_EEH");
-    rc=system("/opt/ibm/capikv/bin/cxlfstatus | grep -q superpipe");
+    rc=system("/usr/bin/cxlfstatus | grep -q superpipe");
     CHECK_RC(rc, "Test Setup doesn't have any Flash disk in spio mode");
 
     // looking for user set value
@@ -299,6 +299,15 @@ int ctx_reinit(struct ctx *p_ctx)
     p_ctx->p_hrrq_curr = p_ctx->p_hrrq_start;
     write_64(&p_ctx->p_host_map->rrq_start, (__u64) p_ctx->p_hrrq_start);
     write_64(&p_ctx->p_host_map->rrq_end, (__u64) p_ctx->p_hrrq_end);
+
+    if ( p_ctx->sq_mode_flag == TRUE )
+    {
+         bzero(p_ctx->p_sq_start, NUM_RRQ_ENTRY*sizeof(__u64));
+         p_ctx->p_sq_curr =  p_ctx->p_sq_start;
+         write_64(&p_ctx->p_host_map->sq_start, (__u64) p_ctx->p_sq_start );
+         write_64(&p_ctx->p_host_map->sq_end, (__u64) p_ctx->p_sq_end );
+    }
+
 #ifdef _AIX
     write_64(&p_ctx->p_host_map->endian_ctrl,(__u64)SISL_ENDIAN_CTRL_BE);
 #endif
@@ -2481,7 +2490,7 @@ int ioctl_dk_capi_recover_ctx(struct ctx *p_ctx)
     p_ctx->mmio_size = recv_ctx.mmio_size;
     p_ctx->new_ctx_token = recv_ctx.context_id;
 
-    if (p_ctx->return_flags == DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET)
+    if (p_ctx->return_flags & DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET)
     {
         debug("%d: 1st do munmap then mmap fresh mmio size with new adap_fd\n",pid);
         rc = munmap((void *)p_ctx->p_host_map, p_ctx->mmio_size);
@@ -2499,10 +2508,33 @@ int ioctl_dk_capi_recover_ctx(struct ctx *p_ctx)
         }
         else debug("%d: New mmap() returned success..\n", pid);
 
-        // if context attach returns DK_CXLFLASH_APP_CLOSE_ADAP_FD flag
-        if(p_ctx->close_adap_fd_flag == TRUE)
+#ifdef DK_CXLFLASH_APP_CLOSE_ADAP_FD
+        // if context attach returns DK_CXLFLASH_APP_CLOSE_ADAP_FD fla
+        if(p_ctx->close_adap_fd_flag == TRUE )
         {
-           close(old_adap_fd);
+           debug("%d: close adap fd flag set earlier\n",pid);
+
+           if (p_ctx->return_flags & DK_CXLFLASH_APP_CLOSE_ADAP_FD )
+              {
+                debug("%d: DK_CXLFLASH_APP_CLOSE_ADAP_FD flag set in return_flags\n",pid);
+                close(old_adap_fd);
+              }
+           else
+              {
+                debug("%d: DK_CXLFLASH_APP_CLOSE_ADAP_FD flag set not in return_flags\n",pid);
+                CHECK_RC(1,"Close adap fd criteria failed ..");
+              }
+        }
+#endif
+
+        if(p_ctx->return_flags & DK_CXLFLASH_CONTEXT_SQ_CMD_MODE)
+        {
+            // we should get this if AFU is in SQ enabled mode 
+            debug("%d: DK_CXLFLASH_CONTEXT_SQ_CMD_MODE is set..\n", pid);
+            if( p_ctx->sq_mode_flag != TRUE )
+            {
+               CHECK_RC(1,"Recovery failed : DK_CXLFLASH_CONTEXT_SQ_CMD_MODE set for non-SQ AFU");
+            } 
         }
 
     }
@@ -2710,7 +2742,7 @@ int get_flash_disks(struct flash_disk disks[], int type)
 #ifdef _AIX
     const char *cmd ="lsdev -c disk -s capidev -t extflash |awk '{print $1}'>/tmp/flist";
 #else
-    const char *cmd ="/opt/ibm/capikv/bin/cxlfstatus | \
+    const char *cmd ="/usr/bin/cxlfstatus | \
 			grep superpipe | sort -u -k5 | \
 			awk '{print $1}' | tr -d ':' >/tmp/flist";
 #endif
@@ -3984,8 +4016,9 @@ int ioctl_dk_capi_attach_reuse(struct ctx *p_ctx,struct ctx *p_ctx_1, __u16 lun_
 #ifdef _AIX
         if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-        if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+        if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
+           CHECK_RC(1,"Recovery failed while checking DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET flag");
 
             debug("-----------ctx_reinit called -------------------------\n");
 
@@ -4097,8 +4130,9 @@ int ioctl_dk_capi_attach_reuse(struct ctx *p_ctx,struct ctx *p_ctx_1, __u16 lun_
 #ifdef _AIX
         if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-        if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+        if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
+            CHECK_RC(1,"Recovery failed ");
 
             debug("-----------ctx_reinit called -------------------------\n");
 
@@ -4638,7 +4672,7 @@ int set_spio_mode()
     char cmdstr[1024];
 
 #ifndef _AIX
-    const char *cmd ="/opt/ibm/capikv/bin/cxlfstatus | grep legacy \
+    const char *cmd ="/usr/bin/cxlfstatus | grep legacy \
                         | awk '{print $NF}' | sort -u > /tmp/idlist";
 #else
     const char *cmd=NULL;
@@ -4671,13 +4705,13 @@ int set_spio_mode()
             i++;
         }
 
-        sprintf(cmdstr,"/opt/ibm/capikv/bin/cxlfsetlunmode %s 1",buf);
+        sprintf(cmdstr,"/usr/bin/cxlfsetlunmode %s 1",buf);
         rc |= system(cmdstr);
 
-        sprintf(cmdstr,"grep -q %s /opt/ibm/capikv/etc/sioluntable || echo %s >> /opt/ibm/capikv/etc/sioluntable", buf, buf);
+        sprintf(cmdstr,"grep -q %s /etc/cxlflash/sioluntable || echo %s >> /etc/cxlflash/sioluntable", buf, buf);
         rc |= system(cmdstr);
 
-        rc |= system("/opt/ibm/capikv/bin/cxlfrefreshluns");
+        rc |= system("/usr/bin/cxlfrefreshluns");
 
         count++;
     }
@@ -4817,7 +4851,7 @@ void displayBuildinfo()
 
     printf("-------------------------------------------\n");
     system("uname -a");
-    system("/opt/ibm/capikv/bin/cflash_version");
+    system("/usr/bin/cflash_version");
     printf("-------------------------------------------\n");
     fflush(stdout);
     system("update_flash -d");
@@ -4883,7 +4917,7 @@ int diskInSameAdapater( char * p_file )
     int smCnt  = 0;
     int allCnt   = 0;
 
-    const char *initCmdP = "/opt/ibm/capikv/bin/cxlfstatus | grep superpipe | awk '{print $2}' | cut -d: -f1 | sort -u  > /tmp/trashFile";
+    const char *initCmdP = "/usr/bin/cxlfstatus | grep superpipe | awk '{print $2}' | cut -d: -f1 | sort -u  > /tmp/trashFile";
 
     rc = system(initCmdP);
     if ( rc != 0)
@@ -4927,7 +4961,7 @@ int diskInSameAdapater( char * p_file )
 
         for ( allCnt=0; allCnt < diskCount ;allCnt++)
         {
-           sprintf(npBuff[iCount]," /opt/ibm/capikv/bin/cxlfstatus | grep %s |"
+           sprintf(npBuff[iCount]," /usr/bin/cxlfstatus | grep %s |"
             "awk '{print $2}' | cut -d: -f1 | grep %s >/dev/null 2>&1",allDiskArray[allCnt],tmpBuff);
 
             rc = system(npBuff[iCount]);
@@ -5282,7 +5316,7 @@ int is_UA_device( char * diskName )
 
 #ifndef _AIX
 
-#define CXLSTAT "/opt/ibm/capikv/bin/cxlfstatus"
+#define CXLSTAT "/usr/bin/cxlfstatus"
 
 int diskToWWID (char * WWID)
 {

@@ -116,12 +116,12 @@ while (1)
     read(F, $device, 6);
     close (F);
 
-    if (($vendor eq "0x1014") && ($device eq "0x0601"))
+    if (($vendor eq "0x1014") && ($device eq "0x0601" || $device eq "0x0628"))
     {
       my @dds = split /\//, $file;
       $adap = pop @dds;
 
-      for (my $i=0; $i<2; $i++)
+      for (my $i=0; $i<4; $i++)
       {
         my $devstr=`ls -d /sys/devices/*/*/$adap/*/*/host*/target*:$i:*/*:*:*:*/scsi_generic/* 2>/dev/null`;
         if ($? != 0) {next;}

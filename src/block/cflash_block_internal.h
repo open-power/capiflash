@@ -208,6 +208,7 @@ typedef uint64_t dev64_t;
                                               /* while waiting for reset context */
                                               /* to complete.                    */
 
+#define CFLASH_BLOCK_RST_CTX_COMPLETE_MASK 0x1LL
 
 
 
@@ -293,6 +294,7 @@ extern int dump_sequence_num;
 extern pthread_mutex_t  cblk_log_lock;
 
 extern uint32_t num_thread_logs;     /* Number of thread log files */
+extern uint32_t show_thread_id_logs; /* Show thread in in log files */
 
 
 /*
@@ -529,6 +531,7 @@ typedef struct cflsh_cache_line {
 
 #define CFLSH_BLK_L2SSIZE         28              /* log base 2 of segment size  */
 
+#define CBLK_WRITE_UNMAP        0x1  /* Issue Unmap for write           */
 
 /***************************************************************************
  *
@@ -1217,6 +1220,8 @@ typedef struct cflsh_afu_s {
 #define CFLSH_AFU_RECOV   0x4   /* AFU is in a recovery state  */
 #define CFLSH_AFU_SQ      0x8   /* This AFU is using an sub-   */
 				/* mission quue (SQ).          */
+#define CFLSH_AFU_UNNAP_SPT 0x10 /* This AFU supports unmap    */
+                                /* sector operations           */
 
     int ref_count;              /* Reference count for this    */
 				/* path                        */
@@ -1424,6 +1429,8 @@ typedef struct cflsh_chunk_s {
 				   /* and close.               */
 #define CFLSH_CHNK_RECOV_AFU 0x2000 /* This chunk is doing a   */
 				/* recover AFU operation       */
+#define CFLSH_CHNK_UNNAP_SPT 0x4000 /* This chunk supports     */
+                                /* unmap sector operations     */
     chunk_id_t index;           /* Chunk index number          */
     int fd;                     /* File descriptor             */
     char dev_name[PATH_MAX];    /* Device special filename     */
@@ -1489,6 +1496,8 @@ typedef struct cflsh_chunk_s {
     cflsh_path_t *path[CFLSH_BLK_MAX_NUM_PATHS]; /* Adapter paths for this chunk */
     char         *udid;          /* Unique Device Identifier   */
 
+    uint32_t  recov_thread_id;   /* Unique thread id doing     */
+				 /* AFU recovery               */
     uint64_t ptime;              /* track when to trace lat    */
     uint64_t rcmd;               /* #cmds in read lat calc     */
     uint64_t wcmd;               /* #cmds in write lat calc    */

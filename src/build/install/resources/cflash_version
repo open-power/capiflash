@@ -27,7 +27,7 @@
 # check permissions
 if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 
-export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/afu
+export PATH=$PATH:/usr/bin
 
 #determine distro
 if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
@@ -40,9 +40,10 @@ then
   CF_VER=$(cat ver.txt)
 fi
 
-CORSA_VER=$(cat /opt/ibm/capikv/etc/afu_versions|grep CORSA_IMAGE|awk '{print $2}'|cut -c26-33)
-GT_VER=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
-GTP_VER=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
+AFUVER_DIR=/usr/share/cxlflash
+CORSA_VER=$(cat $AFUVER_DIR/afu_versions|grep CORSA_IMAGE|awk '{print $2}'|cut -c26-33)
+GT_VER=$(cat $AFUVER_DIR/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
+GTP_VER=$(cat $AFUVER_DIR/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
 
 err_rc=0
 
@@ -155,7 +156,7 @@ then
     fi
   fi
 
- if [[ ! -z $EXISTS_CF_IMAGE_VER ]]
+ if [[ -e /usr/bin/capi_flash.pl ]]
  then
     IFS=$'\n'
     adaps=($(capi_flash.pl -l 2>/dev/null))
@@ -180,6 +181,15 @@ then
         then
           err_rc=7
           echo "ERROR:     $adap   $type Loaded($fw) != Required($GT_VER)"
+        else
+          echo "INFO:      $adap   $type $fw"
+        fi
+      elif [[ $line =~ 0628 ]]
+      then
+        if [[ ! $line =~ $GTP_VER ]]
+        then
+          err_rc=7
+          echo "ERROR:     $adap   $type Loaded($fw) != Required($GTP_VER)"
         else
           echo "INFO:      $adap   $type $fw"
         fi
@@ -262,7 +272,7 @@ then
     echo "WARNING:   Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
   fi
 
-  if [[ ! -z $EXISTS_CF_IMAGE_VER ]]
+ if [[ -e /usr/bin/capi_flash.pl ]]
   then
     IFS=$'\n'
     adaps=($(capi_flash.pl -l 2>/dev/null))
@@ -287,6 +297,15 @@ then
         then
           err_rc=7
           echo "ERROR:     $adap   $type Loaded($fw) != Required($GT_VER)"
+        else
+          echo "INFO:      $adap   $type $fw"
+        fi
+      elif [[ $line =~ 0628 ]]
+      then
+        if [[ ! $line =~ $GTP_VER ]]
+        then
+          err_rc=7
+          echo "ERROR:     $adap   $type Loaded($fw) != Required($GTP_VER)"
         else
           echo "INFO:      $adap   $type $fw"
         fi

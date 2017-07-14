@@ -24,8 +24,8 @@
 #
 # IBM_PROLOG_END_TAG
 
-CAPIKV=/opt/ibm/capikv
-source $CAPIKV/bin/cflashutils.sh
+CAPIKV=/usr/bin
+source $CAPIKV/cflashutils.sh
 
 
 showhelp()

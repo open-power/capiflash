@@ -35,6 +35,8 @@ use Getopt::Long;
 my $target;
 my $prthelp=0;
 my $serial;
+my $csv="vpd_FlashGT.csv";
+my $rbf="vpd_FlashGT.vpdrbf";
 
 sub usage()
 {
@@ -82,8 +84,14 @@ if (defined $serial) {(length($serial)==8) || die "serial is not 8 chars\n";}
 select(STDOUT);
 $| = 1;
 
-my $out=`lspci -s $target |grep 0601`;
-($out =~ /0601/) || die "Invalid target $target\n";
+my $out=`lspci -s $target |egrep "0601|0628"`;
+($out =~ /0601/ || $out =~ /0628/) || die "Invalid target $target\n";
+
+if ($out =~ /0628/)
+{
+  $csv="vpd_FlashGTplus.csv";
+  $rbf="vpd_FlashGTplus.vpdrbf";
+}
 
 my $afu=`ls -d /sys/devices/pci*/*/$target/cxl/card*/afu* 2>/dev/null|awk -F/ '{print \$NF}'`;
 ($afu =~ /afu/) || die "Invalid target $target\n";
@@ -97,22 +105,23 @@ my $cardN=substr $card,-1;
 
 if (defined $serial)
 {
-  chdir('/opt/ibm/capikv/afu') || die "cxlflashimage pkg is not installed\n";
-  `./surelock_vpd2rbf.pl -f vpd_FlashGT.csv -s $serial`;
-  (-f "/opt/ibm/capikv/afu/vpd_FlashGT.vpdrbf") || die "failure creating the VPD\n";
-  `/opt/ibm/capikv/afu/flashgt_vpd_access $target $cardN /opt/ibm/capikv/afu/vpd_FlashGT.vpdrbf`;
+  chdir('/usr/share/cxlflash') || die "cxlflashimage pkg is not installed\n";
+  `/usr/bin/surelock_vpd2rbf.pl -f $csv -s $serial`;
+  (-f "/usr/share/cxlflash/vpd_FlashGT.vpdrbf") || die "failure creating the VPD\n";
+  `/usr/bin/flashgt_vpd_access $target $cardN /usr/share/cxlflash/$rbf`;
   if ($? != 0) {print "VPD update failed\n";}
   else         {print "VPD updated\n";}
 }
 
 if (defined $target)
 {
-  `/opt/ibm/capikv/afu/cxl_afu_fmt_unit -p0 /dev/cxl/$afu`;
-  ($? == 0) || die "format lun 0 failed\n";
-  print "lun 0 cleaned\n";
-  `/opt/ibm/capikv/afu/cxl_afu_fmt_unit -p1 /dev/cxl/$afu`;
-  ($? == 0) || die "format lun 1 failed\n";
-  print "lun 1 cleaned\n";
+  for (my $i=0; $i<4; $i++)
+  {
+    if ($out =~ /0601/ && $i>1) {last;}
+    `/usr/bin/cxl_afu_fmt_unit -p$i /dev/cxl/$afu`;
+    if ($? != 0) {print "format lun $i failed\n";}
+    else         {print "lun $i cleaned\n";}
+  }
 }
 
 exit 0;

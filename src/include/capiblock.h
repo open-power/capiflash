@@ -172,6 +172,27 @@ typedef struct chunk_stats_s {
 
 
 /************************************************************************/
+/* Chunk attributes                                                    */
+/************************************************************************/
+
+typedef struct chunk_attrs_s {
+    uint64_t flags1;
+#define CFLSH_ATTR_UNMAP 0x0001     /* Unmap sector supported by this  */
+				    /* chunk.                          */
+    uint64_t flags2;
+    uint32_t block_size;            /* Block size of this chunk.       */
+    uint32_t num_paths;             /* Number of paths of this chunk.  */
+    uint64_t max_transfer_size;     /* Maximum transfer size in        */
+                                    /* blocks of this chunk.           */
+   union {
+       uint64_t data[64];           /* General data                    */
+
+   };
+
+} chunk_attrs_t;
+
+
+/************************************************************************/
 /* General flags                                                        */
 /************************************************************************/
 
@@ -218,7 +239,7 @@ typedef off_t cflash_offset_t;
 
 
 /************************************************************************/
-/* cblk_aread and cblk_awrite flags                                     */
+/* cblk_aread, cblk_awrite, cblk_aunmap flags                           */
 /************************************************************************/
 
 
@@ -297,6 +318,7 @@ typedef struct cblk_io {
     uint8_t request_type;         /* Type of request                    */
 #define CBLK_IO_TYPE_READ  0x01   /* Read data request                  */
 #define CBLK_IO_TYPE_WRITE 0x02   /* Write data request                 */
+#define CBLK_IO_TYPE_UNMAP 0x03   /* Unmap sector request               */
     void *buf;                    /* Data buffer for request.           */
     cflash_offset_t lba;          /* Starting logical block address for */
                                   /* request.                           */
@@ -325,17 +347,26 @@ int cblk_set_size(chunk_id_t chunk_id, size_t nblocks, int flags);
 /* Get statistics for a CAPI flash chunk */
 int cblk_get_stats(chunk_id_t chunk_id, chunk_stats_t *stats, int flags);
 
+/* Get attributes for a CAPI flash chunk */
+int cblk_get_attrs(chunk_id_t chunk_id, chunk_attrs_t *attr, int flags);
+
 /* Blocking CAPI flash read */
 int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int flags);
 
 /* Blocking CAPI flash write */
 int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int flags);
 
+/* Blocking CAPI flash unmap sectors */
+int cblk_unmap(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int flags);
+
 /* Asynchronous CAPI flash read */
 int cblk_aread(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int *tag, cblk_arw_status_t *status, int flags);
 
 /* Asynchronous CAPI flash write */
 int cblk_awrite(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int *tag, cblk_arw_status_t *status, int flags);
+
+/* Asynchronous CAPI flash unmap */
+int cblk_aunmap(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int *tag, cblk_arw_status_t *status, int flags);
 
 /* Wait for completion and results of asynchronous read/write */
 int cblk_aresult(chunk_id_t chunk_id,int *tag, uint64_t *status, int flags);
@@ -388,6 +419,11 @@ int cblk_cg_write(chunk_cg_id_t   cgid,
                   cflash_offset_t lba,
                   size_t          nblocks,
                   int             flags);
+int cblk_cg_unmap(chunk_cg_id_t   cgid,
+                  void           *pbuf,
+                  cflash_offset_t lba,
+                  size_t          nblocks,
+                  int             flags);
 int cblk_cg_aread(chunk_cg_id_t      cgid,
                   void              *pbuf,
                   cflash_offset_t    lba,
@@ -396,6 +432,13 @@ int cblk_cg_aread(chunk_cg_id_t      cgid,
                   cblk_arw_status_t *p_arwstatus,
                   int               flags);
 int cblk_cg_awrite(chunk_cg_id_t     cgid,
+                   void             *pbuf,
+                   cflash_offset_t   lba,
+                   size_t            nblocks,
+                   cflsh_cg_tag_t    *ptag,
+                   cblk_arw_status_t *p_arwstatus,
+                   int                flags);
+int cblk_cg_aunmap(chunk_cg_id_t     cgid,
                    void             *pbuf,
                    cflash_offset_t   lba,
                    size_t            nblocks,

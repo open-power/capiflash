@@ -1,6 +1,6 @@
 IBM Data Engine for NoSQL - Power System Edition
 
-Please review the licenses available in /opt/ibm/capikv/license/
+Please review the licenses available in /usr/share/cxlflash/license
 
 FlashSystem ssh key configuration no longer required for this solution. Mapping or unmapping LUNS may be performed via the FlashSystem GUI.
 
@@ -40,13 +40,13 @@ Viewing the status of the accelerator
 -------------------------------------
 
 This package includes convenience scripts to display the status of the volumes mapped to the accelerator. To view the status of each adapter's LUN, use:
-    sudo /opt/ibm/capikv/bin/cxlfstatus
+    sudo cxlfstatus
 
 Volumes may be in either "legacy" or "superpipe" mode. Volumes will default to legacy mode. Volumes must be in 'superpipe' mode for exploitation by the CAPI Flash block or arkdb APIs.
 
 The below example shows two accelerators, each with two ports, an a single volume mapped to each port's WWPN. One volume is in "legacy" mode, and three volumes are in "superpipe" mode. The WWID for each volume in the FlashSystem are displayed for convenience of administration. This matches the WWID shown in the FlashSystem GUI or CLI.
 
-ibm@power8:~$ sudo /opt/ibm/capikv/bin/cxlfstatus
+ibm@power8:~$ sudo cxlfstatus
 CXL Flash Device Status
 Device:       SCSI  Block       Mode                          LUN WWID
    sg9:   33:0:0:0,   sdc,    legacy, 60050768218b0818200000000400006e
@@ -59,10 +59,10 @@ Setting the mode for a volume
 -----------------------------
 
 As shown in the example above, each volume may be in either "legacy" or "superpipe" mode. To set the mode for a volume, use the following command:
-    sudo /opt/ibm/capikv/bin/cxlfsetlunmode <LUN> <Mode>
+    sudo cxlfsetlunmode <LUN> <Mode>
 
 For example, LUN modes may be "0" for legacy, or "1" for superpipe. As an example:
-    ibm@power8:~$ /opt/ibm/capikv/bin/cxlfsetlunmode 60050768218b0818200000000400006e 1
+    ibm@power8:~$ cxlfsetlunmode 60050768218b0818200000000400006e 1
     INFO: Adding LUN 60050768218b0818200000000400006e to Super IO table.
     SUCCESS
 

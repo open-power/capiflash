@@ -92,7 +92,7 @@ then
    fi
    cmd_dir=$cmd
 else
-   cmd_dir="/opt/ibm/capikv/test"
+   cmd_dir="/usr/bin"
 fi
 
 function ark

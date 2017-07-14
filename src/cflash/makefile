@@ -23,37 +23,16 @@
 #
 # IBM_PROLOG_END_TAG
 
-ROOTPATH = ../..
-
 UNAME=$(shell uname)
 
-USER_DIR = .
+ROOTPATH = ../..
 SUBDIRS  = test.d
-TESTDIR  = ${ROOTPATH}/obj/tests
 
-LIBPATHS = -L${ROOTPATH}/img
-LINKLIBS = 
-
-PGMDIR  = ${ROOTPATH}/obj/programs
-TESTDIR = ${ROOTPATH}/obj/tests
-
-#cxlflashutil is only used on Linux
-ifeq ($(UNAME),AIX)
-PGMS       =
-
-#Linux
-else
-PGMS       = cxlflashutil cxlfd
+ifneq ($(UNAME),AIX)
+PGMS         = cxlflashutil cxlfd
 cxlfd_OFILES = cxlfini.o cxlfcommon.o
 cxlflashutil_OFILES = cxlfcommon.o cxlfini.o
-
-#ifeq ...
 endif
 
-PROGRAMS   = $(addprefix ${PGMDIR}/, ${PGMS})
-
-
-all:  $(PROGRAMS)
-test: $(BIN_TESTS)
-
 include ${ROOTPATH}/config.mk
+

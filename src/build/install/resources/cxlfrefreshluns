@@ -24,8 +24,8 @@
 #
 # IBM_PROLOG_END_TAG
 
-CAPIKV=/opt/ibm/capikv
-source $CAPIKV/bin/cflashutils.sh
+BIN_DIR=/usr/bin
+source $BIN_DIR/cflashutils.sh
 
 
 showhelp()
@@ -41,6 +41,6 @@ if [ "$#" -ne 0 ]; then
 fi
 
 dotableupdate
-$CAPIKV/bin/cflash_plinks
+$BIN_DIR/cflash_plinks
 sleep 1
 printstatus;

@@ -23,34 +23,24 @@
 #
 # IBM_PROLOG_END_TAG
 
-UNAME=$(shell uname)
-
-# Where to find user code.(Relative path(from the makefile) preferred for portability)
+UNAME    = $(shell uname)
 ROOTPATH = ../..
-USER_DIR = .
 SUBDIRS  = usfs.d
-TESTDIR  = ${ROOTPATH}/obj/tests
 EXPFLAGS = -bexpall
-
-#test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 
-GTESTS = run_fvt run_fvt_scripts
-GTESTS_DIR = $(addprefix $(TESTDIR)/, $(GTESTS))
+GTESTS     = run_fvt run_fvt_scripts
 
-ifeq ($(UNAME),AIX) # AIX only
-LINKLIBS+=-lpthreads
-
-GTESTS64     = $(addsuffix 64, ${GTESTS})
-GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
-BITS         = 64
-
-else #Linux only
-LINKLIBS+=-lpthread -ludev
-endif
+LCFLAGS = \
+   -D__FVT__ \
+   -I$(ROOTPATH)/src/kv \
+   -I$(ROOTPATH)/src/kv/test \
+   -I$(ROOTPATH)/src/block \
+   -I$(ROOTPATH)/src/block/test \
+   -I$(ROOTPATH)/src/common \
+   -I${GTESTINC}
 
 run_fvt_OFILES = \
  blk_api_tst.o fvt_block.o \
@@ -59,18 +49,7 @@ run_fvt_OFILES = \
  fvt_kv_tst_simple.o fvt_kv_tst_scenario.o fvt_kv_tst_sync_pth.o \
  fvt_kv_tst_async_cb.o fvt_kv_tst_errors.o fvt_kv_tst_sync_async.o \
 
-run_fvt_scripts_OFILES = \
- fvt_utils_scripts_tst.o
-
-CFLAGS += \
-   -D__FVT__ -Wno-unused-result\
-   -I$(ROOTPATH)/src/kv \
-   -I$(ROOTPATH)/src/kv/test \
-   -I$(ROOTPATH)/src/block \
-   -I$(ROOTPATH)/src/block/test \
-   -I$(ROOTPATH)/src/common \
-   -I${GTESTINC} 
-CXXFLAGS+=$(CFLAGS)
+run_fvt_scripts_OFILES = fvt_utils_scripts_tst.o
 
 VPATH += \
  ${ROOTPATH}/src/kv \
@@ -79,6 +58,13 @@ VPATH += \
 
 include ${ROOTPATH}/config.mk
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
+
+unit:
+	-@if [[ -e /dev/cxl ]]; then \
+	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt_scripts$(BITS) --gtest_output=xml:$(TESTDIR)/scripts_fvt_results.xml; \
+    else \
+      echo "SKIPPING run_fvt_scripts"; \
+    fi
 
 fvt:
 	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt$(BITS)

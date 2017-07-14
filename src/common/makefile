@@ -23,16 +23,9 @@
 #
 # IBM_PROLOG_END_TAG
 ROOTPATH = ../..
-
-OBJS = cflash_scsi_user.o cflash_tools_user.o
-
-OBJS64 = cflash_scsi_user.64o cflash_tools_user.64o
-
-MODULE = cflshcom
-
+SUBDIRS  = 
+MODULE   = cflshcom
+OBJS     = cflash_scsi_user.o cflash_tools_user.o
 EXPFLAGS = -bexpall
-
-SUBDIRS = 
-
 
 include ${ROOTPATH}/config.mk

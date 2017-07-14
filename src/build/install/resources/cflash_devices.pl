@@ -117,7 +117,7 @@ for $dev (@devs)
   $wwid=substr $tmp,1;
   chomp $wwid;
   #only use devs in superpipe mode
-  my $out=`grep $wwid /opt/ibm/capikv/etc/sioluntable.ini|grep =1`;
+  my $out=`grep $wwid /etc/cxlflash/sioluntable.ini|grep =1`;
   chomp $out;
   $verbose && print "$dev superpipe($out)\n";
   if (!$superpipe || ($superpipe && $out =~ "=1"))

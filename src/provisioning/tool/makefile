@@ -25,42 +25,14 @@
 
 UNAME=$(shell uname)
 
-ROOTPATH = ../../..
-USER_DIR = .
-SUBDIRS  =
-TESTDIR  = ${ROOTPATH}/obj/tests
-
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../../..
+SUBDIRS  =
+
+ifneq ($(UNAME),AIX)
+PGMS     = provtool afuinject
 LINKLIBS = -lprov -lcxl
-
-PGMDIR  = ${ROOTPATH}/obj/programs
-TESTDIR = ${ROOTPATH}/obj/tests
-
-PGMS       = provtool afuinject
-PROGRAMS   = $(addprefix ${PGMDIR}/, ${PGMS})
-
-
-
-provtool_OFILES = 
-
-all:  $(BIN_TESTS)
-test: $(BIN_TESTS)
-
-# AIX only
-ifeq ($(UNAME),AIX)
-
-
-CXXFLAGS  +=$(CFLAGS)
-LINKLIBS  +=
-GTESTS_DIR =
-
-#Linux only
-else
-LINKLIBS+=
-
 endif
 
 include ${ROOTPATH}/config.mk

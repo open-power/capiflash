@@ -271,7 +271,7 @@ int max_ctx_res_190(struct ctx *p_ctx)
     __u64 my_res_hndl[MAX_RES_HANDLE];
     // struct ctx *p_ctx = (struct ctx *)arg;
     int i;
-    __u64 actual_size;
+    __u64 actual_size=0;
     __u64 nlba, st_lba;
     __u64 stride;
     mc_stat_t l_mc_stat;

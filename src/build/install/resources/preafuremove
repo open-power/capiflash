@@ -24,9 +24,11 @@
 #
 # IBM_PROLOG_END_TAG
 
-for f in $(cat /opt/ibm/capikv/afu/images/.remove|awk '{print $2}')
+for f in $(cat /lib/firmware/cxlflash/.remove|awk '{print $2}')
 do
-  rm -f /opt/ibm/capikv/afu/images/$f
+  rm -f /lib/firmware/cxlflash/$f
 done
 
-rm -f /opt/ibm/capikv/afu/images/*.bin
+rm -f /lib/firmware/cxlflash/*.bin
+
+exit 0

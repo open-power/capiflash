@@ -83,6 +83,7 @@ pthread_mutex_t  cblk_log_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t  cblk_init_lock = PTHREAD_MUTEX_INITIALIZER;
 
 uint32_t num_thread_logs = 0;     /* Number of thread log files */
+uint32_t show_thread_id_logs = FALSE; /* Show thread in in log files */
 
 
 size_t           cblk_cache_size = CFLASH_CACHE_SIZE;
@@ -255,6 +256,7 @@ void _cflsh_blk_init(void)
 #ifdef _SKIP_READ_CALL
     char *env_adap_poll_delay = getenv("CFLSH_BLK_ADAP_POLL_DLY");
 #endif /* _SKIP_READ_CALL */
+    char *env_eras_thread = getenv("CFLSH_BLK_ERAS_THREAD");
     int rc;
     int i=0;
 
@@ -372,6 +374,14 @@ void _cflsh_blk_init(void)
 	 CBLK_TRACE_LOG_FILE(1,"This program is compiled for different endianness then the host is is running");
     }
 
+    if (env_eras_thread) {
+
+	if (cblk_start_eras_thread(0)) {
+
+	    CBLK_TRACE_LOG_FILE(1,"Failed to start eras thread");
+	}
+    }
+
 
     CBLK_TRACE_LOG_FILE(2,"cflsh_blk = %p",&cflsh_blk);
 
@@ -453,29 +463,7 @@ void _cflsh_blk_init(void)
 
 void _cflsh_blk_free(void)
 {
-
-    if (cflsh_blk.flags & CFLSH_G_SYSLOG) {
-
-	closelog();
-
-    }
-
-
-    if (num_thread_logs) {
-
-	free(cflsh_blk.thread_logs);
-    }
-
-#ifdef _LINUX_MTRACE
-    muntrace();
-#endif
-
-    cblk_cleanup_mc_interface();
-
-    if (cflsh_blk.process_name) {
-
-	free(cflsh_blk.process_name);
-    }
+    char *env_eras_thread = getenv("CFLSH_BLK_ERAS_THREAD");
 
 
     CBLK_TRACE_LOG_FILE(3,"\nLIBRARY STATISTICS ...");
@@ -501,6 +489,35 @@ void _cflsh_blk_free(void)
     CBLK_TRACE_LOG_FILE(3,"num_active_chunks               0x%x",cflsh_blk.num_active_chunks);
     CBLK_TRACE_LOG_FILE(3,"num_max_active_chunks           0x%x",cflsh_blk.num_max_active_chunks);
     CBLK_TRACE_LOG_FILE(3,"num_bad_chunk_ids               0x%x",cflsh_blk.num_bad_chunk_ids);
+
+    if (env_eras_thread) {
+
+	cblk_stop_eras_thread(0);
+    }
+
+    if (cflsh_blk.flags & CFLSH_G_SYSLOG) {
+
+	closelog();
+
+    }
+
+
+    if (num_thread_logs) {
+
+	free(cflsh_blk.thread_logs);
+    }
+
+#ifdef _LINUX_MTRACE
+    muntrace();
+#endif
+
+    cblk_cleanup_mc_interface();
+
+    if (cflsh_blk.process_name) {
+
+	free(cflsh_blk.process_name);
+    }
+
 
     return;
 
@@ -922,6 +939,11 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
 	local_flags = CFLASH_WRITE_DIR_OP;
 	chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_WRITE;
 	
+    } else if (op_code == SCSI_WRITE_SAME_16) {
+
+	local_flags = CFLASH_WRITE_DIR_OP;
+	chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_WRITE;
+	
     }
 
     CBLK_BUILD_ADAP_CMD(chunk,cmd,buf,(CAPI_FLASH_BLOCK_SIZE * nblocks),local_flags);
@@ -942,6 +964,11 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
     
     
     CFLASH_BUILD_RW_16(cdb,(chunk->start_lba + lba)*(chunk->blk_size_mult),nblocks*(chunk->blk_size_mult));
+
+    if (op_code == SCSI_WRITE_SAME_16) {
+
+	cdb->scsi_bytes[0] = SCSI_WRITE_SAME_UNMAP_FLAG;
+    }
 
 #ifndef _COMMON_INTRPT_THREAD
     if (lib_flags & CFLASH_ASYNC_OP) {
@@ -1131,7 +1158,8 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
 	    chunk->stats.num_act_areads++;
 
 	    chunk->stats.max_num_act_areads = MAX(chunk->stats.num_act_areads,chunk->stats.max_num_act_areads);
-	} else if (op_code == SCSI_WRITE_16) {
+	} else if ((op_code == SCSI_WRITE_16) ||
+		   (op_code == SCSI_WRITE_SAME_16)) {
 	    chunk->stats.num_awrites++;
 	    chunk->stats.num_act_awrites++;
 
@@ -1175,7 +1203,8 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
 	    chunk->stats.num_act_reads++;
 
 	    chunk->stats.max_num_act_reads = MAX(chunk->stats.num_act_reads,chunk->stats.max_num_act_reads);
-	} else if (op_code == SCSI_WRITE_16) {
+	} else if ((op_code == SCSI_WRITE_16) ||
+		   (op_code == SCSI_WRITE_SAME_16)) {
 	    chunk->stats.num_writes++;
 	    chunk->stats.num_act_writes++;
 
@@ -2230,7 +2259,7 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
 }
   
 /*
- * NAME:        cblk_write
+ * NAME:        cblk_write_unmap
  *
  * FUNCTION:    Writes data to the specified offset in the chunk
  *              from the specified buffer. This request is
@@ -2251,7 +2280,7 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
  *              
  */
 
-int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int flags)
+int cblk_write_unmap(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int flags, int internal_flags)
 {
     int rc = 0;
     cflsh_chunk_t *chunk;
@@ -2269,7 +2298,8 @@ int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
     }
 
 
-    CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p",chunk_id,lba,(uint64_t)nblocks,buf);
+    CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p, internal_flags = 0x%x",
+			chunk_id,lba,(uint64_t)nblocks,buf,internal_flags);
 
     if (CBLK_VALIDATE_RW(chunk_id,buf,lba,nblocks)) {
 
@@ -2313,7 +2343,19 @@ int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
 
     }
 
-    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,0,SCSI_WRITE_16,NULL);
+    if (internal_flags & CBLK_WRITE_UNMAP) {
+
+	if (chunk->flags & CFLSH_CHNK_UNNAP_SPT) {
+
+
+	    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,0,SCSI_WRITE_SAME_16,NULL);
+	} else {
+	    errno = EPROTONOSUPPORT;
+	    rc = -1;
+	}
+    } else {
+	rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,0,SCSI_WRITE_16,NULL);
+    }
 
 
     if (rc) {
@@ -2423,6 +2465,58 @@ int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
     return rc;
 }
   
+  
+/*
+ * NAME:        cblk_write
+ *
+ * FUNCTION:    Writes data to the specified offset in the chunk
+ *              from the specified buffer. This request is
+ *              a blocking write request (i.e.it will not 
+ *              return until either data is written or
+ *              an error is encountered).
+ *
+ *
+ * INPUTS:
+ *              chunk_id    - Chunk identifier
+ *              buf         - Buffer to write data from
+ *              lba         - starting LBA (logical Block Address)
+ *                            in chunk to write data to.
+ *              nblocks     - Number of blocks to write.
+ *
+ * RETURNS:
+ *              0 for good completion,  ERRNO on error
+ *              
+ */
+
+int cblk_write(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int flags)
+{
+
+    return(cblk_write_unmap(chunk_id,buf,lba,nblocks,flags,0));
+}
+  
+/*
+ * NAME:        cblk_unmap
+ *
+ * FUNCTION:    Unmap data blocks specified. The data buffer
+ *              must be initialized to zeroes.
+ *
+ *
+ * INPUTS:
+ *              chunk_id    - Chunk identifier
+ *              buf         - Buffer to write data from
+ *              lba         - starting LBA (logical Block Address)
+ *                            in chunk to write data to.
+ *              nblocks     - Number of blocks to write.
+ *
+ * RETURNS:
+ *              0 for good completion,  ERRNO on error
+ *              
+ */
+
+int cblk_unmap(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int flags)
+{
+    return(cblk_write_unmap(chunk_id,buf,lba,nblocks,flags,CBLK_WRITE_UNMAP));
+}
 
 /*
  * NAME:        _cblk_aread
@@ -2602,7 +2696,7 @@ int cblk_aread(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
 
 
 /*
- * NAME:        _cblk_awrite
+ * NAME:        _cblk_awrite_unmap
  *
  * FUNCTION:    Internal implementation of async write
  *
@@ -2620,8 +2714,8 @@ int cblk_aread(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks
  *              
  */
 
-static inline int _cblk_awrite(cflsh_chunk_t *chunk,void *buf,cflash_offset_t lba, size_t nblocks, int *tag, 
-		cblk_arw_status_t *status, int flags)
+static inline int _cblk_awrite_unmap(cflsh_chunk_t *chunk,void *buf,cflash_offset_t lba, size_t nblocks, int *tag, 
+		cblk_arw_status_t *status, int flags, int internal_flags)
 {
     int rc = 0;
     int cmd_index = 0;
@@ -2674,7 +2768,17 @@ static inline int _cblk_awrite(cflsh_chunk_t *chunk,void *buf,cflash_offset_t lb
 	return -1;
     }
 
-    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,CFLASH_ASYNC_OP,SCSI_WRITE_16,status);
+    if (internal_flags & CBLK_WRITE_UNMAP) {
+
+	if (chunk->flags & CFLSH_CHNK_UNNAP_SPT) {
+	    rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,CFLASH_ASYNC_OP,SCSI_WRITE_SAME_16,status);
+	} else {
+	    errno = EPROTONOSUPPORT;
+	    rc = -1;
+	}
+    } else {
+	rc = cblk_build_issue_rw_cmd(chunk,&cmd_index,buf,lba,nblocks,flags,CFLASH_ASYNC_OP,SCSI_WRITE_16,status);
+    }
 
     if (rc) {
 
@@ -2768,7 +2872,78 @@ int cblk_awrite(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblock
     }
 
 
-    return (_cblk_awrite(chunk,buf,lba,nblocks,tag,status,flags));
+    return (_cblk_awrite_unmap(chunk,buf,lba,nblocks,tag,status,flags,0));
+}
+  
+
+/*
+ * NAME:        cblk_aunmap
+ *
+ * FUNCTION:    Unmap data blocks specified. The data buffer
+ *              must be initialized to zeroes.This request is
+ *              an asynchronous unmap request (i.e.it will
+ *              return as soon as it has issued the request
+ *              to the device. It will not wait for a response from 
+ *              the device.).
+ *
+ *
+ * INPUTS:
+ *              chunk_id    - Chunk identifier
+ *              buf         - Buffer to write data from
+ *              lba         - starting LBA (logical Block Address)
+ *                            in chunk to write data to.
+ *              nblocks     - Number of blocks to write.
+ *              tag         - Tag associated with this request.
+ *
+ * RETURNS:
+ *              0 for good completion,  ERRNO on error
+ *              
+ */
+
+int cblk_aunmap(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks, int *tag, 
+		cblk_arw_status_t *status, int flags)
+{
+
+    cflsh_chunk_t *chunk;
+
+    if (flags & CBLK_GROUP_MASK)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    CBLK_TRACE_LOG_FILE(5,"chunk_id = %d, lba = 0x%llx, nblocks = 0x%llx, buf = %p flags:%x",
+            chunk_id,lba,(uint64_t)nblocks,buf, flags);
+
+
+    if (CBLK_VALIDATE_RW(chunk_id,buf,lba,nblocks)) {
+
+	return -1;
+    }
+
+
+    chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
+
+    if (chunk == NULL) { 
+
+
+	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
+			    chunk_id);
+	errno = EINVAL;
+	return -1;	
+    }
+
+
+    if (!(chunk->flags & CFLSH_CHNK_UNNAP_SPT)) {
+
+	
+	CBLK_TRACE_LOG_FILE(1,"chunk does not support unmap, chunk_id = %d",
+			    chunk_id);
+	errno = EPROTONOSUPPORT;
+	return (-1);
+    }
+
+    return (_cblk_awrite_unmap(chunk,buf,lba,nblocks,tag,status,flags,CBLK_WRITE_UNMAP));
 }
   
 
@@ -3624,7 +3799,8 @@ int cblk_listio(chunk_id_t chunk_id,
 	    }
 
 	    if ((io->request_type != CBLK_IO_TYPE_READ) &&
-		(io->request_type != CBLK_IO_TYPE_WRITE)) {
+		(io->request_type != CBLK_IO_TYPE_WRITE) &&
+		(io->request_type != CBLK_IO_TYPE_UNMAP)) {
 
 
 		CBLK_TRACE_LOG_FILE(1,"Invalid request_type = %d  chunk_id = %d and index = %d",
@@ -3668,9 +3844,12 @@ int cblk_listio(chunk_id_t chunk_id,
 	    if (io->request_type == CBLK_IO_TYPE_READ) {
 
 		rc = _cblk_aread(chunk,io->buf,io->lba,io->nblocks,&(io->tag),&(io->stat),io_flags);
+	    } else if (io->request_type == CBLK_IO_TYPE_UNMAP) {
+
+		rc = _cblk_awrite_unmap(chunk,io->buf,io->lba,io->nblocks,&(io->tag),&(io->stat),io_flags,CBLK_WRITE_UNMAP);
 	    } else {
 
-		rc = _cblk_awrite(chunk,io->buf,io->lba,io->nblocks,&(io->tag),&(io->stat),io_flags);
+		rc = _cblk_awrite_unmap(chunk,io->buf,io->lba,io->nblocks,&(io->tag),&(io->stat),io_flags,0);
 	    }
 
 	    if (rc < 0) {
@@ -3841,7 +4020,8 @@ int cblk_listio(chunk_id_t chunk_id,
 	    }
 
 	    if ((io->request_type != CBLK_IO_TYPE_READ) &&
-		(io->request_type != CBLK_IO_TYPE_WRITE)) {
+		(io->request_type != CBLK_IO_TYPE_WRITE)&&
+		(io->request_type != CBLK_IO_TYPE_UNMAP)) {
 
 
 		CBLK_TRACE_LOG_FILE(1,"Invalid request_type = %d  chunk_id = %d and index = %d",
@@ -4602,3 +4782,97 @@ int cblk_get_stats(chunk_id_t chunk_id, chunk_stats_t *stats, int flags)
     return rc;
 }
   
+
+/*
+ * NAME:        cblk_get_attrs
+ *
+ * FUNCTION:    Return attributes for this chunk.
+ *
+ *
+ * INPUTS:
+ *              chunk_id    - Chunk identifier
+ *              tag         - Pointer to stats returned
+ *
+ * RETURNS:
+ *              0 for good completion,  ERRNO on error
+ *              
+ */
+
+int cblk_get_attrs(chunk_id_t chunk_id, chunk_attrs_t *attr, int flags)
+{
+
+    int rc = 0;
+    cflsh_chunk_t *chunk;
+
+
+    CBLK_TRACE_LOG_FILE(6,"flags = 0x%x",flags);
+			
+
+    if ((chunk_id <= NULL_CHUNK_ID) ||
+	(chunk_id >= cflsh_blk.next_chunk_id)) {
+
+	errno = EINVAL;
+	return -1;
+    }
+
+    if (attr == NULL) {
+
+	CBLK_TRACE_LOG_FILE(1,"Null attr passed");
+
+	errno = EINVAL;
+	return -1;
+    }
+
+    chunk = CBLK_GET_CHUNK_HASH(chunk_id,TRUE);
+
+    CFLASH_BLOCK_RD_RWLOCK(cflsh_blk.global_lock);
+
+    if (chunk == NULL) { 
+
+
+	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
+			    chunk_id);
+	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
+	errno = EINVAL;
+	return -1;	
+    }
+
+    if (CFLSH_EYECATCH_CHUNK(chunk)) {
+	/*
+	 * Invalid chunk. Exit now.
+	 */
+
+	cflsh_blk.num_bad_chunk_ids++;
+	CBLK_TRACE_LOG_FILE(1,"Invalid chunk, chunk_id = %d",
+			    chunk_id);
+	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
+	errno = EINVAL;
+	return -1;
+    }
+			
+    CFLASH_BLOCK_LOCK(chunk->lock);
+
+    CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
+
+
+    /* 
+     * Return attributes back to caller.
+     */
+
+    attr->block_size = chunk->stats.block_size;
+
+    attr->num_paths = chunk->stats.num_paths;
+
+    attr->max_transfer_size = chunk->stats.max_transfer_size;
+
+    if (chunk->flags & CFLSH_CHNK_UNNAP_SPT ) {
+	attr->flags1 |= CFLSH_ATTR_UNMAP;
+    }
+
+
+    CFLASH_BLOCK_UNLOCK(chunk->lock);
+
+
+    CBLK_TRACE_LOG_FILE(5,"rc = %d,errno = %d ",rc,errno);
+    return rc;
+}

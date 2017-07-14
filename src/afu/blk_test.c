@@ -211,7 +211,10 @@ enum {
 				/* then wait for next commands to     */
 				/* complete.                          */
     TRANSP_LWRITE_LREAD = 0xe,  /* Perform listio write/read compare  */
-    TRANSP_LAST_CMD     = 0xf,  /* Not valid command                  */
+    TRANSP_WRITE_UNMAP  = 0xf,  /* Unmap LBAs                         */
+    TRANSP_AWRITE_UNMAP = 0x10, /* Async Unmap LBAs                   */
+    TRANSP_GET_ATTRS    = 0x11, /* Get Attributes                     */
+    TRANSP_LAST_CMD     = 0x12, /* Not valid command                  */
 } transp_scsi_cmd_t;
 
 transp_scsi_cmd_t cmd_type = TRANSP_READ_CMD; // Default to READ
@@ -258,6 +261,9 @@ usage(void)
     fprintf(stderr,"                  12 - write fork read (single threaded only)\n");
     fprintf(stderr,"                  13 - burst async reads then wait for all to complete(single threaded only)\n");
     fprintf(stderr,"                  14 - listio write listio read compare\n");
+    fprintf(stderr,"                  15 - Unmap LBAs\n");
+    fprintf(stderr,"                  16 - Async Unmap LBAs\n");
+    fprintf(stderr,"                  17 - Get Attributes \n");
     fprintf(stderr,"              -C  enable shared context\n");
     fprintf(stderr,"              -d  indicates to use different block ranges for each thread\n");
     fprintf(stderr,"              -e  each thread uses its own virtual lun\n");
@@ -660,6 +666,7 @@ void *run_loop(void *data)
     int bytes_read = 0;
     transp_scsi_cmd_t local_cmd_type;
     chunk_stats_t stats;
+    chunk_attrs_t attrs;
     int async_flags = 0;
     int aresult_flags = 0;
     int open_flags = 0;
@@ -2100,6 +2107,166 @@ void *run_loop(void *data)
 	    free(comp_data_buf);
 	    break;
 
+	case TRANSP_WRITE_UNMAP:
+
+
+	    if (file) {
+		/*
+		 * If an input file was specified,
+		 * then read the first DATA_BUF_SIZE bytes
+		 * in to write out to the device.
+		 */
+       
+		bytes_read = fread(data_buf, 1, DATA_BUF_SIZE, file);
+        
+		if (bytes_read != DATA_BUF_SIZE) {
+
+		    fprintf(stderr,"Unable able to read full size of %d, read instead %d\n",DATA_BUF_SIZE,bytes_read);
+
+		    /*
+		     * Do not fail, just continue with questionable buffer contents
+		     */
+		}
+
+	    
+	    } else {
+		/*
+		 * If no input file is specified then
+		 * put a pattern in the buffer to
+		 * be written
+		 */
+		memset((uint8_t *)(data_buf), ((getpid())%256), 
+		       DATA_BUF_SIZE);
+	    }
+
+	    if (verbose_flag && !thread_flag) {
+
+		fprintf(stderr,"Calling cblk_write for lba = 0x%"PRIX64" ...\n",blk_number);
+
+	    }
+	    rc = cblk_unmap(blk_data->chunk_id,data_buf,blk_number,1,0);
+
+	    if (!thread_flag) {
+
+		printf("unmap completed with rc = %d\n",rc);
+	    }
+	    break;
+	case TRANSP_AWRITE_UNMAP:
+	
+
+	    if (file) {
+		/*
+		 * If an input file was specified,
+		 * then read the first DATA_BUF_SIZE bytes
+		 * in to write out to the device.
+		 */
+       
+		bytes_read = fread(data_buf, 1, DATA_BUF_SIZE, file);
+        
+		if (bytes_read != DATA_BUF_SIZE) {
+
+		    fprintf(stderr,"Unable able to read full size of %d, read instead %d\n",DATA_BUF_SIZE,bytes_read);
+
+		    /*
+		     * Do not fail, just continue with questionable buffer contents
+		     */
+		}
+
+	    
+	    } else {
+		/*
+		 * If no input file is specified then
+		 * put a pattern in the buffer to
+		 * be written
+		 */
+		memset((uint8_t *)(data_buf), ((getpid())%256), 
+		       DATA_BUF_SIZE);
+	    }
+
+	    if (verbose_flag && !thread_flag) {
+
+		fprintf(stderr,"Calling cblk_awrite for lba = 0x%"PRIX64" ...\n",blk_number);
+
+	    }
+
+
+
+	    rc = cblk_aunmap(blk_data->chunk_id,data_buf,blk_number,1,&tag,&arw_status,async_flags);
+
+	    if (rc) {
+		fprintf(stderr,"cblk_awrite failed for  lba = 0x%lx, rc = %d, errno = %d\n",blk_number,rc,errno);
+
+	    } else {
+
+
+		if (verbose_flag && !thread_flag) {
+
+		    if (poll_status_flag) {
+			fprintf(stderr,"Polling user status for tag = 0x%x ...\n",tag);
+		    } else {
+			fprintf(stderr,"Calling cblk_aresult for tag = 0x%x ...\n",tag);
+		    }
+		}
+		
+		while (TRUE) {
+
+		    if (poll_status_flag) {
+			
+			switch (arw_status.status) {
+			  case CBLK_ARW_STATUS_SUCCESS:
+			    rc = arw_status.blocks_transferred;
+			    break;
+			  case CBLK_ARW_STATUS_PENDING:
+			    rc = 0;
+			    break;
+			  default:
+			    rc = -1;
+			    errno = arw_status.fail_errno;
+			}
+
+		    } else {
+			rc = cblk_aresult(blk_data->chunk_id,&tag, &status,aresult_flags);
+		    }
+
+		    if (rc > 0) {
+		
+			if (verbose_flag && !thread_flag) {
+			    printf("Async unmap completed ...\n");
+			}
+		    } else if (rc == 0) {
+			fprintf(stderr,"cblk_aresult completed: command still active  for tag = 0x%x, rc = %d, errno = %d\n",tag,rc,errno);
+			usleep(300);
+			continue;
+		    } else {
+			fprintf(stderr,"cblk_aresult completed for  for tag = 0x%x, rc = %d, errno = %d\n",tag,rc,errno);
+
+		    }
+
+		    break;
+
+		} /* while */
+
+	    }
+	    break;
+	case TRANSP_GET_ATTRS:
+	    
+	    bzero (&attrs, sizeof(attrs));
+	    if (verbose_flag) {
+		fprintf(stderr,"Calling cblk_get_attrs ...\n");
+	    }
+	    rc = cblk_get_attrs(blk_data->chunk_id,&attrs,0);
+	    if (!thread_flag) {
+		
+		printf("Get_attrs returned rc = %d\n\n",rc);
+
+		fprintf(stdout,"flags1 = 0x%"PRIX64"\n",attrs.flags1);
+		fprintf(stdout,"flags2 = 0x%"PRIX64"\n",attrs.flags2);
+		fprintf(stdout,"block_size = 0x%x\n",attrs.block_size);
+		fprintf(stdout,"num_paths = 0x%x\n",attrs.num_paths);
+		fprintf(stdout,"max_transfer_size = 0x%"PRIX64"\n",attrs.max_transfer_size);
+		hexdump(&attrs,sizeof(attrs),NULL);
+	    }
+	    break;
 	default:
 			   
 	    fprintf(stderr,"Invalid local_cmd_type = %d\n",local_cmd_type);

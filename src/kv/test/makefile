@@ -25,20 +25,15 @@
 
 UNAME=$(shell uname)
 
-ROOTPATH = ../../..
-USER_DIR = .
-SUBDIRS  =
-TESTDIR  = ${ROOTPATH}/obj/tests
-BITS =
-
-#test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../../..
+SUBDIRS  =
 LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 VPATH   += ..
+LCFLAGS  = -D__FVT__ -D__STDC_FORMAT_MACROS -I$(ROOTPATH)/src/kv -I$(GTESTINC)
 
-GTESTS     = \
+GTESTS   = \
  fvt_kv_fixme1 \
  fvt_ark_io fvt_ark_mcio fvt_ark_mc_aio fvt_ark_perf \
  fvt_ark_perf2 fvt_ark_perf_check fvt_ark_io_inject\
@@ -46,23 +41,6 @@ GTESTS     = \
  run_err fvt_kv_tst_persist
 
 GTESTS_NO_MAIN = fvt_ark_perf_tool
-GTESTS_DIR     = $(addprefix $(TESTDIR)/, $(GTESTS))
-GTESTS_NM_DIR  = $(addprefix $(TESTDIR)/, $(GTESTS_NO_MAIN))
-
-# AIX only
-ifeq ($(UNAME),AIX)
-
-GTESTS64         = $(addsuffix 64, ${GTESTS})
-GTESTS64_DIR     = $(addprefix $(TESTDIR)/, $(GTESTS64))
-GTESTS64_NO_MAIN = $(addsuffix 64, ${GTESTS_NO_MAIN})
-GTESTS64_NM_DIR  = $(addprefix $(TESTDIR)/, $(GTESTS64_NO_MAIN))
-BITS             = 64
-
-LINKLIBS  +=-lpthreads
-#Linux only
-else
-LINKLIBS+=-lpthread
-endif
 
 fvt_ark_perf_tool_OFILES = kv_utils_db.o fvt_kv_utils.o fvt_kv_utils_async_cb.o\
   fvt_kv_utils_sync_pth.o fvt_trace.o
@@ -104,29 +82,13 @@ run_err_OFILES = fvt_kv_tst_errors.o fvt_kv_utils.o kv_utils_db.o \
   fvt_kv_utils_async_cb.o fvt_kv_utils_ark_io.o fvt_trace.o
 
 include ${ROOTPATH}/config.mk
-
-CFLAGS += \
-   -D__FVT__ -D__STDC_FORMAT_MACROS \
-   -I$(ROOTPATH)/src/kv \
-   -I${GTESTINC} \
-   $(KV_CFLAGS)
-
-CXXFLAGS+=$(CFLAGS)
-
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
+
 ifeq ($(UNAME),AIX)
 $(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(IMGDIR)/libarkdb.a
 else
 $(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(IMGDIR)/libarkdb.so
 endif
-
-cleanruns:
-	rm $(TESTDIR)/run_fvt_kv \
-	$(TESTDIR)/run_simple \
-	$(TESTDIR)/run_scenarios \
-	$(TESTDIR)/run_async_cb \
-	$(TESTDIR)/run_sync_pth \
-	$(TESTDIR)/run_err
 
 unit:
 	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt_kv$(BITS) --gtest_output=xml:$(TESTDIR)/kv_fvt_results.xml;

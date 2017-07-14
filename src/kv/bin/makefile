@@ -25,50 +25,25 @@
 
 UNAME=$(shell uname)
 
-#NO_O3 = yes
-
 ROOTPATH = ../../..
-USER_DIR = .
 SUBDIRS  =
-TESTDIR  = ${ROOTPATH}/obj/tests
-BITS =
 
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
-LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
-VPATH   += ..
+VPATH   += $(ROOTPATH)/src/kv
 
-BTESTS=_tst_ark _tst_persist test_perf \
-       res_pers run_kv_async run_kv_sync run_kv_async_multi \
-       run_kv_benchmark run_kv_persist kv_perf
+BTESTS   = _tst_ark _tst_persist test_perf \
+           res_pers run_kv_async run_kv_sync run_kv_async_multi \
+           run_kv_benchmark run_kv_persist kv_perf
 
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
+_tst_ark_OFILES     = tst_ark.o
+_tst_persist_OFILES = tst_persist.o
 
-_tst_ark_OFILES         = tst_ark.o
-_tst_persist_OFILES     = tst_persist.o
-
-# AIX only
-ifeq ($(UNAME),AIX)
-
-BTESTS64         = $(addsuffix 64, ${BTESTS})
-BIN_TESTS64      = $(addprefix ${TESTDIR}/, ${BTESTS64})
-BITS             = 64
-
-LINKLIBS  +=-lpthreads
-#Linux only
-else
-LINKLIBS+=-lpthread
-endif
-
-include ${ROOTPATH}/config.mk
-
-CFLAGS += \
+LCFLAGS = \
    -D__FVT__ -D__STDC_FORMAT_MACROS \
    -I$(ROOTPATH)/src/kv \
-   -I$(ROOTPATH)/src/kv/test \
-   $(KV_CFLAGS)
+   -I$(ROOTPATH)/src/kv/test
 
-CXXFLAGS+=$(CFLAGS)
+include ${ROOTPATH}/config.mk

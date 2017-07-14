@@ -25,7 +25,7 @@
 # IBM_PROLOG_END_TAG
 
 set -e #halt on error
-CAPIKV_ROOT=/opt/ibm/capikv
+CAPIKV_ROOT=/usr/share/cxlflash
 
 
 #allow us to die with a specific error code

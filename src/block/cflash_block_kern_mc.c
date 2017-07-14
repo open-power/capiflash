@@ -1198,6 +1198,7 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
     cflsh_path_t *path = NULL;
     cflsh_afu_in_use_t in_use = CFLASH_AFU_NOT_INUSE;
     int share = FALSE;
+    int create_new_path = FALSE;
 
 
     if (chunk == NULL) {
@@ -1224,7 +1225,12 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
 
 	chunk_type = cblk_get_chunk_type(chunk->dev_name,arch_type);
 
+	/*
+	 * We are going to attempt to create a
+	 * new path here.
+	 */
 
+	create_new_path = TRUE;
 
 	if (chunk->flags & CFLSH_CHNK_SHARED) {
 
@@ -1325,8 +1331,27 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
 	 * So it does not need to be adjusted for this failure
 	 */
 	
-	cblk_release_path(chunk,(chunk->path[path_index]));
-	chunk->path[path_index] = NULL;
+	if (create_new_path) {
+
+	    /*
+	     * Only release path and its resources, if we created
+	     * one. In the case where it may have already existed
+	     * (such as after fork), we want to leave the path
+	     * resources in place.
+	     */
+
+	    cblk_release_path(chunk,(chunk->path[path_index]));
+	    chunk->path[path_index] = NULL;
+	} else {
+
+	    /*
+	     * For a path that was not just created now in this
+	     * routine, mark it has inactive.
+	     */
+
+	    chunk->path[path_index]->flags &= ~CFLSH_PATH_ACT;
+	}
+
 	return -1;
     } 
 
@@ -1389,15 +1414,65 @@ int  cblk_chunk_attach_process_map_path(cflsh_chunk_t *chunk, int path_index,int
     if (CBLK_ADAP_SETUP(chunk,path_index)) {
 
 	
-	cblk_release_path(chunk,(chunk->path[path_index]));
+	if (create_new_path) {
 
-	chunk->path[path_index] = NULL;
+	    /*
+	     * Only release path and its resources, if we created
+	     * one. In the case where it may have already existed
+	     * (such as after fork), we want to leave the path
+	     * resources in place.
+	     */
+
+	    cblk_release_path(chunk,(chunk->path[path_index]));
+
+	    chunk->path[path_index] = NULL;
+	} else {
+
+	    /*
+	     * For a path that was not just created now in this
+	     * routine, mark it has inactive.
+	     */
+
+	    chunk->path[path_index]->flags &= ~CFLSH_PATH_ACT;
+	}
 	return -1;
     }
     
     if (!rc) {
 
 	chunk->path[path_index]->flags |= CFLSH_PATH_ACT;
+
+	if (chunk->path[path_index]->afu->flags & CFLSH_AFU_UNNAP_SPT) {
+
+	    /*
+	     * If this AFU supports Unmap sectors
+	     */
+	    
+	    if (path_index == 0) {
+
+		/*
+		 * If first path supports unmap then tentatively
+		 * setup the chunk indicating this is true.
+		 * if subsequent paths do not support Unmap, then
+		 * we'll clear this chunk flag.
+		 */
+
+		chunk->flags |= CFLSH_CHNK_UNNAP_SPT;
+
+	    } 
+
+	} else if (chunk->flags & CFLSH_CHNK_UNNAP_SPT) {
+
+	    /*
+	     * If this AFU does not support unmap, but we
+	     * currently have the chunk indicating it does,
+	     * then clear that flag. We will only allow
+	     * unmap operations if all paths/afus support it.
+	     */
+
+
+	    chunk->flags &= ~CFLSH_CHNK_UNNAP_SPT;
+	}
     }
     return rc;
 }
@@ -4489,7 +4564,7 @@ int cblk_read_os_specific_intrpt_event(cflsh_chunk_t *chunk, int path_index,cfls
 
 	    chunk->stats.num_capi_adap_resets++;
 
-	    CBLK_TRACE_LOG_FILE(7,"possible UE rcovery cmd = 0x%llx",(uint64_t)*cmd);
+	    CBLK_TRACE_LOG_FILE(7,"possible UE recovery cmd = 0x%llx",(uint64_t)*cmd);
 
 	    reset_status = cblk_check_os_adap_err(chunk,path_index);
 
@@ -4702,6 +4777,8 @@ void cblk_check_os_adap_err_failure_cleanup(cflsh_chunk_t *chunk, cflsh_afu_t *a
 
 	    
 	    chunk->flags &= ~CFLSH_CHNK_RECOV_AFU;
+
+	    chunk->recov_thread_id = 0;
 	}
 
 	path_index = path->path_index;
@@ -4799,11 +4876,25 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 	CBLK_TRACE_LOG_FILE(9,"num_active_cmds = %d, pid = 0x%llx",
 			    chunk->num_active_cmds,(uint64_t)cflsh_blk.caller_pid);
 
+	if (chunk->recov_thread_id == CFLSH_BLK_GETTID) {
+	    CBLK_TRACE_LOG_FILE(9,"This is the recovery thread waiting for recovery num_active_cmds = %d",
+				chunk->num_active_cmds);
+	}
+
 	return CFLSH_BLK_CHK_OS_RESET_PEND;
 
     } else {
 
 	chunk->flags |= CFLSH_CHNK_RECOV_AFU;
+
+
+	/*
+	 * Save off a unique thread id
+	 * for this thread, since it will drive
+	 * the error recovery.
+	 */
+
+	chunk->recov_thread_id = CFLSH_BLK_GETTID;
     }
 
     /*
@@ -4853,6 +4944,8 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 	CBLK_TRACE_LOG_FILE(5,"afu recovery done via another path to this shared AFU");
 
 	chunk->flags &= ~(CFLSH_CHNK_HALTED|CFLSH_CHNK_RECOV_AFU);
+
+	chunk->recov_thread_id = 0;
 
 	chunk->path[path_index]->flags &= ~CFLSH_PATH_A_RST;
 
@@ -5338,7 +5431,7 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 
 	cblk_resume_all_halted_cmds(tmp_chunk, FALSE, tmp_path_index, FALSE);
 
-	if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
+	if (!(tmp_chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
 		    
 	    /*
 	     * It is possible that the common interrupt thread
@@ -5347,9 +5440,9 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 	     * for I/O completions.
 	     */
 
-	    chunk->thread_flags |= CFLSH_CHNK_POLL_INTRPT;
+	    tmp_chunk->thread_flags |= CFLSH_CHNK_POLL_INTRPT;
 
-	    pthread_rc = pthread_cond_signal(&(chunk->thread_event));
+	    pthread_rc = pthread_cond_signal(&(tmp_chunk->thread_event));
 	
 	    if (pthread_rc) {
 	    
@@ -5382,6 +5475,8 @@ cflash_block_check_os_status_t cblk_check_os_adap_err(cflsh_chunk_t *chunk, int 
 
     
     chunk->flags &= ~CFLSH_CHNK_RECOV_AFU;
+
+    chunk->recov_thread_id = 0;
 
     CBLK_TRACE_LOG_FILE(9,"exiting routine for  afu->contxt_id = 0x%llx, pid = 0x%llx",
 			chunk->path[path_index]->afu->contxt_id,
@@ -5764,8 +5859,8 @@ void cblk_notify_mc_err(cflsh_chunk_t *chunk,  int path_index,int error_num,
     bcopy(&log_data,disk_log.sense_data,MIN(DK_LOG_SENSE_LEN,sizeof(log_data)));
 
 	
-    CBLK_TRACE_LOG_FILE(5,"Issuing DK_CAPI_LOG_EVENT chunk->dev_name = %s, reason = %d, process_name = %s",
-			chunk->dev_name,reason,cflsh_blk.process_name);
+    CBLK_TRACE_LOG_FILE(5,"Issuing DK_CAPI_LOG_EVENT chunk->dev_name = %s, reason = %d, error_num = 0x%x,process_name = %s",
+			chunk->dev_name,reason,error_num,cflsh_blk.process_name);
 
 
     rc = ioctl(chunk->path[path_index]->fd,DK_CAPI_LOG_EVENT,&disk_log);

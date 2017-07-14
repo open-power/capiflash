@@ -27,17 +27,15 @@
 
 USERNAME=cxl
 GROUPNAME=$USERNAME
-CAPIKV_ROOT=/opt/ibm/capikv
-BIN_DIR=$CAPIKV_ROOT/bin
-ETC_DIR=$CAPIKV_ROOT/etc
+BIN_DIR=/usr/bin
+ETC_DIR=/etc/cxlflash
 SIO_FILE=$ETC_DIR/sioluntable.ini
 LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 
 #Creating empty SIO lun table and etc dir
-echo "INFO: Ensuring SIO LUN Table exists..."
 echo "INFO: Creating system cxl user / group..."
-useradd --system --user-group $USERNAME 2>/dev/null
+if [[ -z $(grep cxl /etc/passwd) ]]; then useradd --system --user-group $USERNAME; fi
 
 echo "INFO: enabling cxlfd service for LUN Management"
 systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
@@ -53,23 +51,23 @@ else
     if [[ $CFLASH_CONFIGURE -ne 1 ]]
     then
       echo "************************************************************************"
-      echo "*** run /opt/ibm/capikv/etc/cflash_configure to complete the install ***"
+      echo "*** run /usr/bin/cflash_configure to complete the install ***"
       echo "************************************************************************"
     fi
-    if [[ -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
+    if [[ -e /lib/libcflsh_block.so ]]
     then
       if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-      mv /opt/ibm/capikv/lib/* /opt/$HD >/dev/null 2>&1
+      mv /lib/libcflsh_block.so /opt/$HD >/dev/null 2>&1
     fi
   fi
 fi
-
-set -e #halt on error
 
 echo "INFO: setting permissions on cxl and cxlflash device nodes."
 udevadm trigger -s cxl
 udevadm trigger -s cxlflash
 
+echo "INFO: Ensuring SIO LUN Table exists..."
+if [[ ! -e $ETC_DIR ]]; then mkdir $ETC_DIR; fi
 chown $USERNAME:$GROUPNAME $ETC_DIR
 chmod 770 $ETC_DIR
 touch $SIO_FILE
@@ -77,3 +75,5 @@ chown $USERNAME:$GROUPNAME $SIO_FILE
 chmod 660 $SIO_FILE
 
 if [[ -e $BIN_DIR/cflash_logs_cron ]]; then cp $BIN_DIR/cflash_logs_cron /etc/cron.hourly; fi
+
+exit 0

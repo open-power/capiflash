@@ -103,7 +103,7 @@ for my $cardN (@cards)
   chomp $cardstr;
   my $cardN=substr $cardstr,-1;
 
-  for (my $i=0; $i<2; $i++)
+  for (my $i=0; $i<4; $i++)
   {
     if ($i == 1 && $type =~ /04cf/) {next;}
     my @devs=`ls /sys/devices/*/*/$card/*/*/host*/target*:*:*/*:$i:*:*/scsi_generic 2>/dev/null|grep ^sg`;
@@ -118,7 +118,7 @@ for my $cardN (@cards)
       if ($size eq "") {$size=0;}
       $size/=(1024*1024*1024);
 
-      my $line =`/opt/ibm/capikv/bin/cxlfstatus|grep $dev`;
+      my $line =`/usr/bin/cxlfstatus|grep $dev`;
       my @pdevs=split /:/, $line;
       my $pdev=$pdevs[0];
       chomp $pdev;
@@ -129,9 +129,9 @@ for my $cardN (@cards)
       if ($verbose)
       {
         printf("/dev/%s: %d    ",$pdev, $size);
-        if ($type =~ /0601/)
+        if ($type =~ /0601/ || $type =~ /0628/)
         {
-          $nsq=`/opt/ibm/capikv/afu/flashgt_nvme_nsq --port $i /dev/cxl/$afu`;
+          $nsq=`/usr/bin/flashgt_nvme_nsq --port $i /dev/cxl/$afu`;
           chomp $nsq;
           printf("    $nsq");
         }

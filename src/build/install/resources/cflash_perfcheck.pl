@@ -85,7 +85,7 @@ if ($prthelp) {usage();}
 #check sudo permissions
 (`id -u` == 0) || die "Run with sudo permissions\n";
 
-$ENV{'PATH'}="$ENV{'PATH'}:/opt/ibm/capikv/bin:/opt/ibm/capikv/test:/opt/ibm/capikv/afu";
+$ENV{'PATH'}="$ENV{'PATH'}:/usr/bin";
 
 print "latency       vlun    plun\n";
 $out_vrd=`blockio -d $devstr -s $secs -q1  -S100        |awk -Flat: \'{print \$2}\'|awk \'{print \$1}\'`;

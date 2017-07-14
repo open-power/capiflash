@@ -25,7 +25,7 @@
 # IBM_PROLOG_END_TAG
 
 
-PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/test:/opt/ibm/capikv/afu
+PATH=$PATH:/usr/bin
 BUFFER=/tmp/fvt_scripts.buffer
 
 FAILED_CHECKS=0;TOTAL_CHECKS=0;

@@ -54,13 +54,14 @@ extern void *blk_fvt_comp_data_buf;
 #define TRUE 1
 #endif
 
-#define MAX_OPENS 512
-#define MAX_LUNS 512
-#define MAX_NUM_THREADS 4096
-#define BLK_FVT_BUFSIZE 4096
-#define NUM_LIST_IO 500
-#define SYNC_IO_ONLY 0x0800000
-#define FILESZ      4096*4096*64
+#define MAX_OPENS        512
+#define MAX_LUNS         512
+#define MAX_NUM_THREADS  4096
+#define BLK_FVT_BUFSIZE  4096
+#define NUM_LIST_IO      500
+#define TST_SYNC_IO_ONLY 0x0800000
+#define TST_UNMAP        0x0400000
+#define FILESZ           4096*4096*64
 
 
 #define FV_READ   	0                       
@@ -144,7 +145,8 @@ typedef struct blk_thread_data
 {
     chunk_id_t          chunk_id[MAX_LUNS];
     int                 num_devs;
-    int                 flags;
+    int                 rwflags;
+    int                 resflags;
     int                 tid;
     size_t              size;
     int                 ret;
@@ -174,11 +176,11 @@ int multi_lun_setup();
 
 void blk_fvt_cmp_buf(int size, int *ret);
 void blk_get_statistics (chunk_id_t id, int flags, int *ret, int *err);
-void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh);
+void blk_thread_tst(int *ret, int *err, int open_flags, int rwflags, int resflags, int eeh);
 void blk_multi_luns_thread_tst(int *ret, int *err);
 void blocking_io_tst (chunk_id_t id, int *ret, int *err);
 void user_tag_io_tst (chunk_id_t id, int *ret, int *err, int flags);
-void io_perf_tst (int *ret, int *err, int flags, int eeh);
+void io_perf_tst (int *ret, int *err, int rwflags, int resflags, int eeh);
 int fork_and_clone(int *ret, int *err, int mode, int open_flags, int io_flags);
 int fork_and_clone_mode_test(int *ret, int *err, int pmode, int cmode);
 int fork_and_clone_my_test(int *ret, int *err, int pmode, int cmode);

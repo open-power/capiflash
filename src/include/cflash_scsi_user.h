@@ -86,7 +86,7 @@ typedef struct scsi_cdb {            /* structure of the SCSI cmd block */
 } scsi_cdb_t;
 
 
-
+#define SCSI_WRITE_SAME_UNMAP_FLAG 0x08;/* byte1 unmap bit in write same CDB */
 /*
  *
  *

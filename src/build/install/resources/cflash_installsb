@@ -39,20 +39,17 @@ then
   exit 0
 fi
 
-dest=/opt/ibm/capikv
+mkdir -p /lib/firmware/cxlflash
+mkdir -p /etc/cxlflash
+mkdir -p /usr/src/cxlflash
+mkdir -p /usr/share/cxlflash
 
-mkdir -p $dest/bin
-mkdir -p $dest/lib
-mkdir -p $dest/etc
-mkdir -p $dest/afu
-mkdir -p $dest/test
-
-cp -R $1/pkg/install_root/opt/ibm/capikv/* $dest
-cp -R $1/pkg/afu_root/opt/ibm/capikv/*     $dest
-cp -R $1/pkg/test_root/opt/ibm/capikv/*    $dest
+cp -R $1/pkg/install_root/* /
+cp -R $1/pkg/afu_root/*     /
+if [[ -d $1/pkg/test_root ]]; then cp -R $1/pkg/test_root/* /; fi
 
 $1/src/build/install/resources/postafuinstall
 
-touch $dest/etc/sioluntable.ini
+touch /etc/cxlflash/sioluntable.ini
 
 exit 0

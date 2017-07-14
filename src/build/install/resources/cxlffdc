@@ -24,13 +24,13 @@
 #
 # IBM_PROLOG_END_TAG
 
-export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/afu:/opt/ibm/capikv/test:/opt/ibm/capikv/etc
+export PATH=$PATH:/usr/bin
 
 DATADIR=/var/log/cflash/cxlffdc
 PREVDIR=/var/log/cflash/prev
 MISCDIR=/var/log/cflash/misc
 TARBALL=/var/log/cflash/cxlffdc."$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)".tgz
-AFUDIR=/opt/ibm/capikv/afu
+AFUDIR=/usr/bin
 
 ##################
 #Determine distro to differentiate dpkg | rpm
@@ -154,18 +154,18 @@ then
   rpm -qa|egrep "cflash|cflashimage"   >> $DATADIR/codelevels
 fi
 
-/opt/ibm/capikv/afu/capi_flash.pl -l >> $DATADIR/codelevels
-/opt/ibm/capikv/bin/cflash_version   >> $DATADIR/codelevels
+/usr/bin/capi_flash.pl -l >> $DATADIR/codelevels
+/usr/bin/cflash_version   >> $DATADIR/codelevels
 
-/opt/ibm/capikv/afu/cflash_temp.pl   >  $DATADIR/cflash_temp&
+/usr/bin/cflash_temp.pl   >  $DATADIR/cflash_temp&
 check_pid $!
-/opt/ibm/capikv/afu/cflash_wear.pl   >  $DATADIR/cflash_wear&
+/usr/bin/cflash_wear.pl   >  $DATADIR/cflash_wear&
 check_pid $!
-/opt/ibm/capikv/bin/cxlfstatus       >  $DATADIR/cxlfstatus&
+/usr/bin/cxlfstatus       >  $DATADIR/cxlfstatus&
 check_pid $!
-/opt/ibm/capikv/afu/cflash_capacity.pl -v >  $DATADIR/cflash_capacity&
+/usr/bin/cflash_capacity.pl -v >  $DATADIR/cflash_capacity&
 check_pid $!
-/opt/ibm/capikv/afu/cflash_capacity.pl -t 04cf >> $DATADIR/cflash_capacity&
+/usr/bin/cflash_capacity.pl -t 04cf >> $DATADIR/cflash_capacity&
 check_pid $!
 
 if [[ ! -z $(ls -A $MISCDIR) ]]

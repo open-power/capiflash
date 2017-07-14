@@ -24,22 +24,14 @@
 # IBM_PROLOG_END_TAG
 ROOTPATH = ../../..
 
-
-
 OBJS = zmalloc.o
-OBJS64 = zmalloc.64o
 MODULE = arkalloc
 
 MODLIBS =
 MODULE_LINKLIBS =
 
 LINKLIBS = -l${MODULE}
-LIBPATHS = -L${ROOTPATH}/img
 EXPFLAGS = -bexpall
-
-CFLAGS += $(KV_CFLAGS)
-
 SUBDIRS =
-
 
 include ${ROOTPATH}/config.mk

@@ -134,7 +134,7 @@ if ($partition0)
 
 runcmd("echo $image > $basedir/load_image_on_perst");
 runcmd("echo 0 > $basedir/perst_reloads_same_image");
-runcmd("cp /opt/ibm/capikv/afu/blacklist-cxlflash.conf /etc/modprobe.d");
+runcmd("cp /usr/share/cxlflash/blacklist-cxlflash.conf /etc/modprobe.d");
 runcmd("echo 1 > $basedir/reset");
 
 #wait for image_loaded

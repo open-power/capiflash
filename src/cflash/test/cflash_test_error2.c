@@ -119,7 +119,7 @@ int test_vSpio_eehRecovery(int cmd)
 #ifdef _AIX
     if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-    if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+    if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
         CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -263,7 +263,7 @@ int test_dSpio_eehRecovery(int cmd)
 #ifdef _AIX
     if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-    if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+    if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags) )
 #endif
         CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 

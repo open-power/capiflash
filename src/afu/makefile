@@ -27,44 +27,28 @@
 
 UNAME=$(shell uname)
 
-# Where to find user code.(Relative path(from the makefile) preferred for portability)
-ROOTPATH = ../..
-USER_DIR = .
-TESTDIR  = ${ROOTPATH}/obj/tests
-EXPFLAGS = -bexpall
-
-#test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../..
+EXPFLAGS = -bexpall
 LINKLIBS = -lcflshcom -lcflsh_block
 
 ifneq ($(TARGET_PLATFORM),x86_64)
-BTESTS  += transport_test blk_test pvtestauto xlate pblkread
+BTESTS = transport_test blk_test blk_eras pvtestauto xlate pblkread
 endif
 
-ifeq ($(UNAME),AIX) # AIX only
-BTESTS64     = $(addsuffix 64, ${BTESTS})
-BIN_TESTS64  = $(addprefix ${TESTDIR}/, ${BTESTS64})
-BITS         = 64
-LINKLIBS    += -lpthreads
-else
+LCFLAGS = -D__FVT__ \
+          -I$(ROOTPATH)/src/afu \
+          -I$(ROOTPATH)/src/test
+
+ifneq ($(UNAME),AIX)
 ifneq ($(TARGET_PLATFORM),x86_64)
-BTESTS   += cxl_afu_dump cxl_afu_status cxl_afu_inject flashgt_vpd_access flashgt_temp
-OBJS      = afu.o capi_dev_nodes.o
-OBJS64    = afu.64o capi_dev_nodes.64o
 MODULE    = afu
-LINKLIBS += -lpthread -ludev -lafu -lcxl
+OBJS      = afu.o capi_dev_nodes.o
+BTESTS   += cxl_afu_dump cxl_afu_status cxl_afu_inject flashgt_vpd_access flashgt_temp
+LINKLIBS += -lafu -lcxl
 endif
 endif
-
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
-
-CFLAGS += \
-   -D__FVT__ -Wno-unused-result \
-   -I$(ROOTPATH)/src/afu \
-   -I$(ROOTPATH)/src/test
-CXXFLAGS+=$(CFLAGS)
 
 VPATH += ${ROOTPATH}/src/test
 

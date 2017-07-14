@@ -29,7 +29,7 @@ if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 if [[ ! -e /opt ]]; then mkdir /opt; fi
 if [[ ! -e /opt/.lic ]]; then mkdir /opt/.lic; fi
 
-export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/afu
+export PATH=$PATH:/usr/bin
 export CFLASH_CONFIGURE=1
 
 rc=0
@@ -37,6 +37,8 @@ LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 force=no
 ADV_TC=at10
+LIC_DIR=/usr/share/cxlflash/license
+SHARE_DIR=/usr/share/cxlflash
 
 wget www.ibm.com >/dev/null 2>&1
 internet=$?
@@ -68,9 +70,9 @@ then
     CF_VER=$(cat ver.txt)
     echo "------------------------------"
     echo -e "INFO: Attempting to install version($CF_VER)\n"
-  elif [[ -e /opt/ibm/capikv/version.txt ]]
+  elif [[ -e $SHARE_DIR/version.txt ]]
   then
-    CF_VER=$(cat /opt/ibm/capikv/version.txt|awk -F- '{print $1}')
+    CF_VER=$(cat $SHARE_DIR/version.txt|awk -F- '{print $1}')
     echo "------------------------------"
     echo -e "INFO: Attempting to configure version($CF_VER)\n"
   else
@@ -113,7 +115,7 @@ then
  echo "------------------------------"
  echo -e "INFO: Checking software versions\n"
 
- if [[ $1 =~ mfg && ! -e /opt/ibm/capikv/lib/libafu.so ]]; then force=yes; fi
+ if [[ $1 =~ mfg && ! -e /lib/libafu.so ]]; then force=yes; fi
 
  #remove old
  EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
@@ -214,9 +216,9 @@ then
     CF_VER=$(cat ver.txt| sed 's,-,_,g')
     echo "------------------------------"
     echo -e "INFO: Attempting to install version($CF_VER)\n"
-  elif [[ -e /opt/ibm/capikv/version.txt ]]
+  elif [[ -e $SHARE_DIR/version.txt ]]
   then
-    CF_VER=$(cat /opt/ibm/capikv/version.txt| sed 's,-,_,g')
+    CF_VER=$(cat $SHARE_DIR/version.txt| sed 's,-,_,g')
     echo "------------------------------"
     echo -e "INFO: Attempting to configure version($CF_VER)\n"
   else
@@ -289,7 +291,7 @@ EOF
   echo "------------------------------"
   echo -e "INFO: Checking software versions\n"
 
-  if [[ $1 =~ mfg && ! -e /opt/ibm/capikv/lib/libafu.so ]]; then force=yes; fi
+  if [[ $1 =~ mfg && ! -e /lib/libafu.so ]]; then force=yes; fi
 
   ################
   #remove old
@@ -398,23 +400,23 @@ fi
         if [[ ! -e /opt/.lic/$LD ]]
         then
           echo ""
-          echo "Please review the licenses available in /opt/ibm/capikv/license/"
+          echo "Please review the licenses available in $LIC_DIR"
           echo "Press 'y' to accept the license agreement, or skip now and rerun later"
           read char
           if [[ $char = [yY] ]]
           then
             date > /opt/.lic/$LD
-            if [[ -e /opt/$HD && ! -e /opt/ibm/capikv/lib/libcflsh_block.so ]]
+            if [[ -e /opt/$HD && ! -e /lib/libcflsh_block.so ]]
             then
-              mv /opt/$HD/* /opt/ibm/capikv/lib >/dev/null 2>&1
+              mv /opt/$HD/* /lib >/dev/null 2>&1
             fi
             rm -R /opt/$HD >/dev/null 2>&1
           else
             echo "ERROR: The license must be accepted"
-            if [[ -e /opt/ibm/capikv/lib ]]
+            if [[ -e /lib/libcflsh_block.so ]]
             then
               if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD >/dev/null 2>&1; fi
-              mv /opt/ibm/capikv/lib/* /opt/$HD >/dev/null 2>&1
+              mv /lib/libcflsh_block.so /opt/$HD >/dev/null 2>&1
             fi
             exit 128
           fi
@@ -428,11 +430,11 @@ fi
   echo -e "\n------------------------------"
   echo -e "INFO: Checking firmware versions\n"
 
-  CORSA_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep CORSA_IMAGE|awk '{print $2}'|cut -c26-33)
-  GT_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_F_IMAGE |awk '{print $2}'|cut -c26-33)
-  GTP_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_F_IMAGE|awk '{print $2}'|cut -c26-33)
-  GT_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
-  GTP_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
+  CORSA_IMAGE=$(cat $SHARE_DIR/afu_versions|grep CORSA_IMAGE|awk '{print $2}'|cut -c26-33)
+  GT_F_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GT_F_IMAGE |awk '{print $2}'|cut -c26-33)
+  GTP_F_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GTP_F_IMAGE|awk '{print $2}'|cut -c26-33)
+  GT_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
+  GTP_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
 
   for str in $(capi_flash.pl -l|awk '{print $4$9}')
   do
@@ -441,7 +443,7 @@ fi
     if [[ $str =~ 0628 && ! $str =~ $GTP_IMAGE ]];   then do_flash=1; break; fi
   done
 
-  adapsGT=$(lspci|grep 0601|awk '{print $1}')
+  adapsGT=$(lspci|egrep "0601|0628"|awk '{print $1}')
   adapsCorsa=$(lspci|grep 04cf|awk '{print $1}')
   adapGTN=0; adapCorsaN=0;
   for adap in $adapsGT;    do let adapGTN=$adapGTN+1;       done
@@ -456,9 +458,12 @@ fi
   if [[ $do_flash ]]
   then
     systemctl stop cxlfd.service
+    if [[ $(lsmod |grep cxlflash) =~ cxlflash ]]; then rmmod cxlflash; fi
     flash_all_adapters -reload
     systemctl daemon-reload
   fi
+
+  if [[ ! $(lsmod |grep cxlflash) =~ cxlflash ]]; then modprobe cxlflash; fi
 
   ##################################
   # Re-check all versions
@@ -480,7 +485,7 @@ fi
 
   #check GT devices
   adapN=0
-  adaps=$(lspci|grep 0601|awk '{print $1}')
+  adaps=$(lspci|egrep "0601|0628"|awk '{print $1}')
   for adap in $adaps; do let adapN=$adapN+1; done
   if [[ $adapN -ne $adapGTN ]]
   then
@@ -515,7 +520,7 @@ fi
 
   #ensure each GT has 2 sg devices
   adapN=0
-  adaps=$(lspci|egrep "0601"|awk '{print $1}')
+  adaps=$(lspci|egrep "0601|0628"|awk '{print $1}')
   for adap in $adaps; do let adapN=$adapN+1; done
   sgN=0; sglist="";
   if [[ $adapGTN -gt 0 ]]
@@ -552,7 +557,7 @@ fi
     secs=3
   fi
 
-  fstatus="$(/opt/ibm/capikv/bin/cxlfstatus)"
+  fstatus="$(/usr/bin/cxlfstatus)"
 
   for sg in $sglist
   do
@@ -563,7 +568,7 @@ fi
       wwid=$(echo "$fstatus"|grep ${sg:5:6}|awk -F, '{print $4}')
       cxlfsetlunmode $wwid 1 >/dev/null
     fi
-    iops=$(LD_LIBRARY_PATH=/opt/ibm/capikv/lib /opt/ibm/capikv/bin/blockio -d $sg -s$secs 2>&1)
+    iops=$(/usr/bin/blockio -d $sg -s$secs 2>&1)
     if [[ ! $iops =~ err && $(echo $iops|awk -Fiops: '{print $2}') -gt $iopsN ]]
     then
       echo "  $sg OK"
@@ -579,7 +584,7 @@ fi
   then
     if [[ -e /opt/.lic/$LD ]]; then rm -f /opt/.lic/$LD; fi
     if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-    mv /opt/ibm/capikv/lib/* /opt/$HD >/dev/null 2>&1
+    mv /lib/libcflsh_block.so /opt/$HD >/dev/null 2>&1
   fi
 
   echo -e "\nINSTALL success"

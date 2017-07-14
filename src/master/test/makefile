@@ -33,28 +33,9 @@ TESTDIR  = ${ROOTPATH}/obj/tests
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
-LIBPATHS = -L${ROOTPATH}/img
 LINKLIBS = -lcflshcom -lcflsh_block -lmclient
 
-BTESTS=
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
-
 GTESTS = run_master_fvt
-GTESTS_DIR = $(addprefix $(TESTDIR)/, $(GTESTS))
-
-# AIX only
-ifeq ($(UNAME),AIX)
-LINKLIBS+=-lpthreads
-
-GTESTS64     = $(addsuffix 64, $(GTESTS))
-GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
-
-#Linux only
-else
-LINKLIBS+=-lpthread
-
-endif
 
 run_master_fvt_OFILES = fvt_master.o mc_test.o mc_test2.o \
 			mc_test_engine.o mc_test_error.o \
@@ -66,13 +47,9 @@ CFLAGS += \
 	-g \
    -D__FVT__\
    -I$(ROOTPATH)/src/master \
-   -I${GTESTINC}
-CXXFLAGS+=$(CFLAGS)
 
-#VPATH += ${ROOTPATH}/src/master
 
 include ${ROOTPATH}/config.mk
-
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 unit:

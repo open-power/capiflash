@@ -45,7 +45,7 @@
   in the context of the AFU implied by the socket name.
 ***************************************************************************/
 
-#define MC_SOCKET_DIR "/opt/ibm/capikv/data"
+#define MC_SOCKET_DIR "/etc/cxlflash/data"
 
 #define XFER_OP_READ      1      // Read from the Blk-MC Socket
 #define XFER_OP_WRITE     2      // Write to the Blk-MC Socket

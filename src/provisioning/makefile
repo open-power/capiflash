@@ -27,9 +27,7 @@ UNAME=$(shell uname)
 
 .NOTPARALLEL:
 
-ifeq ($(UNAME),AIX)
-SUBDIRS =
-else
+ifneq ($(UNAME),AIX)
 SUBDIRS = library.d tool.d
 endif
 

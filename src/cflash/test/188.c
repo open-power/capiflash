@@ -47,10 +47,10 @@ int do_microcode_update( )
     rc=system("lsmod | grep cxlflash && rmmod -v cxlflash");
     CHECK_RC(rc, "Failed to unload cxlflash driver");
 
-    rc=system("/opt/ibm/capikv/afu/flash_all_adapters");
+    rc=system("/usr/bin/flash_all_adapters");
     CHECK_RC(rc, "Failed in afu update");
 
-    rc=system("/opt/ibm/capikv/afu/reload_all_adapters");
+    rc=system("/usr/bin/reload_all_adapters");
     CHECK_RC(rc, "Failed to reload updated afu image");
 
     rc=system("modprobe -v cxlflash");
@@ -101,7 +101,7 @@ int do_perst()
         /* if perstinfo_file does not present;
            User will do PERST in all adapter
         */
-        rc=system("/opt/ibm/capikv/afu/reload_all_adapters");
+        rc=system("/usr/bin/reload_all_adapters");
         CHECK_RC(rc, "Failed to reload updated afu image");
         
     }
@@ -122,7 +122,7 @@ int do_perst()
             iTer++;
         }
         
-          sprintf(blockCheckP," /opt/ibm/capikv/afu/cflash_perst.pl -t %s ", tmpBuff );
+          sprintf(blockCheckP," /usr/bin/cflash_perst.pl -t %s ", tmpBuff );
           printf("......... command : %s \n",blockCheckP);
           rc = system(blockCheckP);
           if ( rc )

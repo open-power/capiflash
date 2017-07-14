@@ -173,6 +173,9 @@ my $optOK = 0;                  # Options are OK
         # Second Parameter (Length)
         if ($pc == 2) {
           $dl = $parm;
+          if (($serial_num) && ($sn == 1)) {
+            $dl = length($serial_num);
+          }
           $bv = pack("C",$dl);
           print (VPDTB "$bv");
           print ("| $dl | ");

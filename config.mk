@@ -40,7 +40,7 @@ endif
 
 #If the target architecture is set, pass an architecture
 #down as a #define to the underlying code
-export ARCHFLAGS += -DTARGET_ARCH_${TARGET_PLATFORM}
+export ARCHFLAGS = -DTARGET_ARCH_${TARGET_PLATFORM}
 
 #Determine if this a linux or AIX system
 UNAME=$(shell uname)

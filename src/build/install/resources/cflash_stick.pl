@@ -92,7 +92,7 @@ $| = 1;
 #-------------------------------------------------------------------------------
 # list Devices
 #-------------------------------------------------------------------------------
-my @cards = `lspci |grep 0601`;
+my @cards = `lspci |egrep "0601|0628"`;
 my $cmd="";
 my @devices;
 my $stick;
@@ -112,7 +112,7 @@ for my $cardN (@cards)
   chomp $cardstr;
   my $cardN=substr $cardstr,-1;
 
-  for (my $i=0; $i<2; $i++)
+  for (my $i=0; $i<4; $i++)
   {
     my $Astick=`ls -d /sys/devices/*/*/$Acard[0]/*/*/host*/target*:$i:*/*:*:*:*/scsi_generic/* 2>/dev/null`;
     if ($? != 0) {next;}
@@ -120,7 +120,7 @@ for my $cardN (@cards)
     my $dev=$sdev[12];
     chomp $dev;
     $list && print " /dev/$dev\n";
-    $list && system("/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null | grep NVMe$i");
+    $list && system("/usr/bin/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null | grep NVMe$i");
   }
 }
 
@@ -151,9 +151,9 @@ if (! -e $filename)
 {
   if (! ($filename =~ /images/))
   {
-    if (-e "/opt/ibm/capikv/afu/images/$filename")
+    if (-e "/lib/firmware/cxlflash/$filename")
     {
-      $filename = "/opt/ibm/capikv/afu/images/$filename";
+      $filename = "/lib/firmware/cxlflash/$filename";
     }
   }
 }

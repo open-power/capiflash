@@ -441,6 +441,7 @@ enum
     TEST_MC_IOARCB_EA_INVLD_ALGNMNT,
     TEST_LARGE_TRANSFER_IO,
     TEST_LARGE_TRNSFR_BOUNDARY,
+    TEST_VLUN_MAX_TRANSFER,
     MAX_CTX_RCVR_EXCEPT_LAST_ONE,
     MAX_CTX_RCVR_LAST_ONE_NO_RCVR,
     /*** DK_CAPI_QUERY_PATH ****/
@@ -904,4 +905,5 @@ void displayBuildinfo();
 int get_max_res_hndl_by_capacity(char *dev);
 int max_ctx_cross_limit();
 int cflash_query_ue(void *buf, size_t len);
+int test_vlun_max_transfer();
 #endif /*__CFLASH_TEST_H__ */

@@ -78,7 +78,7 @@ my $hdat = 0;            # Vendoer Dev id from header if present
 my $cfg_devid="";        # devid read from config space
 my $ma;
 my $_VM=0;
-my $imgdir="/opt/ibm/capikv/afu/images";
+my $imgdir="/lib/firmware/cxlflash";
 
 #-------------------------------------------------------------------------------
 # Defaults:
@@ -568,7 +568,7 @@ if ($_VM)
     $cardN=substr $card,-1;
     set_vm_cfgid $cardN;
     my @afuD;
-    @afuD=`/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null`;
+    @afuD=`/usr/bin/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null`;
     my $afuver="";
     for my $ver ( @afuD )
     {
@@ -597,7 +597,8 @@ else
 
     if (($vendor eq "0x1014") && (($device eq "0x0477") ||
                                   ($device eq "0x04cf") ||
-                                  ($device eq "0x0601")))
+                                  ($device eq "0x0601") ||
+                                  ($device eq "0x0628")))
     {
       $cfg_devid = substr($vendor,2,4) . substr($device,2,4);
       my @dds = split /\//, $file;
@@ -608,7 +609,7 @@ else
       my $cardstr=`ls -d /sys/devices/*/*/$adap/cxl/card* 2>/dev/null`;
       chomp $cardstr;
       my $cardN=substr $cardstr,-1;
-      my @afuD=`/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null`;
+      my @afuD=`/usr/bin/cxl_afu_dump /dev/cxl/afu$cardN.0m -v 2>/dev/null`;
       my $afuver="";
       for my $ver ( @afuD )
       {
@@ -684,7 +685,7 @@ if ($_VM)
 {
   my $addhdr="";
   if ($filename =~ /.bin/ || $filename =~ /.rbf/) {$addhdr=" -a ";}
-  my $cmd="/opt/ibm/capikv/afu/cxl_flash_vm -c $cardN -f $filename $addhdr";
+  my $cmd="/usr/bin/cxl_flash_vm -c $cardN -f $filename $addhdr";
   $verbose && printf(" Running: $cmd\n");
   system($cmd);
   exit $?;
@@ -693,7 +694,7 @@ if ($_VM)
 #-------------------------------------------------------------------------------
 # Read the VSEC Length / VSEC ID from the Configuration Space
 #-------------------------------------------------------------------------------
-if ($cfg_devid eq "10140601")
+if ($cfg_devid eq "10140601" || $cfg_devid eq "10140628")
 {
   $VSEC_REG = 0x404;
 }
@@ -723,7 +724,7 @@ if ($cfg_devid eq "101404cf")
   }
   $factory_addr = 0x10000;
 }
-elsif ($cfg_devid eq "10140601")
+elsif ($cfg_devid eq "10140601" || $cfg_devid eq "10140628")
 {
   $header_addr=0x0800000;
   $user_addr=0x0810000;
@@ -801,7 +802,7 @@ $set = time();
 # validate the checksum on the download files before starting the download
 #-------------------------------------------------------------------------------
 validate_checksum $filename;
-if ($cfg_devid eq "10140601" && $wr_user)
+if (($cfg_devid eq "10140601" || $cfg_devid eq "10140628") && $wr_user)
 {
   validate_checksum $factoryselect_hdr;
   validate_checksum $userselect_hdr;
@@ -813,7 +814,7 @@ $SIG{INT} = \&sigint_handler;
 #-------------------------------------------------------------------------------
 # if GT and we are writing the user image, then program factoryselect header
 #-------------------------------------------------------------------------------
-if ($cfg_devid eq "10140601" && $wr_user)
+if (($cfg_devid eq "10140601" || $cfg_devid eq "10140628") && $wr_user)
 {
   if ($verbose) {$parm_verbose=2;}
   else          {$parm_verbose=0;}
@@ -830,7 +831,7 @@ write_file_to_flash($filename, $a, $parm_verbose);
 #-------------------------------------------------------------------------------
 # if GT and we are writing the user image, then program userselect header
 #-------------------------------------------------------------------------------
-if ($cfg_devid eq "10140601" && $wr_user)
+if (($cfg_devid eq "10140601" || $cfg_devid eq "10140628") && $wr_user)
 {
   if ($verbose) {$parm_verbose=2;}
   else          {$parm_verbose=0;}

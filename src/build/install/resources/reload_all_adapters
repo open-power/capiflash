@@ -27,9 +27,9 @@
 grep pSeries /proc/cpuinfo >/dev/null 2>&1 && _VM=1
 if [[ $_VM -eq 1 ]]; then echo "Not Supported on VM"; exit 0; fi
 
-for dev in $(lspci |egrep "04cf|0601"|awk '{print $1}')
+for dev in $(lspci |egrep "04cf|0601|0628"|awk '{print $1}')
 do
   echo "reloading $dev"
-  /opt/ibm/capikv/afu/cflash_perst.pl -t $dev
+  /usr/bin/cflash_perst.pl -t $dev
   if [[ $? -eq -2 || $? -eq -3 ]]; then exit -1; fi
 done

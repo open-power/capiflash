@@ -1462,3 +1462,74 @@ int max_vlun_on_a_ctx()
     return rc;
 }
 
+int test_vlun_max_transfer()
+{
+    int rc;
+    struct ctx myctx;
+    struct ctx *p_ctx= &myctx;
+    pthread_t thread;
+    __u64 buf_size = 0; //32MB
+    __u64 nlba = 32768;
+    struct rwlargebuf rwbuf;
+
+    pid=getpid();
+    rc = ctx_init(p_ctx);
+    CHECK_RC(rc, "ctx_init failed");
+    pthread_create(&thread, NULL, ctx_rrq_rx, p_ctx);
+
+    rc = create_resource(p_ctx,nlba, DK_UVF_ALL_PATHS, LUN_VIRTUAL);
+    CHECK_RC(rc, "create LUN_VIRTUAL failed");
+
+    //32MB transfer size
+    buf_size = 0x2000000;
+    debug("%d: Do large transfer ....\n", pid);
+    rc = allocate_buf(&rwbuf, buf_size);
+    CHECK_RC(rc, "memory allocation failed");
+    rc = do_large_io(p_ctx, &rwbuf, buf_size);
+    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    deallocate_buf(&rwbuf);
+
+    //16MB transfer size
+    buf_size = 0x1000000;
+    debug("%d: Do large transfer ....\n", pid);
+    rc = allocate_buf(&rwbuf, buf_size);
+    CHECK_RC(rc, "memory allocation failed");
+    rc = do_large_io(p_ctx, &rwbuf, buf_size);
+    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    deallocate_buf(&rwbuf);
+
+
+    //64KB transfer size
+    buf_size = 0x10000;
+    debug("%d: Do large transfer ....\n", pid);
+    rc = allocate_buf(&rwbuf, buf_size);
+    CHECK_RC(rc, "memory allocation failed");
+    rc = do_large_io(p_ctx, &rwbuf, buf_size);
+    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    deallocate_buf(&rwbuf);
+
+    //8KB transfer size
+    buf_size = 0x2000;
+    debug("%d: Do large transfer ....\n", pid);
+    rc = allocate_buf(&rwbuf, buf_size);
+    CHECK_RC(rc, "memory allocation failed");
+    rc = do_large_io(p_ctx, &rwbuf, buf_size);
+    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    deallocate_buf(&rwbuf);
+
+    //4KB transfer size 
+    buf_size = 0x1000; 
+    rc = allocate_buf(&rwbuf, buf_size);
+    CHECK_RC(rc, "memory allocation failed");
+    debug("%d: after large transfer,do normal IO ....\n", pid);
+    rc = do_large_io(p_ctx, &rwbuf, buf_size);
+    CHECK_RC(rc,"Normal IO failed after large transfer");
+    deallocate_buf(&rwbuf);
+
+
+    pthread_cancel(thread);
+    close_res(p_ctx);
+    ctx_close(p_ctx);
+    return rc;
+}
+

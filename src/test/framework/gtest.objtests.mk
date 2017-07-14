@@ -24,20 +24,41 @@ UNAME=$(shell uname)
 # Set Google Test's header directory as a system directory, such that
 # the compiler doesn't generate warnings in Google Test headers.
 ifeq ($(UNAME),Linux)
-CPPFLAGS += -isystem $(GTESTINC)
-else
-CPPFLAGS += -DOLD_ANSIC_AIX_VERSION -I $(GTEST_DIR)/include
+
+ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard /usr/src/googletest/googletest),)
+  GTESTDIR=/usr/src/googletest/googletest
+  GTESTINC=/usr/include
+else ifneq ($(wildcard /usr/src/gtest),)
+  GTESTDIR=/usr/src/gtest
+  GTESTINC=/usr/include
 endif
+CPPFLAGS += -isystem $(GTESTINC)
 
-# Flags passed to the C++ compiler.
-#CXXFLAGS += -g -Wall -Wextra -pthread
+else
 
+ifneq ($(wildcard /usr/src/googletest/googletest),)
+  GTESTDIR=/usr/src/googletest/googletest
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard /usr/src/gtest),)
+  GTESTDIR=/usr/src/gtest
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/gtest-1.7.0),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/gtest-1.7.0
+  GTESTINC=${GTESTDIR}/include
+else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
+  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
+  GTESTINC=${GTESTDIR}/include
+endif
+CPPFLAGS += -DOLD_ANSIC_AIX_VERSION -I $(GTEST_DIR)/include
 
+endif
 
 # All Google Test headers.  Usually you shouldn't change this
 # definition.
 GTEST_HEADERS = $(GTESTINC)/gtest/internal/*.h
-
 
 # Builds gtest.a and gtest_main.a.
 

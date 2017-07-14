@@ -59,6 +59,12 @@
 
 #define CAPI_AFU_GLOBAL_OFFSET  0x10000 /* Offset of AFU Global area */
 
+
+
+/* Context Control bit flags */
+
+#define CAPI_CTX_CTRL_UNMAP_FLAG  0x8000000000000000LL  /* Unmap LBA supported */
+
 /************************************************************************/
 /* IOARCB: 64 bytes, min 16 byte alignment required                     */
 /************************************************************************/

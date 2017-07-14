@@ -372,7 +372,7 @@ int update_siotable(lun_table_entry_t* o_lun_table, int* o_lun_table_sz)
     uint32_t                    linefail = 0;
     uint16_t                    luncount = 0;
     int                         curr_mode;
-    dict = cxlfIniParse("/opt/ibm/capikv/etc/sioluntable.ini", &linefail );
+    dict = cxlfIniParse("/etc/cxlflash/sioluntable.ini", &linefail );
     curr_entry = dict;
     bool rslt = false;
     *o_lun_table_sz=0;

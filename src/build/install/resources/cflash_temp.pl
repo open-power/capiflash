@@ -54,7 +54,7 @@ select(STDOUT);
 $| = 1;
 
 # print temps
-my @cards = `lspci |grep 0601`;
+my @cards = `lspci |egrep "0601|0628"`;
 
 for my $adap (@cards)
 {
@@ -70,7 +70,7 @@ for my $adap (@cards)
   chomp $cardstr;
   my $cardN=substr $cardstr,-1;
   print "\nFound $Acard[5] $card $afu\n";
-  $out=`/opt/ibm/capikv/afu/flashgt_temp $card $cardN`;
+  $out=`/usr/bin/flashgt_temp $card $cardN`;
   print "  $out";
 
   for (my $i=0; $i<2; $i++)

@@ -123,7 +123,7 @@ int rrq_len = 64;
 int contxt_handle = 0;
 uint64_t toggle = 1;            /* Toggle bit for RRQ          */
 
-inline void  INC_RRQ()
+static inline void  INC_RRQ()
 {
 
     rrq_current++;

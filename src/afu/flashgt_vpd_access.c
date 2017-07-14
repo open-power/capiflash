@@ -91,7 +91,7 @@ int main (int argc, char *argv[])
   printf("Device ID: %04X\n", device);
   printf("Vendor ID: %04X\n", vendor);
 
-  if ( (vendor != 0x1014) || (( device != 0x0477) && (device != 0x04cf) && (device != 0x0601))) {
+  if ( (vendor != 0x1014) || (( device != 0x0477) && (device != 0x04cf) && (device != 0x0601) && (device != 0x0628))) {
 	printf("Unknown Vendor or Device ID\n");
 	exit(-1);
   }

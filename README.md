@@ -28,19 +28,19 @@ As a developer, to get started:
 7. make cleanall
 8. make install
 ```
-Build Targets that set rpath=/opt/ibm/capikv/lib
+Build Targets that set rpath=/usr/lib
 ```
 make prod        #build the code, excluding test code
 make prodall     #build all the code
 make install     #build all the code, and install a development setup
 ```
-Build Targets that do not set rpath (use LD_LIBRARY_PATH=.../capiflash/img or LD_LIBRARY_PATH=/opt/ibm/capikv/lib)
+Build Targets that do not set rpath (use LD_LIBRARY_PATH=.../capiflash/img or LD_LIBRARY_PATH=/usr/lib)
 ```
 make             #build the code, excluding test code
 make test        #build only the test code
 make buildall    #build all the code
 ```
-*if all the code is built, then use "make installsb" to install your build objects to /opt/ibm/capikv/*.
+*if all the code is built, then use "make installsb" to install your build objects
 
 #### Targeting a specific platform or tuning - the "customrc" file 
 
@@ -79,9 +79,9 @@ make install
 #create a 4gb test file in /tmp
 fallocate -l 4g /tmp/testfile
 #run the FVT
-FVT_DEV=/tmp/testfile /opt/ibm/capikv/test/run_fvt
+FVT_DEV=/tmp/testfile run_fvt
 #run FILE IO
-/opt/ibm/capikv/bin/blockio -d /tmp/testfile
+blockio -d /tmp/testfile
 ```
 
 #### Test Real IO
@@ -95,13 +95,13 @@ source env.bash
 make cleanall
 make install
 #select a /dev/sgX device
-sudo /opt/ibm/capikv/bin/cxlfrefreshluns
-sudo /opt/ibm/capikv/bin/cxlfstatus
+sudo cxlfrefreshluns
+sudo cxlfstatus
   sg8:     1:0:0:0,   sdc,     legacy,    60025380025382462300058000000000
 #set the lunmode to superpipe
-sudo /opt/ibm/capikv/bin/cxlfsetlunmode 60025380025382462300058000000000 1
+sudo cxlfsetlunmode 60025380025382462300058000000000 1
 #run the FVT
-sudo FVT_DEV=/dev/sg8 /opt/ibm/capikv/test/run_fvt
+sudo FVT_DEV=/dev/sg8 run_fvt
 #run Real IO
-sudo /opt/ibm/capikv/bin/blockio -d /dev/sg8 -p
+sudo blockio -d /dev/sg8 -p
 ```

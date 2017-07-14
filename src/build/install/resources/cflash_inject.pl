@@ -171,46 +171,46 @@ if ($perm)    {$parm=" -P "}
 
 if ($parity_error)
 {
-  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 9 $vparm"
+  $cmd="/usr/bin/cxl_afu_inject -d $afustr -p $port -a 9 $vparm"
 }
 elsif ($reset)
 {
-  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 0 $vparm"
+  $cmd="/usr/bin/cxl_afu_inject -d $afustr -p $port -a 0 $vparm"
 }
 elsif ($offline)
 {
-  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 1 $vparm"
+  $cmd="/usr/bin/cxl_afu_inject -d $afustr -p $port -a 1 $vparm"
   
 }
 elsif (($rd || $wr) && $clear)
 {
-  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 8 $vparm"
+  $cmd="/usr/bin/cxl_afu_inject -d $afustr -p $port -a 8 $vparm"
 }
 elsif ($rd)
 {
-  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 2 -s $status -l $lba $parm $vparm"
+  $cmd="/usr/bin/cxl_afu_inject -d $afustr -p $port -a 2 -s $status -l $lba $parm $vparm"
 }
 elsif ($wr)
 {
-  $cmd="/opt/ibm/capikv/test/cxl_afu_inject -d $afustr -p $port -a 3 -s $status -l $lba $parm $vparm"
+  $cmd="/usr/bin/cxl_afu_inject -d $afustr -p $port -a 3 -s $status -l $lba $parm $vparm"
 }
 elsif ($clear)
 {
   $opcode="0xff";
   $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 4 --mask 0xFFFF00FF --data 0";
-  $cmd="/opt/ibm/capikv/test/flashgt_nvme_override $parms";
+  $cmd="/usr/bin/flashgt_nvme_override $parms";
 }
 elsif ($wear>=0)
 {
   $data=sprintf("0x%.2x00", $wear);
   $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 4 --mask 0xFFFF00FF --data $data";
-  $cmd="/opt/ibm/capikv/test/flashgt_nvme_override $parms";
+  $cmd="/usr/bin/flashgt_nvme_override $parms";
 }
 elsif ($temp>=0)
 {
   $data=sprintf("0x0%.3x00", $temp+273);
   $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 0 --mask 0xFF0000FF --data $data";
-  $cmd="/opt/ibm/capikv/test/flashgt_nvme_override $parms";
+  $cmd="/usr/bin/flashgt_nvme_override $parms";
 }
 
 system($cmd);

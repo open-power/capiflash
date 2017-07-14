@@ -24,8 +24,8 @@
 #
 # IBM_PROLOG_END_TAG
 
-CAPIKV=/opt/ibm/capikv
-source $CAPIKV/bin/cflashutils.sh
+BIN_DIR=/usr/bin
+source $BIN_DIR/cflashutils.sh
 
 
 showhelp()
@@ -46,6 +46,6 @@ TARGETMODE=$2
 #set up the SIO table
 chluntable $TARGETLUN $TARGETMODE;
 #immediately set the desired LUNs to the correct mode
-$CAPIKV/bin/cxlflashutil -l $TARGETLUN -m $TARGETMODE
+$BIN_DIR/cxlflashutil -l $TARGETLUN -m $TARGETMODE
 
 exit 0

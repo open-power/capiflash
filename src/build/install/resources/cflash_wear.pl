@@ -54,7 +54,7 @@ if ($? != 0) {print "ERROR: package sg3-utils is not installed\n"; exit -1;}
 select(STDOUT);
 $| = 1;
 
-my @cards = `lspci |grep 0601`;
+my @cards = `lspci |egrep "0601|0628"`;
 
 for my $adap (@cards)
 {

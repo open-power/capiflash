@@ -34,7 +34,7 @@ then
 fi
 
 set -o pipefail
-export PATH=$PATH:/opt/ibm/capikv/bin:/opt/ibm/capikv/test:/opt/ibm/capikv/afu
+export PATH=$PATH:/usr/bin
 echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes
 echo "module cxlflash +p" > /sys/kernel/debug/dynamic_debug/control
 unset FVT_EEH
@@ -53,7 +53,7 @@ if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;  
 start=$(date +"%Y%m%d_%H%M")
 out=$start
 if [[ ! -z $USER ]]; then out+=_$USER; fi
-out+=_$(cat /opt/ibm/capikv/version.txt|awk -F- '{print $1}')
+out+=_$(cat /usr/share/cxlflash/version.txt|awk -F- '{print $1}')
 dir=/var/log/cflash/regr
 if [[ ! -e /var/log/cflash/regr ]]; then mkdir -p $dir; fi
 out=$dir/$out
@@ -63,8 +63,6 @@ out=$dir/$out
 #######################################################################################
 export FVT_DEV=$dev
 export FVT_DEV_PERSIST=$dev
-unset parms
-if [[ $redhat ]]; then parms="--gtest_filter=-*rw_tst"; fi
 
 run_block_fvt $parms | tee -a $out
 [[ $? -ne 0 ]] && success=0

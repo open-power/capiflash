@@ -759,6 +759,7 @@ int test_ctx_reset()
     rc = allocate_buf(&rwbuf, buf_size);
     CHECK_RC(rc, "memory allocation failed");
     rc = do_large_io(p_ctx, &rwbuf, buf_size);
+    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
     deallocate_buf(&rwbuf);
     buf_size = 0x100000; //4k
     rc = allocate_buf(&rwbuf, buf_size);

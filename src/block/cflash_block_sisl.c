@@ -198,7 +198,7 @@ uint64_t  cblk_get_sisl_cmd_room(cflsh_chunk_t *chunk, int path_index)
 	 * Read the command room from the adaptere
 	 */
 
-	chunk->path[path_index]->afu->cmd_room = CBLK_IN_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_CMD_ROOM_OFFSET,FALSE);
+	chunk->path[path_index]->afu->cmd_room = CBLK_IN_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_CMD_ROOM_OFFSET,TRUE);
 
 	CBLK_TRACE_LOG_FILE(9,"command room mmio is 0x%llx for path_index %d",
 			    chunk->path[path_index]->afu->cmd_room,path_index);
@@ -453,6 +453,7 @@ int  cblk_sisl_adap_setup(cflsh_chunk_t *chunk, int path_index)
 #ifdef DEBUG
     uint64_t intrpt_status = 0;
 #endif
+    uint64_t ctx_control;
 
     if (CBLK_SETUP_BAD_MMIO_SIGNAL(chunk,path_index,MAX(CAPI_RRQ0_START_EA_OFFSET,CAPI_CTX_CTRL_OFFSET))) {
 	
@@ -518,7 +519,17 @@ int  cblk_sisl_adap_setup(cflsh_chunk_t *chunk, int path_index)
     CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_CTX_CTRL_OFFSET,(uint64_t)SISL_MSI_SYNC_ERROR);
     CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_INTR_MASK_OFFSET,(uint64_t)SISL_ISTATUS_MASK);
 
+    ctx_control = CBLK_IN_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_CTX_CTRL_OFFSET,TRUE);
 
+    CBLK_TRACE_LOG_FILE(9,"ctx_ctrl register = 0x%llx",
+			ctx_control);
+
+    if (ctx_control & CAPI_CTX_CTRL_UNMAP_FLAG) {
+	
+	CBLK_TRACE_LOG_FILE(9,"Unmap capability supported");
+	chunk->path[path_index]->afu->flags |= CFLSH_AFU_UNNAP_SPT;
+
+    }
 
 #ifdef DEBUG
     intrpt_status = cblk_get_sisl_intrpt_status(chunk,path_index);
@@ -931,19 +942,49 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	     * Wait a limited amount of time for the room on
 	     * the AFU. Since we are waiting for the AFU
 	     * to fetch some more commands, it is thought
-	     * we can wait a little while here. It should also
-	     * be noted we are not unlocking anything in this wait.
-	     * Since the AFU is not waiting for us to process a command, 
-	     * this (not unlocking) may be alright. However it does mean
-	     * other threads are being held off. If they are also trying
-	     * to issue requests, then they would see this same issue. If
-	     * these other threads are trying to process completions, then
-	     * those will be delayed (perhaps unnecessarily).
+	     * we can wait a little while here. 
 	     */
 
 	    CBLK_TRACE_LOG_FILE(5,"waiting for command room path_index = %d", 
 				path_index);
-	    usleep(CFLASH_BLOCK_DELAY_ROOM);
+
+
+
+	    if (chunk->flags & CFLSH_CHNK_HALTED) {
+
+		/*
+		 * If the chunk is halted, then
+		 * wait until that situations is cleared.
+		 */
+		
+		CBLK_TRACE_LOG_FILE(5,"waiting2 for command room path_index = %d", 
+				    path_index);
+
+		pthread_rc = pthread_cond_wait(&(chunk->path[path_index]->resume_event),&(chunk->lock.plock));
+	
+		if (pthread_rc) {
+	    
+
+
+
+		    CBLK_TRACE_LOG_FILE(5,"pthread_cond_wait failed for resume_event rc = %d errno = %d",
+					pthread_rc,errno);
+
+		    /*
+		     * So delay instead
+		     */
+
+		    CFLASH_BLOCK_UNLOCK(chunk->lock);
+		    usleep(CFLASH_BLOCK_DELAY_ROOM);
+		    CFLASH_BLOCK_LOCK(chunk->lock);
+		}
+
+	    } else {
+		CFLASH_BLOCK_UNLOCK(chunk->lock);
+		usleep(CFLASH_BLOCK_DELAY_ROOM);
+		CFLASH_BLOCK_LOCK(chunk->lock);
+	    }
+        
 
 	    if (chunk->flags & CFLSH_CHUNK_FAIL_IO) {
 
@@ -1061,6 +1102,8 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	     * this request.
 	     */
 
+	    CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu); 
+
 	    if (CBLK_GET_CMD_ROOM(chunk,path_index) == 0) {
 #ifdef _FOR_DEBUG
 		CBLK_CLEANUP_BAD_MMIO_SIGNAL(chunk,path_index);
@@ -1070,6 +1113,8 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 		cblk_notify_mc_err(chunk,path_index,0x607,wait_room_retry,CFLSH_BLK_NOTIFY_ADAP_ERR,NULL);
 		return -1;
 	    }
+
+	    CFLASH_BLOCK_AFU_SHARE_LOCK(chunk->path[path_index]->afu);
 	}
     }
 
@@ -1137,6 +1182,14 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 
     chunk->path[path_index]->afu->num_issued_cmds++;
 
+
+    /*
+     * Update initial time of command, in case the
+     * we had to wait above. Thus that wait could
+     * cause a premature time-out detection error.
+     */
+
+    cmd->cmdi->cmd_time = time(NULL);
 
     if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
 	
@@ -2264,7 +2317,7 @@ int cblk_reset_context_sisl(cflsh_chunk_t *chunk, int path_index)
     
     CBLK_OUT_MMIO_REG(reg_offset, (uint64_t)1);
 
-    while ((CBLK_IN_MMIO_REG(reg_offset,FALSE)) &&
+    while ((CBLK_IN_MMIO_REG(reg_offset,TRUE) & CFLASH_BLOCK_RST_CTX_COMPLETE_MASK) &&
 	    (wait_reset_context_retry < CFLASH_BLOCK_MAX_WAIT_RST_CTX_RETRIES)) {
 
 	/*
@@ -2278,13 +2331,13 @@ int cblk_reset_context_sisl(cflsh_chunk_t *chunk, int path_index)
 
 	CBLK_TRACE_LOG_FILE(5,"waiting for context reset to complete");
 
-	if ((CBLK_IN_MMIO_REG(reg_offset,FALSE)) == 0xffffffffffffffffLL) {
+	if ((CBLK_IN_MMIO_REG(reg_offset,TRUE)) == 0xffffffffffffffffLL) {
 
-	    CBLK_TRACE_LOG_FILE(5,"POssible UE detected");
+	    CBLK_TRACE_LOG_FILE(5,"Possible UE detected on context reset");
 
 	    /*
-	     * Treat this a good completion of context reset, since the
-	     * adapter is about to be reset.
+	     * Fail this here and let the caller check for EEH and possibly
+	     * recover.
 	     */
 
 	    return -1;

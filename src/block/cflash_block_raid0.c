@@ -97,7 +97,7 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
             devNStr[1] = pdevs[7];
             devN_in    = atoi(devNStr);
         }
-        fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl -S", "r");
+        fp = popen("/usr/bin/cflash_devices.pl -S", "r");
         if (!fp)
         {
             CBLK_TRACE_LOG_FILE(1, "cflash_devices.pl failed");
@@ -363,60 +363,50 @@ done:
 ********************************************************************************
 ** \brief
 *******************************************************************************/
+int cblk_r0_aunmap(chunk_r0_id_t      id,
+                   void              *buf,
+                   cflash_offset_t    lba,
+                   size_t             nblocks,
+                   cflsh_cg_tag_t    *tag,
+                   cblk_arw_status_t *status,
+                   int                flags)
+{
+    cflash_block_grp_fd_t *pgrp = NULL;
+    chunk_id_t             cid  = 0;
+    uint32_t               dev  = 0;
+    cflash_offset_t        clba = 0;
+    int                    ctag = 0;
+    int                    rc   = 0;
+
+    if (nblocks>1) {errno=EINVAL; rc=-1; goto done;}
+
+    pgrp = CBLK_GET_CG_HASH(id);
+    if (!pgrp)        {errno=EINVAL; rc=-1; goto done;}
+    if (!buf || !tag) {errno=EINVAL; rc=-1; goto done;}
+
+    flags  &= ~CBLK_GROUP_RAID0;
+    dev     = (uint32_t)lba % pgrp->num_chunks;
+    cid     = pgrp->chunk_list[dev].id;
+    clba    = lba/pgrp->num_chunks;
+    tag->id = cid;
+
+    rc = cblk_aunmap(cid, buf, clba, nblocks, &ctag, status, flags);
+    if (rc >= 0) {tag->tag = ctag;}
+    else         {tag->tag = -1;}
+
+done:
+    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
+    return rc;
+}
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
 int cblk_r0_aresult(chunk_r0_id_t   id,
                     cflsh_cg_tag_t *ptag,
                     uint64_t       *status,
                     int             flags)
 {
-    cflash_block_grp_fd_t *pgrp = NULL;
-    int                    rc   = 0;
-    int                    i    = 0;
-
-    flags &= ~CBLK_GROUP_RAID0;
-
-    pgrp = CBLK_GET_CG_HASH(id);
-    if (!pgrp) {errno=EINVAL; rc=-1; goto done;}
-    if (!ptag) {errno=EINVAL; rc=-1; goto done;}
-
-    if (flags & CBLK_ARESULT_NEXT_TAG)
-    {
-        int tflags = flags & ~CBLK_ARESULT_BLOCKING;
-
-        /* if not blocking, check each device for a completed op */
-        for (i=0; i<pgrp->num_chunks; i++)
-        {
-            ptag->id = cblk_cg_get_next_chunk_id(id);
-            rc = cblk_aresult(ptag->id, &ptag->tag,status,tflags);
-            if (rc>0)  {goto done;}
-            if (rc<0 && errno==ENOENT) {rc=0;}
-        }
-
-        /* if blocking, then loop until timeout or completed op */
-        uint64_t start = getticks();
-        while (flags & CBLK_ARESULT_BLOCKING)
-        {
-            if (SDELTA(start,cflsh_blk.nspt) >= CFLASH_R0_CMD_TO)
-            {
-                CBLK_TRACE_LOG_FILE(1,"TIMEOUT: id:%d", id);
-                rc=-1; errno=ETIME; goto done;
-            }
-
-            /* wait for a cmd to complete */
-            for (i=0; i<pgrp->num_chunks; i++)
-            {
-                ptag->id = cblk_cg_get_next_chunk_id(id);
-                rc = cblk_aresult(ptag->id, &ptag->tag, status, tflags);
-                if (rc>0)  {goto done;}
-                if (rc<0 && errno==ENOENT) {rc=0;}
-            }
-        }
-    }
-    else
-    {
-        rc = cblk_aresult(ptag->id, &ptag->tag, status, flags);
-    }
-
-done:
-    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
-    return rc;
+    return 0;
 }

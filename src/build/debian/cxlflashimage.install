@@ -1,1 +1,2 @@
-./pkg/afu_root/opt/* /opt
+./pkg/afu_root/usr/* /usr
+./pkg/afu_root/lib/* /lib

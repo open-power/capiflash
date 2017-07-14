@@ -53,7 +53,7 @@
   correct socket name to connect to based on the disk. 
 ***************************************************************************/
 
-#define CFLSH_USFS_MASTER_SOCKET_DIR "/opt/ibm/capikv/data"
+#define CFLSH_USFS_MASTER_SOCKET_DIR "/etc/cxlflash/data"
 
 #define XFER_OP_READ      1      // Read from the Blk-MC Socket
 #define XFER_OP_WRITE     2      // Write to the Blk-MC Socket

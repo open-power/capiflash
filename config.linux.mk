@@ -57,11 +57,9 @@ prodall: prod
 	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 test
 
 prodpkgs: prod
-	${MAKE} docs
 	${MAKE} pkg_code
 
 allpkgs: prodall
-	${MAKE} docs
 	${MAKE} pkg_code
 	${MAKE} pkg_test
 
@@ -82,19 +80,8 @@ endif
 
 #setup package version
 VERSIONMAJOR=4
-VERSIONMINOR=2
+VERSIONMINOR=3
 GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
-
-ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
-  GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
-  GTESTINC=${GTESTDIR}/include
-else ifneq ($(wildcard /usr/src/googletest/googletest),)
-  GTESTDIR=/usr/src/googletest/googletest
-  GTESTINC=/usr/include
-else ifneq ($(wildcard /usr/src/gtest),)
-  GTESTDIR=/usr/src/gtest
-  GTESTINC=/usr/include
-endif
 
 #generate VPATH based on these dirs.
 VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img
@@ -107,29 +94,30 @@ VPATH += $(subst $(SPACE),:,$(VPATH_DIRS))
 UD_DIR = ${ROOTPATH}/obj/modules/userdetails
 UD_OBJS = ${UD_DIR}*.o ${UD_DIR}/*.so ${UD_DIR}/*.a
 
-PGMDIR  = ${ROOTPATH}/obj/programs
-TESTDIR = ${ROOTPATH}/obj/tests
-GENDIR  = ${ROOTPATH}/obj/genfiles
-IMGDIR  = ${ROOTPATH}/img
-PKGDIR  = ${ROOTPATH}/pkg
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
+
+PGMDIR        = ${ROOTPATH}/obj/programs
+TESTDIR       = ${ROOTPATH}/obj/tests
+IMGDIR        = ${ROOTPATH}/img
+PKGDIR        = ${ROOTPATH}/pkg
+GTESTS_DIR    = $(addprefix $(TESTDIR)/, $(GTESTS))
+GTESTS_NM_DIR = $(addprefix $(TESTDIR)/, $(GTESTS_NO_MAIN))
+BIN_TESTS     = $(addprefix ${TESTDIR}/, ${BTESTS})
+PROGRAMS      = $(addprefix ${PGMDIR}/, ${PGMS})
+BITS          =
 
 ifdef MODULE
-OBJDIR  = ${ROOTPATH}/obj/modules/${MODULE}
-BEAMDIR = ${ROOTPATH}/obj/beam/${MODULE}
-
+OBJDIR            = ${ROOTPATH}/obj/modules/${MODULE}
+BEAMDIR           = ${ROOTPATH}/obj/beam/${MODULE}
 EXTRACOMMONFLAGS += -fPIC
 ifdef STRICT
-        EXTRACOMMONFLAGS += -Weffc++
+EXTRACOMMONFLAGS += -Weffc++
 endif
-CUSTOMFLAGS += -D__SURELOCK_MODULE=${MODULE}
-#For AIX use the following istead.
-#CUSTOMFLAGS += -D_AIX -D__SURELOCK_MODULE=${MODULE}
-LIBS += $(addsuffix .so, $(addprefix lib, ${MODULE}))
-EXTRAINCDIR += ${GENDIR} ${CURDIR}
+MODFLAGS          = -D__SURELOCK_MODULE=${MODULE}
+LIBS             += $(addsuffix .so, $(addprefix lib, ${MODULE}))
 else
-OBJDIR  = ${ROOTPATH}/obj/surelock
-BEAMDIR = ${ROOTPATH}/obj/beam/surelock
-EXTRAINCDIR += ${GENDIR} ${CURDIR}
+OBJDIR            = ${ROOTPATH}/obj/surelock
+BEAMDIR           = ${ROOTPATH}/obj/beam/surelock
 endif
 
 __internal__comma= ,
@@ -146,31 +134,27 @@ endif
 
 
 ifeq ($(USE_ADVANCED_TOOLCHAIN),yes)
-	CC_RAW = gcc 
-	CXX_RAW = g++ 
-	CC = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/${CC_RAW}
-	CXX = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/${CXX_RAW}
-	LD = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/gcc
+	CC      = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/gcc
+	CXX     = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/g++
+	LD      = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/gcc
 	OBJDUMP = ${JAIL} ${ADV_TOOLCHAIN_PATH}/bin/objdump
 	#this line is very specifically-written to explicitly-place the ATx.x stuff at the FRONT of the VPATH dirs.
 	#this is a REQUIREMENT of the advanced toolchain for linux.
 	VPATH_DIRS:= ${ADV_TOOLCHAIN_PATH}/lib64 ${VPATH_DIRS}
 	#see the ld flags below (search for rpath). This puts the atx.x stuff on the front
 	#which is REQUIRED by the toolchain.
-	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS} ${ARCHFLAGS} ${INCFLAGS}
+	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS} ${ARCHFLAGS} ${MODFLAGS}
     LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,${ADV_TOOLCHAIN_PATH}/lib64
 else
-	CC_RAW = gcc 
-	CXX_RAW = g++ 
-	CC = ${CC_RAW}
-	CXX = ${CXX_RAW}
-	LD = gcc
+	CC  = gcc
+	CXX = g++
+	LD  = gcc
 	OBJDUMP = objdump
-	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} ${INCFLAGS}
+	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} ${MODFLAGS}
     LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,
 endif
 
-OPT_LDFLAGS="${LDFLAGS}:/opt/ibm/capikv/lib"
+OPT_LDFLAGS="${LDFLAGS}:/usr/lib"
 
 ifdef DBG
 	CFLAGS += -g
@@ -185,28 +169,31 @@ ifndef NO_O3
 COMMONFLAGS += -O3
 endif
 
-CUSTOMFLAGS += -DGITREVISION='"${GITREVISION}"'
+CFLAGS   += ${LCFLAGS}
+CFLAGS   += -DGITREVISION='"${GITREVISION}"'
+CFLAGS   += -Wno-unused-result
+LIBPATHS  = -L${ROOTPATH}/img
+LINKLIBS += -lpthread -ludev
+MODULE_LINKLIBS += -lpthread -ludev
 
 #if ALLOW_WARNINGS is NOT defined, we assume we are compiling production code
 #as such, we adhere to strict compile flags. If this is defined then we warn
 #but allow the compile to continue.
 ifndef ALLOW_WARNINGS
-	CFLAGS += -Werror
+	CFLAGS   += -Werror
 	CXXFLAGS += -Werror
 endif
 
 ifdef COVERAGE
 COMMONFLAGS += -fprofile-arcs -ftest-coverage
-LDFLAGS += -lgcov
-LINKLIBS += -lgcov
+LDFLAGS     += -lgcov
+LINKLIBS    += -lgcov
 endif
 
 ASMFLAGS = ${COMMONFLAGS}
 CXXFLAGS += ${CFLAGS} -fno-rtti -fno-exceptions -Wall
-#RPATH order is important here. the prepend var lets us throw the ATxx stuff in first if needed.
 
-
-INCDIR = ${ROOTPATH}/src/include/
+INCDIR = ${ROOTPATH}/src/include .
 _INCDIRS = ${INCDIR} ${EXTRAINCDIR}
 INCFLAGS = $(addprefix -I, ${_INCDIRS} )
 ASMINCFLAGS = $(addprefix $(lastword -Wa,-I), ${_INCDIRS})
@@ -224,18 +211,15 @@ endif
 
 ${OBJDIR}/%.o: %.C
 	@mkdir -p ${OBJDIR}
-	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote .
-
-${OBJDIR}/%.list : ${OBJDIR}/%.o 
-	${OBJDUMP} -dCS $@ > $(basename $@).list	
+	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${OBJDIR}/%.o: %.c
 	@mkdir -p ${OBJDIR}
-	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote .
+	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${OBJDIR}/%.o : %.S
 	@mkdir -p ${OBJDIR}
-	${CC} -c ${ASMFLAGS} $< -o $@ ${ASMINCFLAGS} ${INCFLAGS} -iquote .
+	${CC} -c ${ASMFLAGS} $< -o $@ ${ASMINCFLAGS} ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${OBJDIR}/%.dep : %.C
 	@mkdir -p ${OBJDIR};
@@ -265,18 +249,19 @@ ${IMGDIR}/%.so : ${OBJECTS}
 
 ${PGMDIR}/%.o : %.c
 	@mkdir -p ${PGMDIR}
-	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote .
-	${OBJDUMP} -dCS $@ > $(basename $@).list
+	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+
 ${PGMDIR}/%.o : %.C
 	@mkdir -p ${PGMDIR}
-	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote .
-	${OBJDUMP} -dCS $@ > $(basename $@).list
+	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+
 ${PGMDIR}/%.dep : %.C
 	@mkdir -p ${PGMDIR};
 	@rm -f $@;
 	${CXX} -M ${CXXFLAGS} $< -o $@.$$$$ ${INCFLAGS} -iquote .; \
 	sed 's,\($*\)\.o[ :]*,${PGMDIR}/\1.o $@ : ,g' < $@.$$$$ > $@;
 	@rm -f $@.$$$$
+
 ${PGMDIR}/%.dep : %.c
 	@mkdir -p ${PGMDIR};
 	@rm -f $@;
@@ -286,18 +271,19 @@ ${PGMDIR}/%.dep : %.c
 
 ${TESTDIR}/%.o : %.c
 	@mkdir -p ${TESTDIR}
-	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote .
-	${OBJDUMP} -dCS $@ > $(basename $@).list
+	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+
 ${TESTDIR}/%.o : %.C
 	@mkdir -p ${TESTDIR}
-	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote .
-	${OBJDUMP} -dCS $@ > $(basename $@).list
+	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+
 ${TESTDIR}/%.dep : %.C
 	@mkdir -p ${TESTDIR};
 	@rm -f $@;
 	${CXX} -M ${CXXFLAGS} $< -o $@.$$$$ ${INCFLAGS} -iquote .; \
 	sed 's,\($*\)\.o[ :]*,${TESTDIR}/\1.o $@ : ,g' < $@.$$$$ > $@;
 	@rm -f $@.$$$$
+
 ${TESTDIR}/%.dep : %.c
 	@mkdir -p ${TESTDIR};
 	@rm -f $@;

@@ -40,7 +40,7 @@ OOMScoreAdjust=-700
 
 #run the daemon in the background at the lowest possible niceness priority
 Nice=19
-ExecStart=/opt/ibm/capikv/bin/cxlfd
+ExecStart=/usr/bin/cxlfd
 
 [Install]
 WantedBy=multi-user.target

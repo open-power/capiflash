@@ -24,8 +24,8 @@
 #
 # IBM_PROLOG_END_TAG
 
-CAPIKV=/opt/ibm/capikv
-source $CAPIKV/bin/cflashutils.sh
+BIN_DIR=/usr/bin
+source $BIN_DIR/cflashutils.sh
 
 KERNELMOD=cxlflash
 
@@ -65,7 +65,7 @@ enablemodule()
 doloopback()
 {
     echo "INFO: Performing cable checks for all present accelerators."
-    $CAPIKV/bin/provtool --loopback
+    $BIN_DIR/provtool --loopback
 }
 #show help if we haven't gotten a correct # of args
 if [ "$#" -ne 0 ]; then

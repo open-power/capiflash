@@ -33,7 +33,7 @@
 #include <gtest/gtest.h>
 #include <stdlib.h>
 
-#define SCRIPT_PATH "/opt/ibm/capikv/test/utils_scripts_tst.sh"
+#define SCRIPT_PATH "/usr/bin/utils_scripts_tst.sh"
 #define STDOUT_REDIRECTION "1>/dev/null "
 
 #define CHECK_TESTCASE_SKIP                                                    \
@@ -123,6 +123,82 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLVER_ERRSTR_TEST)
    CHECK_TESTCASE_SKIP;
 
    cmd.append(" -t CFLVER_ERRSTR_TEST "); /*test name in the script*/
+   cmd.append(STDOUT_REDIRECTION);
+
+   rc = system (cmd.c_str());
+   EXPECT_EQ(0,rc);
+}
+
+/**
+ ****************************************************************
+ * \brief
+ *  Run script: cflash_resett.pl expect rc == 0
+ ****************************************************************/
+TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_RC_TEST)
+{
+   int rc = 0;
+   std::string cmd= SCRIPT_PATH;
+
+   CHECK_TESTCASE_SKIP;
+
+   cmd.append(" -t CFLASH_RESET_RC_TEST ");
+   cmd.append(STDOUT_REDIRECTION);
+
+   rc = system (cmd.c_str());
+   EXPECT_EQ(0,rc);
+}
+
+/**
+ ****************************************************************
+ * \brief
+ *   Run script: cflash_reset.pl expect no ERROR string
+ ****************************************************************/
+TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_ERRSTR_TEST)
+{
+   int rc = 0;
+   std::string cmd= SCRIPT_PATH;
+
+   CHECK_TESTCASE_SKIP;
+
+   cmd.append(" -t CFLASH_RESET_ERRSTR_TEST ");
+   cmd.append(STDOUT_REDIRECTION);
+
+   rc = system (cmd.c_str());
+   EXPECT_EQ(0,rc);
+}
+
+/**
+ ****************************************************************
+ * \brief
+ *  Run script: cflash_perst.pl expect rc == 0
+ ****************************************************************/
+TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_RC_TEST)
+{
+   int rc = 0;
+   std::string cmd= SCRIPT_PATH;
+
+   CHECK_TESTCASE_SKIP;
+
+   cmd.append(" -t CFLASH_PERST_RC_TEST ");
+   cmd.append(STDOUT_REDIRECTION);
+
+   rc = system (cmd.c_str());
+   EXPECT_EQ(0,rc);
+}
+
+/**
+ ****************************************************************
+ * \brief
+ *   Run script: cflash_perst.pl expect no ERROR string
+ ****************************************************************/
+TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_ERRSTR_TEST)
+{
+   int rc = 0;
+   std::string cmd= SCRIPT_PATH;
+
+   CHECK_TESTCASE_SKIP;
+
+   cmd.append(" -t CFLASH_PERST_ERRSTR_TEST ");
    cmd.append(STDOUT_REDIRECTION);
 
    rc = system (cmd.c_str());
@@ -578,82 +654,6 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_STICK_ERRSTR_TEST)
    CHECK_TESTCASE_SKIP;
 
    cmd.append(" -t CFLASH_STILST_ERRSTR_TEST ");
-   cmd.append(STDOUT_REDIRECTION);
-
-   rc = system (cmd.c_str());
-   EXPECT_EQ(0,rc);
-}
-
-/**
- ****************************************************************
- * \brief
- *  Run script: cflash_resett.pl expect rc == 0
- ****************************************************************/
-TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_RC_TEST)
-{
-   int rc = 0;
-   std::string cmd= SCRIPT_PATH;
-
-   CHECK_TESTCASE_SKIP;
-
-   cmd.append(" -t CFLASH_RESET_RC_TEST ");
-   cmd.append(STDOUT_REDIRECTION);
-
-   rc = system (cmd.c_str());
-   EXPECT_EQ(0,rc);
-}
-
-/**
- ****************************************************************
- * \brief
- *   Run script: cflash_reset.pl expect no ERROR string
- ****************************************************************/
-TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_ERRSTR_TEST)
-{
-   int rc = 0;
-   std::string cmd= SCRIPT_PATH;
-
-   CHECK_TESTCASE_SKIP;
-
-   cmd.append(" -t CFLASH_RESET_ERRSTR_TEST ");
-   cmd.append(STDOUT_REDIRECTION);
-
-   rc = system (cmd.c_str());
-   EXPECT_EQ(0,rc);
-}
-
-/**
- ****************************************************************
- * \brief
- *  Run script: cflash_perst.pl expect rc == 0
- ****************************************************************/
-TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_RC_TEST)
-{
-   int rc = 0;
-   std::string cmd= SCRIPT_PATH;
-
-   CHECK_TESTCASE_SKIP;
-
-   cmd.append(" -t CFLASH_PERST_RC_TEST ");
-   cmd.append(STDOUT_REDIRECTION);
-
-   rc = system (cmd.c_str());
-   EXPECT_EQ(0,rc);
-}
-
-/**
- ****************************************************************
- * \brief
- *   Run script: cflash_perst.pl expect no ERROR string
- ****************************************************************/
-TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_ERRSTR_TEST)
-{
-   int rc = 0;
-   std::string cmd= SCRIPT_PATH;
-
-   CHECK_TESTCASE_SKIP;
-
-   cmd.append(" -t CFLASH_PERST_ERRSTR_TEST ");
    cmd.append(STDOUT_REDIRECTION);
 
    rc = system (cmd.c_str());

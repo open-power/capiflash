@@ -25,43 +25,13 @@
 
 UNAME=$(shell uname)
 
-ROOTPATH = ../../..
-USER_DIR = .
-SUBDIRS  =
-BITS =
-TESTDIR  = ${ROOTPATH}/obj/tests
-
-#test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../../..
+SUBDIRS  =
+BTESTS   = blockio blocklistio blockplistio blocksio blockr0io blockr0sio asyncstress
 LINKLIBS = -lcflsh_block -lm
-
-BTESTS=blockio blocklistio blockplistio blocksio blockr0io blockr0sio asyncstress
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
-
-# AIX only
-ifeq ($(UNAME),AIX)
-LINKLIBS +=-lpthreads
-BITS=64
-
-BTESTS64    = $(addsuffix 64, ${BTESTS})
-BIN_TESTS64 = $(addprefix ${TESTDIR}/, ${BTESTS64})
-
-#Linux only
-else
-LINKLIBS+=-lpthread -ludev
-endif
-
-VPATH += \
- ${ROOTPATH}/src/common
-
-CFLAGS += \
-   -g -D__FVT__ -Wno-unused-result \
-   -I$(ROOTPATH)/src/block \
-   -I$(ROOTPATH)/src/include
-
-CXXFLAGS+=$(CFLAGS)
+LCFLAGS  = -D__FVT__ -I$(ROOTPATH)/src/block
+VPATH   += ${ROOTPATH}/src/common
 
 include ${ROOTPATH}/config.mk

@@ -795,6 +795,10 @@ int mc_test_engine(mc_test_t test_name)
                 rc = max_ctx_cross_limit();
                 break;
 
+            case TEST_VLUN_MAX_TRANSFER:
+                rc = test_vlun_max_transfer();
+                break;
+
             default:
                 rc = -1;
                 break;

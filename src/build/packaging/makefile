@@ -53,14 +53,14 @@ cxlflash:
 		--depends 'systemd-devel' \
 		-C ./install_root \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall \
-		--after-remove ${SURELOCKROOT}/src/build/install/resources/postremove \
+		--before-remove ${SURELOCKROOT}/src/build/install/resources/preremove \
 		--conflicts ibmcapikv --replaces ibmcapikv .; \
 	fpm -f -s dir -t deb -n $@ -v ${VERSION} \
 		--depends 'advance-toolchain-at10.0-runtime' \
 		--depends 'libudev1' \
 		-C ./install_root \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall \
-		--after-remove ${SURELOCKROOT}/src/build/install/resources/postremove \
+		--before-remove ${SURELOCKROOT}/src/build/install/resources/preremove \
 		--conflicts ibmcapikv --replaces ibmcapikv .; \
 	tar -cvzf $@-${GITREVISION}.tar.gz -C ./install_root .
 

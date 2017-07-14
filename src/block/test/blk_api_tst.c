@@ -35,6 +35,28 @@
 #define CHUNK_SIZE 4096
 #define NBUFS      1000
 
+#ifdef _AIX
+#define GEN_VAL_MOD for (_i=7; _i>=8-_mod; _i--) {*(_t++)=_s[_i];}
+#else
+#define GEN_VAL_MOD for (_i=0; _i<_mod; _i++) {*(_t++)=_s[_i];}
+#endif
+
+/* generate pattern based upon _num into _val */
+/* _num can be up to 64-bit value             */
+#define GEN_VAL(_val,_num,_len)                                                \
+  do                                                                           \
+  {                                                                            \
+      volatile int64_t   _i   = 0;                                             \
+      volatile uint64_t  _d   = (uint64_t)(_num);                              \
+      volatile uint8_t  *_s   = (uint8_t*)&_d;                                 \
+      volatile uint8_t  *_t   = (uint8_t*)(_val);                              \
+      volatile int64_t   _div = (_len)/8;                                      \
+      volatile int64_t   _mod = (_len)%8;                                      \
+      volatile uint64_t *_p   = (uint64_t*)(_t+_mod);                          \
+      GEN_VAL_MOD                                                              \
+      for (_i=0; _i<_div; _i++) {*(_p++)=_d;}                                  \
+  } while (0)
+
 char test_filename[256];
 pthread_t blk_thread[MAX_NUM_THREADS];
 
@@ -133,7 +155,7 @@ void blk_fvt_RAID0_setup(void)
 #ifdef _AIX
         FILE *fp = popen("cflash_devices.pl -S 2>/dev/null", "r");
 #else
-        FILE *fp = popen("/opt/ibm/capikv/afu/cflash_devices.pl -S 2>/dev/null",
+        FILE *fp = popen("/usr/bin/cflash_devices.pl -S 2>/dev/null",
                          "r");
 #endif
         if (fp) {fgets(buf, 1024, fp);}
@@ -144,7 +166,8 @@ void blk_fvt_RAID0_setup(void)
             strcpy(dev_paths[0],"RAID0");
         }
     }
-    DEBUG_1("RAID0_setup: dev_paths[0] = %s \n", dev_paths[0]);
+    DEBUG_2("RAID0_setup: dev_paths[0]=%s num_devs:%d\n",
+            dev_paths[0], num_devs);
     return;
 }
 
@@ -316,15 +339,15 @@ void blk_open_tst (int *id, int max_reqs, int *er_no, int opn_cnt, int flags, in
         for (i = 0; i!= opn_cnt; i++)
         {
             DEBUG_1("Opening %s\n",dev_paths[0]);
-            if (flags & CBLK_GROUP_ID)
-            {
-                DEBUG_1("Opening CG ext:%d\n", (uint32_t)ext);
-                j = cblk_cg_open(dev_paths[0], max_reqs, mode, ext, 0, flags);
-            }
-            else if (flags & CBLK_GROUP_RAID0)
+            if (flags & CBLK_GROUP_RAID0)
             {
                 DEBUG_1("Opening RAID0 ext:%d\n", (uint32_t)ext);
                 j = cblk_cg_open(dev_paths[0], max_reqs, mode, 1, ext, flags);
+            }
+            else if (flags & CBLK_GROUP_MASK)
+            {
+                DEBUG_1("Opening CG ext:%d\n", (uint32_t)ext);
+                j = cblk_cg_open(dev_paths[0], max_reqs, mode, ext, 0, flags);
             }
             else
             {
@@ -370,6 +393,7 @@ void blk_open_tst_cleanup (int flags, int *p_rc, int *p_err)
 {
     int             i  = 0;
     int             rc = 0;
+    int             opns = num_opens;
 
     *p_rc  = 0;
     *p_err = 0;
@@ -377,7 +401,7 @@ void blk_open_tst_cleanup (int flags, int *p_rc, int *p_err)
 
     DEBUG_2("blk_open_tst_cleanup: closing num_opens:%d flags:%x\n",
             num_opens, flags);
-    for (i=0; i<num_opens; i++)
+    for (i=0; i<opns; i++)
     {
         if (chunks[i] != NULL_CHUNK_ID)
         {
@@ -386,6 +410,7 @@ void blk_open_tst_cleanup (int flags, int *p_rc, int *p_err)
             {
                 DEBUG_1("blk_open_tst_cleanup: closed id:%d\n", chunks[i]);
                 chunks[i] = NULL_CHUNK_ID;
+                --num_opens;
             }
             else
             {
@@ -557,7 +582,7 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks,
 
             if (io_flags & CBLK_ARW_USER_STATUS_FLAG)
             {
-                if (io_flags & CBLK_GROUP_RAID0)
+                if (io_flags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_aread(id, blk_fvt_data_buf+align, lba_no,
                                        nblocks, &cgtag, &ard_status, io_flags);
@@ -570,7 +595,7 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks,
             }
             else
             {
-                if (io_flags & CBLK_GROUP_RAID0)
+                if (io_flags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_aread(id, blk_fvt_data_buf+align, lba_no,
                                        nblocks, &cgtag, NULL, io_flags);
@@ -592,7 +617,7 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks,
                 DEBUG_2("Async read returned rc = %d, tag =%d\n", rc, tag);
                 while (TRUE) {
 
-                    if (io_flags & CBLK_GROUP_RAID0)
+                    if (io_flags & CBLK_GROUP_MASK)
                     {
                         rc = cblk_cg_aresult(id,&cgtag, &ar_status,io_flags);
                     }
@@ -638,7 +663,7 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks,
         case FV_AWRITE:
             if (io_flags & CBLK_ARW_USER_STATUS_FLAG)
             {
-                if (io_flags & CBLK_GROUP_RAID0)
+                if (io_flags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_awrite(id, blk_fvt_comp_data_buf+align, lba_no,
                                        nblocks, &cgtag, &awrt_status, io_flags);
@@ -651,7 +676,7 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks,
             }
             else
             {
-                if (io_flags & CBLK_GROUP_RAID0)
+                if (io_flags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_awrite(id, blk_fvt_comp_data_buf+align, lba_no,
                                         nblocks, &cgtag, NULL, io_flags);
@@ -674,7 +699,7 @@ void blk_fvt_io (chunk_id_t id, int cmd, uint64_t lba_no, size_t nblocks,
             {
                 while (TRUE)
                 {
-                    if (io_flags & CBLK_GROUP_RAID0)
+                    if (io_flags & CBLK_GROUP_MASK)
                     {
                         rc = cblk_cg_aresult(id,&cgtag, &ar_status,io_flags);
                     }
@@ -933,21 +958,20 @@ void* blk_io_loop(void *data)
     uint64_t            blk_number      = 0;
     uint64_t            ar_status       = 0;
     int                 cmd_type        = 0;
-    int                 fd              = 0;
-    int                 arflag          = 0;
     int                 x               = 0;
     int                 loop            = 0;
     int                 lba             = 0;
     int                 max_lba         = 0;
-    uint8_t             rand            = 0;
+    char               *env_num_loop    = getenv("FVT_NUM_LOOPS");
 
-    fd = open ("/dev/urandom", O_RDONLY);
-    read (fd, &rand, 1);
-    close(fd);
+    if (env_num_loop && atoi(env_num_loop)>0)
+    {
+        num_loops = atoi(env_num_loop) % CHUNK_SIZE;
+    }
 
     /* Each thread is using a different block number range */
     blk_number = blk_data->tid * CHUNK_SIZE;
-    max_lba    = blk_number    + CHUNK_SIZE;
+    max_lba    = blk_number    + CHUNK_SIZE-1;
 
     if (posix_memalign((void *)&data_buf,4096,BLK_FVT_BUFSIZE))
     {
@@ -966,7 +990,7 @@ void* blk_io_loop(void *data)
 
     errno = 0;
 
-    if (blk_data->tid % 2 && !(blk_data->flags & SYNC_IO_ONLY))
+    if (blk_data->tid % 2 && !(blk_data->rwflags & TST_SYNC_IO_ONLY))
     {
         cmd_type=FV_RW_AWAR;
     }
@@ -982,22 +1006,42 @@ void* blk_io_loop(void *data)
 
         while (loop < num_loops)
         {
-            memset(comp_data_buf, ++rand, BLK_FVT_BUFSIZE);
+            GEN_VAL(comp_data_buf, lba, BLK_FVT_BUFSIZE);
 
             if (cmd_type == FV_RW_COMP)
             {
-                rc = cblk_write(blk_data->chunk_id[x],comp_data_buf,
-                                lba,1,blk_data->flags);
-                if (rc != 1)
+                if (blk_data->rwflags & CBLK_GROUP_MASK)
+                {
+                    rc = cblk_cg_write(blk_data->chunk_id[x], comp_data_buf,
+                                        lba, 1, blk_data->rwflags);
+                    DEBUG_4("tid:%d cg_write id:%d lba:%d rc:%d\n",
+                            blk_data->tid, blk_data->chunk_id[x], lba, rc);
+                }
+                else
+                {
+                    rc = cblk_write(blk_data->chunk_id[x],comp_data_buf,
+                                    lba,1,blk_data->rwflags);
+                }
+                if (rc!=1)
                 {
                     DEBUG_3("write failed tid:%d rc:%d errno:%d\n",
                             blk_data->tid, rc, errno);
                     goto exit;
                 }
 
-                rc = cblk_read(blk_data->chunk_id[x],data_buf,
-                               lba,1,blk_data->flags);
-                if (rc != 1)
+                if (blk_data->rwflags & CBLK_GROUP_MASK)
+                {
+                    rc = cblk_cg_read(blk_data->chunk_id[x], data_buf,
+                                        lba, 1, blk_data->rwflags);
+                    DEBUG_4("tid:%d cg_read id:%d lba:%d rc:%d\n",
+                            blk_data->tid, blk_data->chunk_id[x], lba, rc);
+                }
+                else
+                {
+                    rc = cblk_read(blk_data->chunk_id[x],data_buf,
+                               lba,1,blk_data->rwflags);
+                }
+                if (rc!=1)
                 {
                     DEBUG_3("read failed tid:%d rc:%d errno:%d\n",
                             blk_data->tid, rc, errno);
@@ -1006,9 +1050,7 @@ void* blk_io_loop(void *data)
 
                 if ((rc=memcmp(data_buf,comp_data_buf,BLK_FVT_BUFSIZE)) != 0)
                 {
-                    if(blk_verbosity == 9)
-                    {
-                        fprintf(stderr,"Data compare failure\n");
+                    DEBUG_2("tid:%d memcmp failed rc:%d\n", blk_data->tid,rc);
                         /*
                            fprintf(stderr,"Written data:\n");
                            dumppage(data_buf,BLK_FVT_BUFSIZE);
@@ -1017,9 +1059,8 @@ void* blk_io_loop(void *data)
                            dumppage(comp_data_buf,BLK_FVT_BUFSIZE);
                            fprintf(stderr,"******************************\n\n");
                          */
-                    }
                     rc = cblk_read(blk_data->chunk_id[x],data_buf,
-                                   lba,1,blk_data->flags);
+                                   lba,1,blk_data->rwflags);
                     if (rc == 1)
                     {
                         if (blk_verbosity == 9)
@@ -1030,22 +1071,40 @@ void* blk_io_loop(void *data)
                     }
                     goto exit;
                 }
+
+                if (lba%100==0 && blk_data->rwflags & TST_UNMAP)
+                {
+                    memset(data_buf,0,BLK_FVT_BUFSIZE);
+                    if (blk_data->rwflags & CBLK_GROUP_MASK)
+                    {
+                        rc = cblk_cg_unmap(blk_data->chunk_id[x],
+                                           data_buf,lba,1,blk_data->rwflags);
+                    }
+                    else
+                    {
+                        rc = cblk_unmap(blk_data->chunk_id[x],data_buf,lba,1,0);
+                    }
+                    if (rc != 1)
+                    {
+                        DEBUG_3("unmap failed tid:%d rc:%d errno:%d\n",
+                                blk_data->tid, rc, errno);
+                        goto exit;
+                    }
+                }
             }
             else if (cmd_type == FV_RW_AWAR)
             {
-                memset(comp_data_buf, ++rand, BLK_FVT_BUFSIZE);
-
-                arflag = blk_data->flags;
-
-                if (blk_data->flags & CBLK_GROUP_RAID0)
+                if (blk_data->rwflags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_awrite(blk_data->chunk_id[x], comp_data_buf,
-                                        lba, 1, &cgtag, NULL, blk_data->flags);
+                                        lba, 1, &cgtag, NULL,blk_data->rwflags);
+                    DEBUG_3("cg_awrite %d:%d rc:%d\n", cgtag.id, cgtag.tag, rc);
                 }
                 else
                 {
                     rc = cblk_awrite(blk_data->chunk_id[x], comp_data_buf,
-                                     lba, 1, &tag, NULL,0);
+                                     lba, 1, &tag, NULL,blk_data->rwflags);
+                    DEBUG_1("awrite rc:%d\n", rc);
                 }
                 if (rc < 0)
                 {
@@ -1055,15 +1114,17 @@ void* blk_io_loop(void *data)
                 }
                 while (TRUE)
                 {
-                    if (blk_data->flags & CBLK_GROUP_RAID0)
+                    if (blk_data->resflags & CBLK_GROUP_MASK)
                     {
+                        DEBUG_3("cg_aresult %d:%d rc:%d\n", cgtag.id, cgtag.tag, rc);
                         rc = cblk_cg_aresult(blk_data->chunk_id[x], &cgtag,
-                                             &ar_status, arflag);
+                                             &ar_status, blk_data->resflags);
                     }
                     else
                     {
                         rc = cblk_aresult(blk_data->chunk_id[x], &tag,
-                                          &ar_status, arflag);
+                                          &ar_status, blk_data->resflags);
+                        DEBUG_1("aresult rc:%d\n", rc);
                     }
                     if (rc > 0)
                     {
@@ -1085,15 +1146,16 @@ void* blk_io_loop(void *data)
                     }
                 }
 
-                if (blk_data->flags & CBLK_GROUP_RAID0)
+                if (blk_data->rwflags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_aread(blk_data->chunk_id[x],data_buf,lba,1,
-                                       &cgtag,NULL,arflag);
+                                       &cgtag,NULL,blk_data->rwflags);
+                    DEBUG_3("cg_aread %d:%d rc:%d\n", cgtag.id, cgtag.tag, rc);
                 }
                 else
                 {
                     rc = cblk_aread(blk_data->chunk_id[x],data_buf,lba,1,
-                                    &tag,NULL,arflag);
+                                    &tag,NULL,blk_data->rwflags);
                 }
                 if (rc < 0)
                 {
@@ -1103,15 +1165,16 @@ void* blk_io_loop(void *data)
 
                 while (TRUE)
                 {
-                    if (blk_data->flags & CBLK_GROUP_RAID0)
+                    if (blk_data->resflags & CBLK_GROUP_MASK)
                     {
+                        DEBUG_3("cg_aresult %d:%d rc:%d\n", cgtag.id, cgtag.tag, rc);
                         rc = cblk_cg_aresult(blk_data->chunk_id[x], &cgtag,
-                                             &ar_status, arflag);
+                                             &ar_status, blk_data->resflags);
                     }
                     else
                     {
                         rc = cblk_aresult(blk_data->chunk_id[x], &tag,
-                                          &ar_status, arflag);
+                                          &ar_status, blk_data->resflags);
                     }
                     if (rc > 0)
                     {
@@ -1148,7 +1211,7 @@ void* blk_io_loop(void *data)
                          */
                     }
                     rc = cblk_read(blk_data->chunk_id[x],data_buf,
-                                   lba,1,blk_data->flags);
+                                   lba,1,blk_data->rwflags);
                     if (rc == 1)
                     {
                         if (blk_verbosity==9)
@@ -1161,9 +1224,58 @@ void* blk_io_loop(void *data)
                     }
                     goto exit;
                 }
+                if (lba%100==0 && blk_data->rwflags & TST_UNMAP)
+                {
+                    memset(data_buf,0,BLK_FVT_BUFSIZE);
+                    if (blk_data->rwflags & CBLK_GROUP_MASK)
+                    {
+                        rc = cblk_cg_aunmap(blk_data->chunk_id[x],data_buf,lba,1,
+                                           &cgtag,NULL,blk_data->rwflags);
+                    }
+                    else
+                    {
+                        rc = cblk_aunmap(blk_data->chunk_id[x],data_buf,lba,1,
+                                        &tag,NULL,blk_data->rwflags);
+                    }
+                    if (rc)
+                    {
+                        DEBUG_3("unmap failed tid:%d rc:%d errno:%d\n",
+                                blk_data->tid, rc, errno);
+                        goto exit;
+                    }
+                    while (TRUE)
+                    {
+                        if (blk_data->rwflags & CBLK_GROUP_MASK)
+                        {
+                            rc = cblk_cg_aresult(blk_data->chunk_id[x], &cgtag,
+                                                 &ar_status,blk_data->resflags);
+                        }
+                        else
+                        {
+                            rc = cblk_aresult(blk_data->chunk_id[x], &tag,
+                                              &ar_status, blk_data->resflags);
+                        }
+                        if (rc > 0)
+                        {
+                            DEBUG_3("aunmap cmp tid:%3d lba:%6d rc=%d \n",
+                                    blk_data->tid, lba, rc);
+                            break;
+                        }
+                        else if (rc == 0)
+                        {
+                            DEBUG_3("aunmap wait tid:%3d lba:%6d rc=%d\n",
+                                    blk_data->tid, lba, rc);
+                            usleep(10);
+                        }
+                        else
+                        {
+                            DEBUG_4("aunmap err tid:%3d lba:%6d rc:%d errno:%d\n",
+                                    blk_data->tid, lba,rc,errno);
+                            goto exit;
+                        }
+                    }
+                }
             }
-            //DEBUG_4("tid:%d dev:%d loop:%d lba:%d\n",
-            //            blk_data->tid, x, loop, lba);
 
             if (++lba == max_lba)
             {
@@ -1173,8 +1285,12 @@ void* blk_io_loop(void *data)
             }
         } /* while num_loops */
     } /* for num_luns */
+    rc=0;
 
 exit:
+DEBUG_4("tid:%d dev:%d lba:%d rc:%d\n",
+            blk_data->tid, x, lba, rc);
+
     blk_data->ret     = rc;
     blk_data->errcode = errno;
 
@@ -1188,7 +1304,8 @@ exit:
 ********************************************************************************
 ** \brief
 *******************************************************************************/
-void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
+void blk_thread_tst(int *ret, int *err, int open_flags,
+                    int rwflags, int resflags, int eeh)
 {
     int                 rc          = 0;
     int                 ret_code    = 0;
@@ -1197,11 +1314,13 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
     blk_thread_data_t  *tdata       = NULL;
     chunk_id_t          id[MAX_LUNS]= {0};
 
+    DEBUG_3("num_loops:%d num_threads:%d num_devs:%d\n",
+            num_loops, num_threads, num_devs);
+
     if (env_filemode && atoi(env_filemode)==1)
     {
-        num_loops   = 1;
-        num_threads = 4;
-        num_devs    = 1;
+        ext=1;
+        if (num_threads > 10) {num_threads=10;}
     }
 
     if (num_devs==0)
@@ -1212,6 +1331,11 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
         return;
     }
 
+    DEBUG_3("blk_thread_tst open_flags:%x rwflags:%x eeh:%d\n",
+            open_flags, rwflags, eeh);
+    DEBUG_3("num_loops:%d num_threads:%d num_devs:%d\n",
+            num_loops, num_threads, num_devs);
+
     tdata = malloc(num_threads*sizeof(blk_thread_data_t));
     memset(tdata,0,num_threads*sizeof(blk_thread_data_t));
 
@@ -1220,9 +1344,16 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
         if (open_flags & CBLK_GROUP_RAID0)
         {
             id[x] = cblk_cg_open(dev_paths[0], 1024, O_RDWR, 1, ext,open_flags);
+            DEBUG_1("Open RAID0 id:%d\n", id[x]);
+        }
+        else if (open_flags & CBLK_GROUP_MASK)
+        {
+            id[x] = cblk_cg_open(dev_paths[0], 1024, O_RDWR, ext, 0,open_flags);
+            DEBUG_2("Open CG ext:%d id:%d\n", (uint32_t)ext, id[x]);
         }
         else
         {
+            DEBUG_0("Opening\n");
             id[x] = cblk_open(dev_paths[x], 1024, O_RDWR, ext, open_flags);
         }
 
@@ -1244,7 +1375,8 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
              * and set its size. Subsequent passes.
              * skip this step.
              */
-            rc = cblk_set_size(id[x],CHUNK_SIZE*num_threads,io_flags);
+            DEBUG_2("set_size:%d flags:%x\n", CHUNK_SIZE*num_threads, open_flags);
+            rc = cblk_set_size(id[x], CHUNK_SIZE*num_threads, open_flags);
 
             if (rc)
             {
@@ -1253,12 +1385,13 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
                 *err = errno;
                 for (x=0; x<num_opens; x++)
                 {
-                    cblk_close(id[x], io_flags);
+                    cblk_close(id[x], open_flags);
                 }
                 return;
             }
         }
     }
+
     if (num_threads > 0)
     {
         /* Create all threads here */
@@ -1266,7 +1399,8 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
         {
             memcpy(tdata[i].chunk_id,id,sizeof(id));
             tdata[i].num_devs = num_devs;
-            tdata[i].flags    = io_flags;
+            tdata[i].rwflags  = rwflags;
+            tdata[i].resflags = resflags;
             tdata[i].tid      = i;
             rc = pthread_create(&blk_thread[i], NULL, blk_io_loop,
                                 (void*)&tdata[i]);
@@ -1306,7 +1440,7 @@ void blk_thread_tst(int *ret, int *err, int open_flags, int io_flags, int eeh)
     DEBUG_1("Calling cblk_close num_opens:%d...\n",num_opens);
     for (x=0; x<num_opens; x++)
     {
-        ret_code = cblk_close(id[x],io_flags);
+        ret_code = cblk_close(id[x], open_flags);
         if (ret_code)
         {
             DEBUG_2("Close of id:%d failed with errno = %d\n", id[x],errno);
@@ -1510,7 +1644,7 @@ exit:
 ********************************************************************************
 ** \brief
 *******************************************************************************/
-void io_perf_tst (int *ret, int *err, int flags, int eeh)
+void io_perf_tst (int *ret, int *err, int rwflags, int resflags, int eeh)
 {
     int             rc              = -1;
     int             er              = -1;
@@ -1521,7 +1655,6 @@ void io_perf_tst (int *ret, int *err, int flags, int eeh)
     uint64_t        lba             = 0;
     size_t          nblocks         = 1;
     size_t          maxlba          = 0;
-    int             fd              = 0;
     int             i               = 0;
     int             idx             = 0;
     int             ret_code        = 0;
@@ -1554,18 +1687,13 @@ void io_perf_tst (int *ret, int *err, int flags, int eeh)
         cgtag[idx] = malloc(num_cmds*sizeof(cflsh_cg_tag_t));
     }
 
-    blk_fvt_get_set_lun_size(chunks[0], &maxlba, flags, 1, &rc, &er);
-    DEBUG_2("id:%d maxlba:%ld\n", chunks[0], maxlba);
+    blk_fvt_get_set_lun_size(chunks[0], &maxlba, rwflags, 1, &rc, &er);
+    DEBUG_3("id:%d maxlba:%ld flags:%x\n", chunks[0], maxlba, rwflags);
     DEBUG_3("luns:%d loops:%d cmds:%d\n", num_opens, loops, num_cmds);
 
     errno = 0;
     for (x=0; x<loops; x++, y++)
     {
-        /* fill compare buffer with pattern */
-        fd = open ("/dev/urandom", O_RDONLY);
-        read (fd, blk_fvt_comp_data_buf, BLK_FVT_BUFSIZE*num_cmds);
-        close (fd);
-
         printf("lba:%ld loop:%d of %d\r", startlba, x, loops); fflush(stdout);
 
         for (idx=0; idx<num_opens; idx++)
@@ -1573,17 +1701,21 @@ void io_perf_tst (int *ret, int *err, int flags, int eeh)
             for (i=0; i<num_cmds; i++)
             {
                 addr = (char*)(blk_fvt_comp_data_buf)+(((idx*num_cmds)+i)*bsz);
-                DEBUG_3("id:%d awrite addr:%p lba:%ld\n", chunks[idx], addr, lba);
-                if (flags & CBLK_GROUP_RAID0)
+                GEN_VAL(addr, lba, nblocks*4096);
+                if (rwflags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_awrite(chunks[idx], addr, lba, nblocks,
                                         &cgtag[idx][i], NULL,
-                                        CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
+                                        rwflags);
+                    DEBUG_4("id:%d cg_awrite addr:%p lba:%ld rc:%d\n",
+                            chunks[idx], addr, lba, rc);
                 }
                 else
                 {
                     rc = cblk_awrite(chunks[idx],addr, lba, nblocks,&ctag[idx][i],
-                                    NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+                                    NULL, rwflags);
+                    DEBUG_4("id:%d awrite addr:%p lba:%ld rc:%d\n",
+                            chunks[idx], addr, lba, rc);
                 }
                 if (rc < 0)
                 {
@@ -1612,15 +1744,17 @@ void io_perf_tst (int *ret, int *err, int flags, int eeh)
             while (TRUE)
             {
                 errno=0;
-                if (flags & CBLK_GROUP_RAID0)
+                if (rwflags & CBLK_GROUP_MASK)
                 {
                     if (cgtag[idx][i].tag == -1) {++i; continue;}
-                    rc = cblk_cg_aresult(chunks[idx], &cgtag[idx][i],&ar_status,flags);
+                    rc = cblk_cg_aresult(chunks[idx], &cgtag[idx][i],
+                                         &ar_status, resflags);
                 }
                 else
                 {
                     if (ctag[idx][i] == -1) {++i; continue;}
-                    rc = cblk_aresult(chunks[idx], &ctag[idx][i], &ar_status, flags);
+                    rc = cblk_aresult(chunks[idx], &ctag[idx][i],
+                                      &ar_status, resflags);
                 }
                 if (rc > 0)
                 {
@@ -1654,20 +1788,20 @@ void io_perf_tst (int *ret, int *err, int flags, int eeh)
             {
                 addr = (char*)(blk_fvt_data_buf)+(((idx*num_cmds)+i)*bsz);
                 DEBUG_3("id:%d aread addr:%p lba:%ld\n", chunks[idx], addr, lba);
-                if (flags & CBLK_GROUP_RAID0)
+                if (rwflags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_aread(chunks[idx], addr, lba, nblocks,
                                        &cgtag[idx][i], NULL,
-                                       CBLK_ARW_WAIT_CMD_FLAGS | CBLK_GROUP_RAID0);
+                                       rwflags);
                 }
                 else
                 {
                     rc = cblk_aread(chunks[idx], addr, lba, nblocks, &ctag[idx][i],
-                                    NULL,CBLK_ARW_WAIT_CMD_FLAGS);
+                                    NULL,rwflags);
                 }
                 if (rc < 0)
                 {
-                    fprintf(stderr,"awrite failed for lba = 0x%lx, rc = %d, "
+                    fprintf(stderr,"aread failed for lba = 0x%lx, rc = %d, "
                                    "errno = %d\n",lba,rc,errno);
                     *ret = rc;
                     *err = errno;
@@ -1684,15 +1818,17 @@ void io_perf_tst (int *ret, int *err, int flags, int eeh)
             i=0;
             while (TRUE)
             {
-                if (flags & CBLK_GROUP_RAID0)
+                if (rwflags & CBLK_GROUP_MASK)
                 {
                     if (cgtag[idx][i].tag == -1) {++i; continue;}
-                    rc = cblk_cg_aresult(chunks[idx], &cgtag[idx][i],&ar_status,flags);
+                    rc = cblk_cg_aresult(chunks[idx], &cgtag[idx][i],
+                                         &ar_status, resflags);
                 }
                 else
                 {
                     if (ctag[idx][i] == -1) {++i; continue;}
-                    rc = cblk_aresult(chunks[idx], &ctag[idx][i], &ar_status, flags);
+                    rc = cblk_aresult(chunks[idx], &ctag[idx][i],
+                                      &ar_status, resflags);
                 }
                 if (rc > 0)
                 {
@@ -1726,6 +1862,74 @@ void io_perf_tst (int *ret, int *err, int flags, int eeh)
         }
         /* clear the read buf for the next pass */
         memset(blk_fvt_data_buf,0,num_cmds*bsz);
+
+
+        lba = startlba;
+
+        for (idx=0; idx<num_opens && rwflags&TST_UNMAP; idx++)
+        {
+            /* unmap the lbas we wrote */
+            for (i=0; i<num_cmds; i++)
+            {
+                addr = (char*)(blk_fvt_data_buf)+(((idx*num_cmds)+i)*bsz);
+                DEBUG_3("id:%d aunmap addr:%p lba:%ld\n", chunks[idx], addr, lba);
+                memset(addr,0,BLK_FVT_BUFSIZE*nblocks);
+                if (rwflags & CBLK_GROUP_MASK)
+                {
+                    rc = cblk_cg_aunmap(chunks[idx], addr, lba, nblocks,
+                                       &cgtag[idx][i], NULL, rwflags);
+                }
+                else
+                {
+                    rc = cblk_aunmap(chunks[idx], addr, lba, nblocks, &ctag[idx][i],
+                                    NULL,rwflags);
+                }
+                if (rc < 0)
+                {
+                    fprintf(stderr,"aunmap failed for lba = 0x%lx, rc = %d, "
+                                   "errno = %d\n",lba,rc,errno);
+                    *ret = rc;
+                    *err = errno;
+                    return;
+                }
+                ++lba; lba%=maxlba;
+            }
+            lba = startlba;
+            DEBUG_3("id:%d aunmap num_cmds:%d startlba:%ld\n", chunks[idx], i,startlba);
+        }
+
+        for (idx=0; idx<num_opens && rwflags&TST_UNMAP; idx++)
+        {
+            i=0;
+            while (TRUE)
+            {
+                if (rwflags & CBLK_GROUP_MASK)
+                {
+                    if (cgtag[idx][i].tag == -1) {++i; continue;}
+                    rc = cblk_cg_aresult(chunks[idx], &cgtag[idx][i],
+                                         &ar_status, resflags);
+                }
+                else
+                {
+                    if (ctag[idx][i] == -1) {++i; continue;}
+                    rc = cblk_aresult(chunks[idx], &ctag[idx][i],
+                                      &ar_status, resflags);
+                }
+                if (rc > 0)
+                {
+                    cgtag[idx][i++].tag = -1;
+                    if (i>=num_cmds) {break;}
+                }
+                else if (rc == 0) {continue;}
+                else
+                {
+                    fprintf(stderr,"aunmap>aresult error = %d\n",errno);
+                    *ret = rc;
+                    *err = errno;
+                    return;
+                }
+            }
+        }
 
         startlba+=num_cmds; startlba%=maxlba; lba=startlba;
     }

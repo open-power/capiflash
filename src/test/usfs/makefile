@@ -25,42 +25,17 @@
 
 UNAME=$(shell uname)
 
-# Where to find user code.(Relative path(from the makefile) preferred for portability)
-ROOTPATH = ../../..
-USER_DIR = .
-
-TESTDIR  = ${ROOTPATH}/obj/tests
-
-EXPFLAGS = -bexpall
-
-#test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../../..
+EXPFLAGS = -bexpall
 LINKLIBS = -lcflsh_block -lcflsh_usfs
+BTESTS   = cusfs
 
-
-BTESTS   =cusfs
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
-
-
-ifeq ($(UNAME),AIX) # AIX only
-LINKLIBS+=-lpthreads
-
-BTESTS64     = $(addsuffix 64, ${BTESTS})
-BIN_TESTS64  = $(addprefix ${TESTDIR}/, ${BTESTS64})
-BITS             = 64
-
-else #Linux only
-LINKLIBS+=-lpthread -ludev
-endif
-
-CFLAGS += \
+LCFLAGS += \
    -D__FVT__\
    -I$(ROOTPATH)/src/block \
    -I$(ROOTPATH)/src/common
-CXXFLAGS+=$(CFLAGS)
 
 VPATH += \
  ${ROOTPATH}/src/kv \

@@ -24,8 +24,7 @@
 #
 # IBM_PROLOG_END_TAG
 
-CAPIKVROOT=/opt/ibm/capikv
-SIOTABLE=$CAPIKVROOT/etc/sioluntable.ini
+SIOTABLE=/etc/cxlflash/sioluntable.ini
 LOGFILE=/tmp/cxlflog.${USER}.log
 
 #cxlflash LUN modes
@@ -274,7 +273,7 @@ setdevmode()
     ctrlblockdevmap $dev $targetmode
     echo "INFO: Setting $dev mode:$targetmode" >> $LOGFILE;
     #call with the config option, which causes the tool to read the config
-    $CAPIKVROOT/bin/cxlflashutil -d /dev/$dev --config >> $LOGFILE;
+    /usr/bin/cxlflashutil -d /dev/$dev --config >> $LOGFILE;
 }
 
 #@desc Determine if a given LUN is in the SIO LUN Table

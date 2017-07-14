@@ -102,6 +102,7 @@ int cblk_query_ue(void *buf, size_t len);
 void cblk_check_cmd_data_buf_for_ue(cflsh_chunk_t *chunk,cflsh_cmd_mgm_t *cmd);
 void cblk_clear_poison_bits(void *buf, size_t len);
 void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_paths);
+void  cblk_afu_dump(cflsh_chunk_t *chunk, int flags);
 
 #ifdef BLOCK_FILEMODE_ENABLED
 void cblk_filemode_io(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd);
@@ -147,6 +148,11 @@ int cblk_r0_write(chunk_r0_id_t  id,
                   cflash_offset_t lba,
                   size_t          nblocks,
                   int             flags);
+int cblk_r0_unmap(chunk_r0_id_t  id,
+                  void           *buf,
+                  cflash_offset_t lba,
+                  size_t          nblocks,
+                  int             flags);
 int cblk_r0_aread(chunk_r0_id_t     id,
                   void              *buf,
                   cflash_offset_t    lba,
@@ -161,9 +167,22 @@ int cblk_r0_awrite(chunk_r0_id_t     id,
                    cflsh_cg_tag_t    *tag,
                    cblk_arw_status_t *status,
                    int                flags);
+int cblk_r0_aunmap(chunk_r0_id_t     id,
+                   void              *buf,
+                   cflash_offset_t    lba,
+                   size_t             nblocks,
+                   cflsh_cg_tag_t    *tag,
+                   cblk_arw_status_t *status,
+                   int                flags);
 int cblk_r0_aresult(chunk_r0_id_t  id,
                     cflsh_cg_tag_t *tag,
                     uint64_t       *status,
                     int             flags);
+
+/* cflash_block_eras_serv.c protos */
+
+int cblk_start_eras_thread(int flags);
+void cblk_stop_eras_thread(int flags);
+int cblk_serv_xfer_data(int fd, int op, void *buf, ssize_t exp_size);
 
 #endif /* _H_CFLASH_BLOCK_PROTO */

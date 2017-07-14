@@ -24,10 +24,12 @@
 /* IBM_PROLOG_END_TAG                                                     */
 
 #define CFLSH_BLK_FILENUM 0x0700
-#include "cflash_block_cgroup.h"
 
-int init_done=0;
+#include <cflash_block_cgroup.h>
+#include <ticks.h>
+
 cflash_block_grp_global_t cflash_block_grp_global;
+int                       init_done=0;
 
 /**
  *******************************************************************************
@@ -192,7 +194,7 @@ chunk_id_t cblk_cg_get_next_chunk_id(chunk_cg_id_t cgid)
         p_cg->cur_chunk_index = (next+1) % p_cg->num_chunks;
     }
 
-    CBLK_TRACE_LOG_FILE(9, "return cgid:%d", chunk_id);
+    CBLK_TRACE_LOG_FILE(9, "return id:%d", chunk_id);
     return chunk_id;
 }
 
@@ -732,6 +734,63 @@ done:
  * \brief
  * \details
  *
+ * NAME:        cblk_cg_unmap
+ *
+ * FUNCTION:    Writes data to the specified offset in the chunk
+ *              group from the specified buffer. This request is
+ *              a blocking write request (i.e.it will not
+ *              return until either data is written or
+ *              an error is encountered).
+ *
+ * INPUTS:
+ *              chunk_id    - Chunk identifier
+ *              buf         - Buffer to write data from
+ *              lba         - starting LBA (logical Block Address)
+ *                            in chunk to write data to.
+ *              nblocks     - Number of blocks to write.
+ *
+ * RETURNS:
+ *              0 for good completion,  ERRNO on error
+ ******************************************************************************/
+int cblk_cg_unmap(chunk_cg_id_t   cgid,
+                  void           *pbuf,
+                  cflash_offset_t lba,
+                  size_t          nblocks,
+                  int             flags)
+{
+    int        rc       = 0;
+    chunk_id_t chunk_id = 0;
+
+    if (flags & CBLK_GROUP_RAID0)
+    {
+        rc = cblk_r0_write(cgid, pbuf, lba, nblocks, flags);
+    }
+    else
+    {
+        errno = 0;
+        chunk_id = cblk_cg_get_next_chunk_id(cgid);
+
+        if (chunk_id == NULL_CHUNK_ID)
+        {
+            errno = EINVAL;
+            rc    = -1;
+            goto done;
+        }
+        flags &= ~CBLK_GROUP_MASK;
+        rc = cblk_unmap(chunk_id, pbuf, lba, nblocks, flags);
+    }
+
+done:
+    CBLK_TRACE_LOG_FILE(9, "cgid:%d lba:%d nblocks:%d flags:%x rc:%d",
+                        cgid, lba, nblocks, flags, rc);
+    return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * \details
+ *
  * NAME:        cblk_cg_aread
  *
  * FUNCTION:    Reads data from the specified offset in the chunk
@@ -758,21 +817,36 @@ int cblk_cg_aread(chunk_cg_id_t      cgid,
                   void              *pbuf,
                   cflash_offset_t    lba,
                   size_t             nblocks,
-                  cflsh_cg_tag_t    *ptag,
-                  cblk_arw_status_t *p_arwstatus,
+                  cflsh_cg_tag_t    *tag,
+                  cblk_arw_status_t *status,
                   int                flags)
 {
-    int rc = 0;
+    int rc   = 0;
+    int ctag = 0;
 
     if (flags & CBLK_GROUP_RAID0)
     {
-        rc = cblk_r0_aread(cgid, pbuf, lba, nblocks, ptag, p_arwstatus, flags);
+        rc = cblk_r0_aread(cgid, pbuf, lba, nblocks, tag, status, flags);
     }
     else
     {
-        errno = EINVAL;
-        rc    = -1;
+        errno   = 0;
+        tag->id = cblk_cg_get_next_chunk_id(cgid);
+
+        if (tag->id == NULL_CHUNK_ID)
+        {
+            errno = EINVAL;
+            rc    = -1;
+            goto done;
+        }
+        flags &= ~CBLK_GROUP_MASK;
+        rc = cblk_aread(tag->id, pbuf, lba, nblocks, &ctag, status, flags);
+        if (rc >= 0) {tag->tag = ctag;}
+        else         {tag->tag = -1;}
     }
+done:
+    CBLK_TRACE_LOG_FILE(9, "cgid:%d:%d lba:%d nblocks:%d flags:%x rc:%d",
+                        cgid, tag->id, lba, nblocks, flags, rc);
     return rc;
 }
 
@@ -806,21 +880,99 @@ int cblk_cg_awrite(chunk_cg_id_t      cgid,
                    void              *pbuf,
                    cflash_offset_t    lba,
                    size_t             nblocks,
-                   cflsh_cg_tag_t    *ptag,
-                   cblk_arw_status_t *p_arwstatus,
+                   cflsh_cg_tag_t    *tag,
+                   cblk_arw_status_t *status,
                    int                flags)
 {
-    int rc = 0;
+    int rc   = 0;
+    int ctag = 0;
 
     if (flags & CBLK_GROUP_RAID0)
     {
-        rc = cblk_r0_awrite(cgid, pbuf, lba, nblocks, ptag, p_arwstatus, flags);
+        rc = cblk_r0_awrite(cgid, pbuf, lba, nblocks, tag, status, flags);
     }
     else
     {
-        errno = EINVAL;
-        rc = -1;
+        errno   = 0;
+        tag->id = cblk_cg_get_next_chunk_id(cgid);
+
+        if (tag->id == NULL_CHUNK_ID)
+        {
+            errno = EINVAL;
+            rc    = -1;
+            goto done;
+        }
+        flags &= ~CBLK_GROUP_MASK;
+        rc = cblk_awrite(tag->id, pbuf, lba, nblocks, &ctag, status, flags);
+        if (rc >= 0) {tag->tag = ctag;}
+        else         {tag->tag = -1;}
     }
+done:
+    CBLK_TRACE_LOG_FILE(9, "cgid:%d:%d lba:%d nblocks:%d flags:%x rc:%d",
+                        cgid, tag->id, lba, nblocks, flags, rc);
+    return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * \details
+ *
+ * NAME:        cblk_cg_aunmap
+ *
+ * FUNCTION:    Unmap data blocks specified. The data buffer
+ *              must be initialized to zeroes.This request is
+ *              an asynchronous unmap request (i.e.it will
+ *              return as soon as it has issued the request
+ *              to the device. It will not wait for a response from
+ *              the device.).
+ *
+ *
+ * INPUTS:
+ *              chunk_id    - Chunk identifier
+ *              buf         - Buffer to write data from
+ *              lba         - starting LBA (logical Block Address)
+ *                            in chunk to write data to.
+ *              nblocks     - Number of blocks to write.
+ *              tag         - Tag associated with this request.
+ *
+ * RETURNS:
+ *              0 for good completion,  ERRNO on error
+ ******************************************************************************/
+int cblk_cg_aunmap(chunk_cg_id_t      cgid,
+                   void              *pbuf,
+                   cflash_offset_t    lba,
+                   size_t             nblocks,
+                   cflsh_cg_tag_t    *tag,
+                   cblk_arw_status_t *status,
+                   int                flags)
+{
+    int rc   = 0;
+    int ctag = 0;
+
+    if (flags & CBLK_GROUP_RAID0)
+    {
+        rc = cblk_r0_aunmap(cgid, pbuf, lba, nblocks, tag, status, flags);
+    }
+    else
+    {
+        errno   = 0;
+        tag->id = cblk_cg_get_next_chunk_id(cgid);
+
+        if (tag->id == NULL_CHUNK_ID)
+        {
+            errno = EINVAL;
+            rc    = -1;
+            goto done;
+        }
+        flags &= ~CBLK_GROUP_MASK;
+        rc = cblk_aunmap(tag->id, pbuf, lba, nblocks, &ctag, status, flags);
+        if (rc >= 0) {tag->tag = ctag;}
+        else         {tag->tag = -1;}
+    }
+done:
+    CBLK_TRACE_LOG_FILE(9, "cgid:%d:%d lba:%d nblocks:%d flags:%x rc:%d",
+                        cgid, tag->id, lba, nblocks, flags, rc);
     return rc;
 }
 
@@ -849,20 +1001,50 @@ int cblk_cg_awrite(chunk_cg_id_t      cgid,
  ******************************************************************************/
 int cblk_cg_aresult(chunk_cg_id_t   cgid,
                     cflsh_cg_tag_t *ptag,
-                    uint64_t       *p_arwstatus,
+                    uint64_t       *status,
                     int             flags)
 {
-    int rc = 0;
+    cflash_block_grp_fd_t *pgrp   = NULL;
+    int                    rc     = 0;
+    int                    i      = 0;
+    int                    tflags = flags & ~CBLK_GROUP_MASK;
 
-    if (flags & CBLK_GROUP_RAID0)
+    pgrp = CBLK_GET_CG_HASH(cgid);
+    if (!pgrp) {errno=EINVAL; rc=-1; goto done;}
+    if (!ptag) {errno=EINVAL; rc=-1; goto done;}
+
+    /* we are looking for a specific tag */
+    if (! (flags & CBLK_ARESULT_NEXT_TAG))
     {
-        rc = cblk_r0_aresult(cgid, ptag, p_arwstatus, flags);
+        rc = cblk_aresult(ptag->id, &ptag->tag, status, tflags);
+        goto done;
     }
-    else
+
+    tflags &= ~CBLK_ARESULT_BLOCKING;
+
+    /* if blocking, then loop until timeout or completed op */
+    uint64_t start = getticks();
+    do
     {
-        errno = EINVAL;
-        rc = -1;
-    }
+        if (SDELTA(start,cflsh_blk.nspt) >= 50)
+        {
+            CBLK_TRACE_LOG_FILE(1,"TIMEOUT: id:%d", cgid);
+            rc=-1; errno=ETIME; goto done;
+        }
+
+        /* wait for a cmd to complete */
+        for (i=0; i<pgrp->num_chunks; i++)
+        {
+            ptag->id = cblk_cg_get_next_chunk_id(cgid);
+            rc = cblk_aresult(ptag->id, &ptag->tag, status, tflags);
+            if (rc>0)  {goto done;}
+            if (rc<0 && errno==ENOENT) {rc=0;}
+        }
+    } while (flags & CBLK_ARESULT_BLOCKING);
+
+done:
+    CBLK_TRACE_LOG_FILE(9, "cgid:%d:%d tag:%d flags:%x rc:%d",
+                        cgid, ptag->id, ptag->tag, flags, rc);
     return rc;
 }
 

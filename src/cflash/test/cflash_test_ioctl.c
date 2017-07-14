@@ -756,7 +756,7 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #ifdef _AIX
             if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-            if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+            if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
                 CHECK_RC(1, "recover ctx, expected DK_RF_REATTACHED");
             p_ctx->context_id = p_ctx->new_ctx_token;
@@ -847,7 +847,7 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #ifdef _AIX
             if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-            if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+            if ( !( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
                 CHECK_RC(1, "recover ctx, expected DK_RF_REATTACHED");
 
@@ -864,7 +864,7 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #ifdef _AIX
                 if (p_array_ctx[i]->return_flags != DK_RF_REATTACHED)
 #else
-                if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_array_ctx[i]->return_flags)
+                if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_array_ctx[i]->return_flags))
 #endif
                     CHECK_RC(1, "recover ctx, expected DK_RF_REATTACHED");
 
@@ -1054,7 +1054,7 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #ifdef _AIX
             if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-            if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+            if ( !( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
                 CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -1075,7 +1075,7 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #ifdef _AIX
             if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-            if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+            if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
                 CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -1147,7 +1147,7 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #ifdef _AIX
             if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-            if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+            if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
                 CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -1199,7 +1199,7 @@ int test_dcrc_ioctl(int flag)  // func@DK_CAPI_RECOVER_CTX
 #ifdef _AIX
             if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-            if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+            if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
                 CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -2600,7 +2600,7 @@ int test_dcv_ioctl( int flag )  // func@DK_CAPI_VERIFY
 #ifdef _AIX
             if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-            if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+            if ( !( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
                 CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -2647,7 +2647,7 @@ int test_dcv_ioctl( int flag )  // func@DK_CAPI_VERIFY
 #ifdef _AIX
             if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-            if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+            if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
                 CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -2982,7 +2982,7 @@ int test_dcv_ioctl( int flag )  // func@DK_CAPI_VERIFY
 #ifdef _AIX
             if ( DK_RF_REATTACHED != p_ctx->return_flags )
 #else
-            if ( DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags )
+            if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags ))
 #endif
                 CHECK_RC(1, "ioctl_dk_capi_recover_ctx flag verification failed");
 
@@ -3131,7 +3131,7 @@ int test_dcle_ioctl( int flag )  // func@DK_CAPI_LOG_EVENT
 #ifdef _AIX
             if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-            if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+            if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
 
                 debug("-----------ctx_reinit called -------------------------\n");
@@ -3173,7 +3173,7 @@ int test_dcle_ioctl( int flag )  // func@DK_CAPI_LOG_EVENT
 #ifdef _AIX
             if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-            if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+            if ( !(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
 
                 debug("-----------ctx_reinit called -------------------------\n");
@@ -3212,7 +3212,7 @@ int test_dcle_ioctl( int flag )  // func@DK_CAPI_LOG_EVENT
 #ifdef _AIX
             if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-            if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+            if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
 
                 debug("-----------ctx_reinit called -------------------------\n");
@@ -3251,7 +3251,7 @@ int test_dcle_ioctl( int flag )  // func@DK_CAPI_LOG_EVENT
 #ifdef _AIX
             if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-            if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+            if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
 
                 debug("-----------ctx_reinit called -------------------------\n");
@@ -3291,7 +3291,7 @@ int test_dcle_ioctl( int flag )  // func@DK_CAPI_LOG_EVENT
 #ifdef _AIX
             if (p_ctx->return_flags != DK_RF_REATTACHED)
 #else
-            if (DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET != p_ctx->return_flags)
+            if (!(DK_CXLFLASH_RECOVER_AFU_CONTEXT_RESET & p_ctx->return_flags))
 #endif
 
                 debug("-----------ctx_reinit called -------------------------\n");

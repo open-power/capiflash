@@ -23,53 +23,23 @@
 #
 # IBM_PROLOG_END_TAG
 
+.NOTPARALLEL:
+
 UNAME=$(shell uname)
 
-ROOTPATH = ../../..
-USER_DIR = .
-SUBDIRS  =
-BITS =
-TESTDIR  = ${ROOTPATH}/obj/tests
-
-#test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../../..
+SUBDIRS  =
 LINKLIBS = -lcflsh_block -lm
-
-# AIX only
-ifeq ($(UNAME),AIX)
-LINKLIBS +=-lpthreads
-BITS=64
-
-#Linux only
-else
-LINKLIBS+=-lpthread -ludev
-endif
-
-VPATH += \
- ${ROOTPATH}/src/common
-
-
-GTESTS       = run_block_fvt
-GTESTS_DIR   = $(addprefix $(TESTDIR)/, $(GTESTS))
-GTESTS64     = $(addsuffix 64, $(GTESTS))
-GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
+VPATH    = ${ROOTPATH}/src/common
+LCFLAGS  = -g -D__FVT__ -I$(ROOTPATH)/src/block -I$(GTESTINC)
+GTESTS   = run_block_fvt
 
 run_block_fvt_OFILES = fvt_block.o blk_api_tst.o cflash_tools_user.o
-
-DEPS=$(addprefix $(TESTDIR)/, $(run_block_fvt_OFILES:.o=.dep)) 
-
-CFLAGS += \
-   -g -D__FVT__ -Wno-unused-result \
-   -I$(ROOTPATH)/src/block \
-   -I$(ROOTPATH)/src/include \
-   -I${GTESTINC}
-
-CXXFLAGS+=$(CFLAGS)
+DEPS = $(addprefix $(TESTDIR)/, $(run_block_fvt_OFILES:.o=.dep))
 
 include ${ROOTPATH}/config.mk
-
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 unit:

@@ -858,6 +858,12 @@ TEST(Cflash_FVT_Suite, E_Test_large_trsnfr_boundary)
 }
 
 
+//New test cases added to cover vlun max transfer 
+TEST(Cflash_FVT_Suite, E_test_vlun_max_transfer)
+{
+    ASSERT_EQ(0,mc_test_engine(TEST_VLUN_MAX_TRANSFER));
+}
+
 TEST(Cflash_FVT_Suite, E_test_mmio_errcase1)
 {
     ASSERT_EQ(0,mc_test_engine(TEST_MMIO_ERRCASE1));
@@ -1080,6 +1086,7 @@ TEST(Cflash_FVT_Suite, G_7_1_203)
 {
     ASSERT_EQ(0,mc_test_engine(G_ioctl_7_1_203));
 }
+
 
 #ifdef AIX_MANUAL
 

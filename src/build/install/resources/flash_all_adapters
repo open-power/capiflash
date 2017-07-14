@@ -27,14 +27,15 @@
 KERNEL_MOD="cxlflash"
 CAPI_FLASH_PL=capi_flash.pl
 RESET_PL=cflash_reset.pl
-IMAGES_DIR=images #relative to the cwd of the script
-FLASH_ROOT=/opt/ibm/capikv/afu
+IMAGES_DIR=/lib/firmware/cxlflash
+FLASH_ROOT=/usr/bin
 MINCAPMASK="0003"
 CAPABILITYKW="V3"
 e_rc=0
 do_reset=0
 load_factory=0
 opt=""
+AFUVER_DIR=/usr/share/cxlflash
 
 #determine distro
 if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
@@ -95,7 +96,7 @@ findloc()
 
 checkcompat()
 {
-    line=$(lspci -s $1| egrep "04cf|0601")
+    line=$(lspci -s $1| egrep "04cf|0601|0628")
     if [ $? -ne 0 ]
     then
       printf "       ERROR, unknown capi adapter\n\n"
@@ -141,7 +142,7 @@ flashadapters()
         fi
 
         #query FW level
-        afuver=$(/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/${afu}.0m -v 2>/dev/null| grep "AFU Version"|awk -F" " '{print $NF}')
+        afuver=$(/usr/bin/cxl_afu_dump /dev/cxl/${afu}.0m -v 2>/dev/null| grep "AFU Version"|awk -F" " '{print $NF}')
         if [[ -z $afuver ]]
         then
           afuver=__UNKNOWN_FW_LEVEL__
@@ -163,7 +164,7 @@ flashadapters()
             continue
           fi
           printf "       Replacing %s with %s\n\n" $afuver $CORSA_IMAGE
-          $FLASH_ROOT/$CAPI_FLASH_PL -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$CORSA_IMAGE $concurrent
+          $FLASH_ROOT/$CAPI_FLASH_PL -t $adap -f $IMAGES_DIR/$CORSA_IMAGE $concurrent
           rc=$?
           if [[ $rc -ne 0 ]]
           then
@@ -204,7 +205,48 @@ flashadapters()
               printf "       Replacing %s with %s\n\n" $afuver $GT_IMAGE
             fi
           fi
-          $FLASH_ROOT/$CAPI_FLASH_PL $opt -t $adap -f $FLASH_ROOT/$IMAGES_DIR/$GT_IMAGE $concurrent
+          $FLASH_ROOT/$CAPI_FLASH_PL $opt -t $adap -f $IMAGES_DIR/$GT_IMAGE $concurrent
+          rc=$?
+          if [[ $rc -ne 0 ]]
+          then
+            e_rc=$rc
+            echo "       ERROR: Failed flashing $adap"
+          else
+            if [[ $do_reset -eq 1 ]]
+            then
+              $FLASH_ROOT/$RESET_PL -t $adap
+              rc=$?
+              if [ $rc -ne 0 ]
+              then
+                e_rc=$rc
+                echo "       ERROR: Failed PERSTing $adap"
+              fi
+            fi
+          fi
+
+        elif [ $devid = "0628" ]  #FLASH_GT_PLUS
+        then
+          #verify VPD
+          checkcompat $adap; rc=$?
+          if [[ $rc -ne 0 ]]; then e_rc=$rc; continue; fi
+
+          if [[ $GTP_IMAGE =~ $afuver ]]
+          then
+            printf "       Firmware is up to date (%s)\n\n" $afuver
+            continue
+          fi
+          if [[ $load_factory -eq 1 ]]
+          then
+            printf "       Flashing %s\n\n" $GTP_IMAGE
+          else
+            if [[ $GTP_F_IMAGE =~ $afuver ]]
+            then
+              printf "       Flashing %s\n\n" $GTP_IMAGE
+            else
+              printf "       Replacing %s with %s\n\n" $afuver $GTP_IMAGE
+            fi
+          fi
+          $FLASH_ROOT/$CAPI_FLASH_PL $opt -t $adap -f $IMAGES_DIR/$GTP_IMAGE $concurrent
           rc=$?
           if [[ $rc -ne 0 ]]
           then
@@ -240,7 +282,7 @@ flashadapters_VM()
     fi
     afuN=$(echo $adap|cut -c19-24)m
     echo $adap
-    afuver=$(/opt/ibm/capikv/afu/cxl_afu_dump /dev/cxl/$afuN -v 2>/dev/null| grep "AFU Version"|awk -F" " '{print $NF}')
+    afuver=$(/usr/bin/cxl_afu_dump /dev/cxl/$afuN -v 2>/dev/null| grep "AFU Version"|awk -F" " '{print $NF}')
 
     echo "INFO:  Processing: $afuN"
     if [[ -z $afuver ]]; then afuver=__UNKNOWN_FW_LEVEL__; fi
@@ -264,11 +306,11 @@ flashadapters_VM()
 #########
 # main
 #########
-CORSA_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep CORSA_IMAGE|awk '{print $2}')
-GT_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_F_IMAGE |awk '{print $2}')
-GTP_F_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_F_IMAGE|awk '{print $2}')
-GT_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GT_IMAGE   |awk '{print $2}')
-GTP_IMAGE=$(cat /opt/ibm/capikv/etc/afu_versions|grep GTP_IMAGE  |awk '{print $2}')
+CORSA_IMAGE=$(cat $AFUVER_DIR/afu_versions|grep CORSA_IMAGE|awk '{print $2}')
+GT_F_IMAGE=$(cat $AFUVER_DIR/afu_versions|grep GT_F_IMAGE |awk '{print $2}')
+GTP_F_IMAGE=$(cat $AFUVER_DIR/afu_versions|grep GTP_F_IMAGE|awk '{print $2}')
+GT_IMAGE=$(cat $AFUVER_DIR/afu_versions|grep GT_IMAGE   |awk '{print $2}')
+GTP_IMAGE=$(cat $AFUVER_DIR/afu_versions|grep GTP_IMAGE  |awk '{print $2}')
 
 grep pSeries /proc/cpuinfo >/dev/null 2>&1 && _VM=1
 #if [[ $redhat ]]; then
@@ -282,6 +324,7 @@ then
   opt=" -p0 "
   load_factory=1
   GT_IMAGE=$GT_F_IMAGE
+  GTP_IMAGE=$GTP_F_IMAGE
 fi
 
 if [[ $_VM -eq 1 ]]; then flashadapters_VM

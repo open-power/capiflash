@@ -25,55 +25,25 @@
 
 UNAME=$(shell uname)
 
-ROOTPATH = ../../..
-USER_DIR = .
-SUBDIRS  =
-TESTDIR  = ${ROOTPATH}/obj/tests
-
-#test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../../..
+SUBDIRS  =
+GTESTS   = run_cflash_fvt
 
-BTESTS=
-BIN_TESTS=$(addprefix ${TESTDIR}/, ${BTESTS})
+run_cflash_fvt_OFILES = \
+  fvt_cflash.o cflash_test_ioctl_io.o cflash_test_engine.o cflash_test_error.o \
+  cflash_test_io.o cflash_test_util.o cflash_test2.o \
+  cflash_test_ioctl.o cflash_test_error2.o cflash_test_excp.o manual.o \
+  119.o 174.o 174_175.o 188.o 191.o 192.o 196.o 197.o 198.o 209.o 210.o 211.o 215.o \
+  216.o 203.o
 
-# AIX only
-ifeq ($(UNAME),AIX)
-LINKLIBS+=-lpthreads
-
-#Linux only
-else
-LINKLIBS+=-lpthread
-endif
-
-GTESTS = run_cflash_fvt
-GTESTS_DIR   = $(addprefix $(TESTDIR)/, $(GTESTS))
-
-run_cflash_fvt_OFILES = fvt_cflash.o cflash_test_ioctl_io.o \
-			cflash_test_engine.o cflash_test_error.o \
-			cflash_test_io.o cflash_test_util.o cflash_test2.o \
-                        cflash_test_ioctl.o cflash_test_error2.o \
-                        cflash_test_excp.o manual.o \
-			119.o 174.o 174_175.o 188.o 191.o 192.o 196.o 197.o 198.o 209.o 210.o 211.o 215.o 216.o 203.o
-
-ifeq ($(UNAME),AIX)
-
-GTESTS64     = $(addsuffix 64, $(GTESTS))
-GTESTS64_DIR = $(addprefix $(TESTDIR)/, $(GTESTS64))
-
-endif
-
-DEPS=$(addprefix $(TESTDIR)/, $(run_cflash_fvt_OFILES:.o=.dep))
-
-CFLAGS += -g -Wno-unused-result\
-          -D__FVT__\
-          -I${GTESTINC}
-CXXFLAGS+=$(CFLAGS)
+LCFLAGS = -g -D__FVT__ -I$(GTESTINC)
 
 include ${ROOTPATH}/config.mk
-
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
+
+DEPS=$(addprefix $(TESTDIR)/, $(run_cflash_fvt_OFILES:.o=.dep))
 
 unit:
 	-@if [[ -e /dev/cxl ]]; then \

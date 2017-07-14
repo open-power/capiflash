@@ -22,33 +22,19 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-ROOTPATH = ../..
-
-#NO_O3 = yes
-
-OBJS = ut.o cl.o ea.o ll.o bv.o iv.o si.o vi.o bl.o bt.o arkdb.o am.o ari.o \
-arp.o arp_set.o arp_get.o arp_del.o arp_exist.o tag.o ea_mod.o queue.o      \
-hash.o tg.o ht.o kv_inject.o
-
-OBJS64 = $(subst .o,.64o,$(OBJS))
-
-MODULE = arkdb
 
 UNAME=$(shell uname)
-EXPFLAGS = -bexpall
-ifeq ($(UNAME),AIX)
-MODLIBS = -lcflsh_block -lcflshcom -lpthreads 
-MODULE_LINKLIBS = -lcflsh_block -lcflshcom -lpthreads -larkalloc
-else
-MODLIBS = -lcflsh_block -lcflshcom -lpthread
-MODULE_LINKLIBS = -lcflsh_block -lcflshcom -lpthread -larkalloc
-endif
 
-LIBPATHS = -L${ROOTPATH}/img
+ROOTPATH = ../..
+SUBDIRS  = bin.d test.d
 
-CFLAGS   += $(KV_CFLAGS) -I$(ROOTPATH)/src/include
-CFLAGS64 += $(CFLAGS)
+OBJS   = ut.o cl.o ea.o ll.o bv.o iv.o si.o vi.o bl.o bt.o arkdb.o am.o ari.o \
+         arp.o arp_set.o arp_get.o arp_del.o arp_exist.o tag.o ea_mod.o queue.o \
+         hash.o tg.o ht.o kv_inject.o
 
-SUBDIRS = bin.d test.d
+MODULE          = arkdb
+EXPFLAGS        = -bexpall
+MODLIBS         = -lcflsh_block -lcflshcom
+MODULE_LINKLIBS = -lcflsh_block -lcflshcom -larkalloc
 
 include ${ROOTPATH}/config.mk

@@ -52,7 +52,7 @@ override_dh_auto_clean:
 	dh_auto_clean
 
 override_dh_auto_build:
-	make prod
+	make default
 
 override_dh_auto_install:
 	make install_code
@@ -62,7 +62,7 @@ override_dh_installdeb:
 	mkdir -p debian/cxlflash/DEBIAN
 	mkdir -p debian/cxlflashimage/DEBIAN
 	cp src/build/install/resources/postinstall    debian/cxlflash/DEBIAN/postinst
-	cp src/build/install/resources/postremove     debian/cxlflash/DEBIAN/postrm
+	cp src/build/install/resources/preremove      debian/cxlflash/DEBIAN/prerm
 	cp src/build/install/resources/postafuinstall debian/cxlflashimage/DEBIAN/postinst
 	cp src/build/install/resources/preafuremove   debian/cxlflashimage/DEBIAN/prerm
 
@@ -71,7 +71,7 @@ override_dh_testroot:
 override_dh_installman:
 #override_dh_fixperms:
 #override_dh_md5sums:
-#	echo "Skipping $@"
+	echo "Skipping $@"
 
 override_dh_gencontrol:
 	dpkg-gencontrol -pcxlflash -ldebian/changelog -Tdebian/cxlflash.substvars -Pdebian/cxlflash

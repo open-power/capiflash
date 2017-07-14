@@ -1,6 +1,6 @@
 #Constants
 FLASH_ALL=flash_all_adapters
-FLASH_ROOT=/opt/ibm/capikv/afu
+FLASH_ROOT=/usr/bin
 
 #Globals
 factory=""

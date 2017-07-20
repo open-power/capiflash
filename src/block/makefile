@@ -65,8 +65,8 @@ endif
 ifeq ($(UNAME),AIX)
 EXPFLAGS = -bE:exportfile
 else
-LCFLAGS         = -Wno-format-security
-MODULE_LINKLIBS = -Wl,--version-script=libcflash_exportmap
+LCFLAGS         =
+MODLIBS = -Wl,--version-script=libcflash_exportmap
 endif
 
 LINKLIBS = -l${MODULE}

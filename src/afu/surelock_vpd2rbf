@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/test/vpd/surelock_vpd2rbf.pl $
+# $Source: src/test/vpd/surelock_vpd2rbf $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -79,7 +79,7 @@ my $optOK = 0;                  # Options are OK
 
   if (!($optOK) | $prthelp) {
     print "\n";
-    print "Usage: vpd2rbf.pl [-h | --help] [-f | --file] <CommaSepVal.cvs> \n";
+    print "Usage: vpd2rbf [-h | --help] [-f | --file] <CommaSepVal.cvs> \n";
     print "    -f or --file   : Comma Separated Value File Containing The VPD Key Words.\n";
     print "    -s or --sn     : Serial Number for the adapter (SN Key Word MUST be in .csv file. This value replaces the .csv contents.\n";
     print "    -i or --id     : Card Identification String (Default: \"Corsa-CAPI PCIe Adapter\").\n";

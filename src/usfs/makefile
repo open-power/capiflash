@@ -48,17 +48,14 @@ OBJS   = cflsh_usfs.o cflsh_usfs_utils.o cflsh_usfs_disk.o cflsh_usfs_inode.o cf
 PGMS   = cusfs_serv
 
 ifeq ($(UNAME),AIX)
-MODLIBS         = -lcflsh_block
-MODULE_LINKLIBS = ${MODLIBS} 
-LINKLIBS       += -lcflsh_block -l${MODULE}
-EXPFLAGS        = -bE:libcflsh_usfs.exp
+MODLIBS    = -lcflsh_block
+LINKLIBS  += -lcflsh_block -l${MODULE}
+EXPFLAGS   = -bE:libcflsh_usfs.exp
 else
-MODLIBS         = -lcflsh_block -ldl
-MODULE_LINKLIBS = ${MODLIBS} -Wl,--version-script=libcflsh_usfs_exportmap
-LINKLIBS       += -lcflsh_block -ldl -l${MODULE} -lrt
-LCFLAGS         = -Wno-format-security
+MODLIBS    = -lcflsh_block$(SOVER) -Wl,--version-script=libcflsh_usfs_exportmap -ldl
+LINKLIBS  += -lcflsh_block$(SOVER) -l${MODULE}$(SOVER) -ldl -lrt
+LCFLAGS    =
 endif
 
 include ${ROOTPATH}/config.mk
-
 

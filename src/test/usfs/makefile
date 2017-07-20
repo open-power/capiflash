@@ -29,11 +29,10 @@ ALLOW_WARNINGS = yes
 
 ROOTPATH = ../../..
 EXPFLAGS = -bexpall
-LINKLIBS = -lcflsh_block -lcflsh_usfs
 BTESTS   = cusfs
 
 LCFLAGS += \
-   -D__FVT__\
+   -D__FVT__ \
    -I$(ROOTPATH)/src/block \
    -I$(ROOTPATH)/src/common
 
@@ -44,3 +43,4 @@ VPATH += \
 
 include ${ROOTPATH}/config.mk
 
+LINKLIBS += -lcflsh_block$(SOVER) -lcflsh_usfs$(SOVER)

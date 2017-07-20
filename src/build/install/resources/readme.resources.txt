@@ -9,7 +9,7 @@ Purpose: udev rules for /dev/sdX and sgX that call enable user space to notify t
 blacklist-cxlflash.conf
 Purpose: temporarily blacklist the cxlflash driver by placing this in /etc/modprobe.d . this is used by reload_all_adapters (see below).
 
-capi_flash.pl
+capi_flash
 Purpose: flash AFU factory or user images.
 
 corsa_surelock.xxx.bin
@@ -19,14 +19,14 @@ cxlffdc
 Purpose: Gather PSL and AFU debug data, and place into a tarball for HW diagnosis
 
 flash_all_adapters
-Purpose: Wrapper script for capi_flash.pl, used by debian package post-installer
+Purpose: Wrapper script for capi_flash, used by debian package post-installer
 
 
 reload_all_adapters
 Purpose: Simple Wrapper to enable perst / reset of the adapters after a flash update without a reboot
 
 flash_factory_image
-Purpose: Wrapper script for capi_flash.pl, used by CSC manufacturing to write factory image prior to shipmnet
+Purpose: Wrapper script for capi_flash, used by CSC manufacturing to write factory image prior to shipmnet
 
 license/*
 Purpose: License terms / conditions for IBM Data Engine for NoSQL User Libraries
@@ -38,7 +38,7 @@ psl_trace_dump
 Purpose: collected PSL FFDC / traces on a failed system
 
 
-cflashutils.sh
+cflashutils
 Purpose: Utility code for cflash tooling
 
 cxlfrefreshluns cxlfsetlunmode cxlfstatus

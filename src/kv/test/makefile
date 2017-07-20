@@ -29,9 +29,8 @@ ALLOW_WARNINGS = yes
 
 ROOTPATH = ../../..
 SUBDIRS  =
-LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 VPATH   += ..
-LCFLAGS  = -D__FVT__ -D__STDC_FORMAT_MACROS -I$(ROOTPATH)/src/kv -I$(GTESTINC)
+LCFLAGS  = -D__FVT__ -D__STDC_FORMAT_MACROS -I$(ROOTPATH)/src/kv -I$(GTESTINC) 
 
 GTESTS   = \
  fvt_kv_fixme1 \
@@ -84,11 +83,7 @@ run_err_OFILES = fvt_kv_tst_errors.o fvt_kv_utils.o kv_utils_db.o \
 include ${ROOTPATH}/config.mk
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
-ifeq ($(UNAME),AIX)
-$(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(IMGDIR)/libarkdb.a
-else
-$(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(IMGDIR)/libarkdb.so
-endif
+LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER) -larkdb$(SOVER) -larkalloc$(SOVER)
 
 unit:
 	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt_kv$(BITS) --gtest_output=xml:$(TESTDIR)/kv_fvt_results.xml;

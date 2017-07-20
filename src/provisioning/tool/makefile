@@ -29,10 +29,11 @@ ALLOW_WARNINGS = yes
 
 ROOTPATH = ../../..
 SUBDIRS  =
+LCFLAGS  =
 
 ifneq ($(UNAME),AIX)
 PGMS     = provtool afuinject
-LINKLIBS = -lprov -lcxl
+LINKLIBS = -lprov$(SOVER) -lcxl
 endif
 
 include ${ROOTPATH}/config.mk

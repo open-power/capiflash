@@ -156,10 +156,10 @@ then
     fi
   fi
 
- if [[ -e /usr/bin/capi_flash.pl ]]
+ if [[ -e /usr/bin/capi_flash ]]
  then
     IFS=$'\n'
-    adaps=($(capi_flash.pl -l 2>/dev/null))
+    adaps=($(capi_flash -l 2>/dev/null))
     unset IFS
     for line in "${adaps[@]}"
     do
@@ -272,10 +272,10 @@ then
     echo "WARNING:   Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
   fi
 
- if [[ -e /usr/bin/capi_flash.pl ]]
+ if [[ -e /usr/bin/capi_flash ]]
   then
     IFS=$'\n'
-    adaps=($(capi_flash.pl -l 2>/dev/null))
+    adaps=($(capi_flash -l 2>/dev/null))
     unset IFS
     for line in "${adaps[@]}"
     do

@@ -1087,6 +1087,31 @@ void  cusfs_child_post_fork (void)
 }
 
 
+/* ----------------------------------------------------------------------------
+ *
+ * NAME: cusfs_trace_log_data_syslog
+ *
+ * FUNCTION: Print a message to the system log
+ * CALLED BY:
+ * INTERNAL PROCEDURES CALLED:
+ * EXTERNAL PROCEDURES CALLED:
+ * RETURNS:
+ * ----------------------------------------------------------------------------
+ */
+void cusfs_trace_log_data_syslog(char *fn, char *fcn, uint ln, char *msg, ...)
+{
+    va_list args;
+    char    msg1[PATH_MAX]={0};
+    char    msg2[PATH_MAX]={0};
+
+    va_start(args,msg);
+    vsprintf(msg1,msg,args);
+    va_end(args);
+
+    sprintf(msg2, "%-25s  %-35s line:%5d : %s",fn,fcn,ln,msg1);
+    syslog(LOG_DEBUG, "%s", msg2);
+}
+
 
 
 /* ----------------------------------------------------------------------------

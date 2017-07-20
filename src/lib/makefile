@@ -24,26 +24,7 @@
 # IBM_PROLOG_END_TAG
 ROOTPATH = ../..
 
-all: 
-
-OBJS = 
-
 SUBDIRS = arkalloc.d
-
-code_pass: ${IMGDIR}/libcxl.so
-
-${IMGDIR}/libcxl.so:
-	@echo "WARNING: TODO: Need to pick up libcxl.so from external toolchain dirs. This is temporary."
-	mkdir -p ${IMGDIR}
-	@if [ "${TARGET_PLATFORM}" = "PPC64EL" ]; then \
-	echo "Copying little-endian libcxl"; \
-	cp libcxl-le/libcxl.so ${IMGDIR}; \
-	else \
-	echo "Copying big-endian libcxl"; \
-	cp libcxl-be/libcxl.so ${IMGDIR}; \
-	fi
-	@echo "Done patching"
-
 
 include ${ROOTPATH}/config.mk
 

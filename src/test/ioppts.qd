@@ -50,8 +50,8 @@ if [ ! -z $1 ]
 then
   export LD_LIBRARY_PATH=$1
 fi
-echo $PROCS|awk '{printf "%dP QD1   ", $1}'; QD=1   ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
-echo $PROCS|awk '{printf "%dP QD8   ", $1}'; QD=8   ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
-echo $PROCS|awk '{printf "%dP QD16  ", $1}'; QD=16  ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
-echo $PROCS|awk '{printf "%dP QD32  ", $1}'; QD=32  ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
-echo $PROCS|awk '{printf "%dP QD128 ", $1}'; QD=128 ioppt.pl -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD1   ", $1}'; QD=1   ioppt -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD8   ", $1}'; QD=8   ioppt -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD16  ", $1}'; QD=16  ioppt -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD32  ", $1}'; QD=32  ioppt -c "$CMD" -n $PROCS -d "$DEVS"
+echo $PROCS|awk '{printf "%dP QD128 ", $1}'; QD=128 ioppt -c "$CMD" -n $PROCS -d "$DEVS"

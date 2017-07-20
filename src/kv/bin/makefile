@@ -31,7 +31,6 @@ SUBDIRS  =
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
 VPATH   += $(ROOTPATH)/src/kv
 
 BTESTS   = _tst_ark _tst_persist test_perf \
@@ -47,3 +46,5 @@ LCFLAGS = \
    -I$(ROOTPATH)/src/kv/test
 
 include ${ROOTPATH}/config.mk
+
+LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER) -larkdb$(SOVER) -larkalloc$(SOVER)

@@ -31,7 +31,6 @@ ALLOW_WARNINGS = yes
 
 ROOTPATH = ../..
 EXPFLAGS = -bexpall
-LINKLIBS = -lcflshcom -lcflsh_block
 
 ifneq ($(TARGET_PLATFORM),x86_64)
 BTESTS = transport_test blk_test blk_eras pvtestauto xlate pblkread
@@ -46,10 +45,14 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 MODULE    = afu
 OBJS      = afu.o capi_dev_nodes.o
 BTESTS   += cxl_afu_dump cxl_afu_status cxl_afu_inject flashgt_vpd_access flashgt_temp
-LINKLIBS += -lafu -lcxl
 endif
 endif
 
 VPATH += ${ROOTPATH}/src/test
 
 include ${ROOTPATH}/config.mk
+
+LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER)
+ifneq ($(UNAME),AIX)
+LINKLIBS += -lafu$(SOVER) -lcxl
+endif

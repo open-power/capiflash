@@ -81,8 +81,8 @@ int do_perst()
          PERST test case is under maunal Cflash FVT test case.  
          Test case will by default PERST all the adapter present in the system 
          Incase user wants to perst in selective devices; then target device entry should in 
-         /tmp/perstinfo_file - like 000N:01:00.0; so that cflash_perst.pl PESRT tool can use it further 
-         usage ex: cflash_perst.pl -t 000N:01:00.0
+         /tmp/perstinfo_file - like 000N:01:00.0; so that cflash_perst PESRT tool can use it further 
+         usage ex: cflash_perst -t 000N:01:00.0
      */
 
     rc=system("echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes");
@@ -122,7 +122,7 @@ int do_perst()
             iTer++;
         }
         
-          sprintf(blockCheckP," /usr/bin/cflash_perst.pl -t %s ", tmpBuff );
+          sprintf(blockCheckP," /usr/bin/cflash_perst -t %s ", tmpBuff );
           printf("......... command : %s \n",blockCheckP);
           rc = system(blockCheckP);
           if ( rc )

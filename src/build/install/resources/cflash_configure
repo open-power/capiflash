@@ -115,7 +115,7 @@ then
  echo "------------------------------"
  echo -e "INFO: Checking software versions\n"
 
- if [[ $1 =~ mfg && ! -e /lib/libafu.so ]]; then force=yes; fi
+ if [[ $1 =~ mfg && ! -e /usr/lib/libcflsh_block* ]]; then force=yes; fi
 
  #remove old
  EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
@@ -291,7 +291,7 @@ EOF
   echo "------------------------------"
   echo -e "INFO: Checking software versions\n"
 
-  if [[ $1 =~ mfg && ! -e /lib/libafu.so ]]; then force=yes; fi
+  if [[ $1 =~ mfg && ! -e /usr/lib/libcflsh_block* ]]; then force=yes; fi
 
   ################
   #remove old
@@ -406,17 +406,17 @@ fi
           if [[ $char = [yY] ]]
           then
             date > /opt/.lic/$LD
-            if [[ -e /opt/$HD && ! -e /lib/libcflsh_block.so ]]
+            if [[ -e /opt/$HD && ! -e /usr/lib/libcflsh_block* ]]
             then
               mv /opt/$HD/* /lib >/dev/null 2>&1
             fi
             rm -R /opt/$HD >/dev/null 2>&1
           else
             echo "ERROR: The license must be accepted"
-            if [[ -e /lib/libcflsh_block.so ]]
+            if [[ -e /usr/lib/libcflsh_block* ]]
             then
               if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD >/dev/null 2>&1; fi
-              mv /lib/libcflsh_block.so /opt/$HD >/dev/null 2>&1
+              mv /usr/lib/libcflsh_block* /opt/$HD >/dev/null 2>&1
             fi
             exit 128
           fi
@@ -436,7 +436,7 @@ fi
   GT_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
   GTP_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
 
-  for str in $(capi_flash.pl -l|awk '{print $4$9}')
+  for str in $(capi_flash -l|awk '{print $4$9}')
   do
     if [[ $str =~ 04cf && ! $str =~ $CORSA_IMAGE ]]; then do_flash=1; break; fi
     if [[ $str =~ 0601 && ! $str =~ $GT_IMAGE ]];    then do_flash=1; break; fi
@@ -584,7 +584,7 @@ fi
   then
     if [[ -e /opt/.lic/$LD ]]; then rm -f /opt/.lic/$LD; fi
     if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-    mv /lib/libcflsh_block.so /opt/$HD >/dev/null 2>&1
+    mv /usr/lib/libcflsh_block* /opt/$HD >/dev/null 2>&1
   fi
 
   echo -e "\nINSTALL success"

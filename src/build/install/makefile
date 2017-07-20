@@ -118,10 +118,12 @@ cflash: ${LIC_FILES} ${MAN3_FILES}
 	@mkdir -p ${LIC_DIR}
 	@mkdir -p ${SHARE_DIR}
 	@mkdir -p ${EXAMPLES_DIR}
-	@mkdir -p ${MAN_DIR}
 	@mkdir -p -m 755 ${INC_DIR}
-	@mkdir -p ${SYSTEMD_DIR}
+ifneq ($(UNAME),AIX)
 	@mkdir -p ${UDEV_RULES_DIR}
+	@mkdir -p ${SYSTEMD_DIR}
+	@mkdir -p ${MAN_DIR}
+endif
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/kv/arkdb.h ${INC_DIR}
 	${INSTALL} ${ROOTPATH}/src/include/zmalloc.h ${INC_DIR}
@@ -151,7 +153,7 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${TESTSRCDIR}/run_kv_persist64 ${BIN_DIR}
 	${INSTALL} ${TESTSRCDIR}/run_kv_benchmark64 ${BIN_DIR}
 	${INSTALL} ${TESTSRCDIR}/kv_perf64 ${BIN_DIR}
-	${INSTALL} ${ROOTPATH}/src/test/ioppt.pl ${BIN_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/ioppt ${BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
@@ -170,7 +172,7 @@ endif
 	${INSTALL} -s ${TESTSRCDIR}/run_kv_persist ${BIN_DIR}
 	${INSTALL} -s ${TESTSRCDIR}/run_kv_benchmark ${BIN_DIR}
 	${INSTALL} -s ${TESTSRCDIR}/kv_perf ${BIN_DIR}
-	${INSTALL}    ${ROOTPATH}/src/test/ioppt.pl ${BIN_DIR}
+	${INSTALL}    ${ROOTPATH}/src/test/ioppt ${BIN_DIR}
 	${INSTALL}    ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 
 	${INSTALL} ${RESOURCEDIR}/cflash_plinks ${BIN_DIR}
@@ -179,15 +181,15 @@ endif
 	${INSTALL} ${RESOURCEDIR}/cablecheck ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cxlfsetlunmode ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cxlfstatus ${BIN_DIR}
-	${INSTALL} ${RESOURCEDIR}/cflashutils.sh ${BIN_DIR}
-	${INSTALL} ${RESOURCEDIR}/setup.sh ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/cflashutils ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/setup ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_version ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/machine_info ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_logs_cron ${BIN_DIR}
 
 
 	@#TEMPORARY install - remove this after kernel driver can run workaround
-	${INSTALL} ${RESOURCEDIR}/afucfg.sh ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/afucfg ${BIN_DIR}
 
 
 	@#Dev Permissions for cxl - set mode to 644 explicitly
@@ -297,8 +299,8 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} -s ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
 	${INSTALL} -s ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}
 endif
-	${INSTALL} ${RESOURCEDIR}/cflash_inject.pl ${TEST_DIR}
-	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst.sh ${TEST_DIR}
+	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}
 	${INSTALL} -s ${TESTSRCDIR}/run_fvt_scripts ${TEST_DIR}
 endif
 
@@ -322,10 +324,12 @@ else
      fi
 	@if [[ -e ${AFU_IMAGES_DIR}/$(subst .gz,,$(@)) ]]; then \
          cd ${AFU_IMAGES_DIR}; /usr/bin/md5sum $(subst .gz,,$(@)) >> afu_fw.md5sum; \
-         if [[ ! -e $@ ]]; then gzip $(subst .gz,,$(@)); fi; \
+         if [[ ! -e $@ ]]; then gzip -n $(subst .gz,,$(@)); fi; \
      fi
 #endif
 endif
+
+CXLDIR=/usr/lib/powerpc64le-linux-gnu
 
 cflashimage: ${FW_FILES}
 	@mkdir -p ${AFU_BIN}
@@ -334,6 +338,7 @@ cflashimage: ${FW_FILES}
 	${INSTALL} ${RESOURCEDIR}/cxlffdc ${AFU_BIN}
 ifneq ($(UNAME),AIX)
 ifneq ($(TARGET_PLATFORM),x86_64)
+	${INSTALL} ${CXLDIR}/$(shell readlink ${CXLDIR}/libcxl.so) ${LIB_DIR}
 	${INSTALL} -s ${TESTSRCDIR}/cxl_afu_dump ${AFU_BIN}
 	${INSTALL} -s ${TESTSRCDIR}/cxl_afu_status ${AFU_BIN}
 	${INSTALL} -s ${TESTSRCDIR}/flashgt_temp ${AFU_BIN}
@@ -343,18 +348,18 @@ endif
 	${INSTALL} -m 644 ${RESOURCEDIR}/blacklist-cxlflash.conf ${SHARE_DIR}
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGT.csv ${SHARE_DIR}
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGTplus.csv ${SHARE_DIR}
-	${INSTALL} ${AFUDIR}/surelock_vpd2rbf.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/capi_flash.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_reset.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_perst.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_perf.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_capacity.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_devices.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_temp.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_wear.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_stick.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_perfcheck.pl ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/cflash_mfg_init.pl ${AFU_BIN}
+	${INSTALL} ${AFUDIR}/surelock_vpd2rbf ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/capi_flash ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_reset ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_perst ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_perf ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_capacity ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_devices ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_temp ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_wear ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_stick ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_perfcheck ${AFU_BIN}
+	${INSTALL} ${RESOURCEDIR}/cflash_mfg_init ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/reload_all_adapters ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/psl_trace_dump ${AFU_BIN}

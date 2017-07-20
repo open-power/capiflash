@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/test/ioppt.pl $
+# $Source: src/test/ioppt $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -24,7 +24,7 @@
 #
 # IBM_PROLOG_END_TAG
 ##
-# ioppt.pl -c "blockio -d/dev/sgX -q1" -n 100
+# ioppt -c "blockio -d/dev/sgX -q1" -n 100
 
 use strict;
 use warnings;
@@ -66,7 +66,7 @@ my $tps;
 sub usage()
 {
   print "\n";
-  print "Usage: ioppt.pl [-n num_to_exec] [-c cmd] [-d \"dev1 dev2 ...\"] [-v|-vv]\n";
+  print "Usage: ioppt [-n num_to_exec] [-c cmd] [-d \"dev1 dev2 ...\"] [-v|-vv]\n";
   print "    -n             : number of cmds to execute         \n";
   print "    -c             : cmd string to execute             \n";
   print "    -d             : list of devices to use            \n";

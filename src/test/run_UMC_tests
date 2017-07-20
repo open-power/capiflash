@@ -1,7 +1,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/test/run_KMC_tests.sh $
+# $Source: src/test/run_UMC_tests $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -22,7 +22,7 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-# Runs block api tests on GA2 hardware that supports
-# Kernal MC mode.
+# Run block fvt tests that are supported in User MC mode
+# Tests are run on GA1 hardware with User MC enabled.
 
-run_block_fvt --gtest_filter=*
+run_block_fvt --gtest_filter=*_UMC_*

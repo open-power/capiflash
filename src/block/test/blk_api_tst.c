@@ -130,7 +130,7 @@ void teminate_blk_tests()
  * \brief
  * if FVT_DEV_RAID0 is set, use it
  * else if FVT_DEV is set and BLOCK_FILEMODE_ENABLED==1, use FVT_DEV
- * else if cflash_devices.pl finds GT superpipe luns, use "RAID0"
+ * else if cflash_devices finds GT superpipe luns, use "RAID0"
  * else FVT_DEV is used
  ******************************************************************************/
 void blk_fvt_RAID0_setup(void)
@@ -153,9 +153,9 @@ void blk_fvt_RAID0_setup(void)
     else
     {
 #ifdef _AIX
-        FILE *fp = popen("cflash_devices.pl -S 2>/dev/null", "r");
+        FILE *fp = popen("cflash_devices -S 2>/dev/null", "r");
 #else
-        FILE *fp = popen("/usr/bin/cflash_devices.pl -S 2>/dev/null",
+        FILE *fp = popen("/usr/bin/cflash_devices -S 2>/dev/null",
                          "r");
 #endif
         if (fp) {fgets(buf, 1024, fp);}

@@ -33,8 +33,6 @@ TESTDIR  = ${ROOTPATH}/obj/tests
 #test code != production code, so allow warnings here.
 ALLOW_WARNINGS = yes
 
-LINKLIBS = -lcflshcom -lcflsh_block -lmclient
-
 GTESTS = run_master_fvt
 
 run_master_fvt_OFILES = fvt_master.o mc_test.o mc_test2.o \
@@ -51,6 +49,8 @@ CFLAGS += \
 
 include ${ROOTPATH}/config.mk
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
+
+LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER) -lmclient$(SOVER)
 
 unit:
 	-@if [[ -e /dev/cxl ]]; then \

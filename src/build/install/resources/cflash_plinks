@@ -2,7 +2,7 @@
 #  IBM_PROLOG_BEGIN_TAG
 #  This is an automatically generated prolog.
 #
-#  $Source: src/build/install/resources/cflash_plinks.sh $
+#  $Source: src/build/install/resources/cflash_plinks $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -29,7 +29,7 @@ fstatus="$(/usr/bin/cxlfstatus)"
 
 if [[ $1 = "-h" ]]
 then
-  echo "cflash_plinks.sh  [<prefix>] [-v] [-vv] [-r <parm>] [-unused] [-rmunused] [-rmall]"
+  echo "cflash_plinks  [<prefix>] [-v] [-vv] [-r <parm>] [-unused] [-rmunused] [-rmall]"
   exit 0
 elif [[ $1 =~ unused ]]
 then

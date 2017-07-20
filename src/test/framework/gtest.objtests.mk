@@ -35,7 +35,7 @@ else ifneq ($(wildcard /usr/src/gtest),)
   GTESTDIR=/usr/src/gtest
   GTESTINC=/usr/include
 endif
-CPPFLAGS += -isystem $(GTESTINC)
+CPPFLAGS += -isystem $(GTESTINC) -fPIE
 
 else
 

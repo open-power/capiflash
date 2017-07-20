@@ -43,6 +43,7 @@ pkg=cxlflash_$ver
 if [[ ! -z $1 ]]; then pkg+=.$1; fi
 
 cd $SURELOCKROOT
+make setversion
 
 if [[ -e build ]]; then rm -fR build; fi
 mkdir -p build/$pkg

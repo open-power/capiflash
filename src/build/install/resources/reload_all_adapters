@@ -30,6 +30,6 @@ if [[ $_VM -eq 1 ]]; then echo "Not Supported on VM"; exit 0; fi
 for dev in $(lspci |egrep "04cf|0601|0628"|awk '{print $1}')
 do
   echo "reloading $dev"
-  /usr/bin/cflash_perst.pl -t $dev
+  /usr/bin/cflash_perst -t $dev
   if [[ $? -eq -2 || $? -eq -3 ]]; then exit -1; fi
 done

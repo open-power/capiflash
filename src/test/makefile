@@ -29,8 +29,6 @@ SUBDIRS  = usfs.d
 EXPFLAGS = -bexpall
 ALLOW_WARNINGS = yes
 
-LINKLIBS = -lcflshcom -lcflsh_block -larkdb -larkalloc
-
 GTESTS     = run_fvt run_fvt_scripts
 
 LCFLAGS = \
@@ -58,6 +56,8 @@ VPATH += \
 
 include ${ROOTPATH}/config.mk
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
+
+LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER) -larkdb$(SOVER) -larkalloc$(SOVER)
 
 unit:
 	-@if [[ -e /dev/cxl ]]; then \

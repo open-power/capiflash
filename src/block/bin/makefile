@@ -30,8 +30,10 @@ ALLOW_WARNINGS = yes
 ROOTPATH = ../../..
 SUBDIRS  =
 BTESTS   = blockio blocklistio blockplistio blocksio blockr0io blockr0sio asyncstress
-LINKLIBS = -lcflsh_block -lm
+CFLAGS   =
 LCFLAGS  = -D__FVT__ -I$(ROOTPATH)/src/block
 VPATH   += ${ROOTPATH}/src/common
 
 include ${ROOTPATH}/config.mk
+
+LINKLIBS += -lcflsh_block$(SOVER) -lm

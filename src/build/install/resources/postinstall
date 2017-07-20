@@ -32,16 +32,30 @@ ETC_DIR=/etc/cxlflash
 SIO_FILE=$ETC_DIR/sioluntable.ini
 LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
+TDIR=tmp
 
 #Creating empty SIO lun table and etc dir
-echo "INFO: Creating system cxl user / group..."
-if [[ -z $(grep cxl /etc/passwd) ]]; then useradd --system --user-group $USERNAME; fi
+if [[ -z $(grep cxl /etc/passwd) ]]
+then
+  echo "INFO: Creating system cxl user / group..."
+  useradd --system --user-group $USERNAME
+fi
 
-echo "INFO: enabling cxlfd service for LUN Management"
-systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
-systemctl start cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+echo "INFO: setting permissions on cxl and cxlflash device nodes."
+udevadm trigger -s cxl
+udevadm trigger -s cxlflash
 
-if [[ -e /tmp/cxlflash_headless ]]
+echo "INFO: Ensuring SIO LUN Table exists..."
+if [[ ! -e $ETC_DIR ]]; then mkdir $ETC_DIR; fi
+chown $USERNAME:$GROUPNAME $ETC_DIR
+chmod 770 $ETC_DIR
+if [[ ! -e $SIO_FILE ]]; then touch $SIO_FILE; fi
+chown $USERNAME:$GROUPNAME $SIO_FILE
+chmod 660 $SIO_FILE
+
+if [[ -e $BIN_DIR/cflash_logs_cron ]]; then cp $BIN_DIR/cflash_logs_cron /etc/cron.hourly; fi
+
+if [[ -e /$TDIR/cxlflash_headless ]]
 then
   echo "INFO: running headless"
   if [[ ! -e /opt/.lic/$LD ]]; then date > /opt/.lic/$LD; fi
@@ -62,18 +76,16 @@ else
   fi
 fi
 
-echo "INFO: setting permissions on cxl and cxlflash device nodes."
-udevadm trigger -s cxl
-udevadm trigger -s cxlflash
+case "$1" in 
+       configure) 
+               ldconfig
+               ;;
+       abort-upgrade|abort-remove|abort-deconfigure)
+               ;;
+esac
 
-echo "INFO: Ensuring SIO LUN Table exists..."
-if [[ ! -e $ETC_DIR ]]; then mkdir $ETC_DIR; fi
-chown $USERNAME:$GROUPNAME $ETC_DIR
-chmod 770 $ETC_DIR
-touch $SIO_FILE
-chown $USERNAME:$GROUPNAME $SIO_FILE
-chmod 660 $SIO_FILE
-
-if [[ -e $BIN_DIR/cflash_logs_cron ]]; then cp $BIN_DIR/cflash_logs_cron /etc/cron.hourly; fi
+echo "INFO: enabling cxlfd service for LUN Management"
+systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+systemctl start cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
 
 exit 0

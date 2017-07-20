@@ -213,12 +213,11 @@ do {                                                                    \
        (verbosity <= cusfs_log_verbosity)) {                             \
       pthread_mutex_lock(&cusfs_log_lock);                               \
       if (cusfs_global.flags & CFLSH_G_SYSLOG) {                           \
-          char msg1[PATH_MAX];                                          \
           /*                                                            \
            * If we are using syslog                                     \
            */                                                           \
-          sprintf(msg1,"%s,%s,%d,%s",__FILE__,__FUNCTION__,__LINE__,msg); \
-          syslog(LOG_DEBUG,msg1,## __VA_ARGS__);                        \
+        cusfs_trace_log_data_syslog(__FILE__,(char *)__FUNCTION__, __LINE__, \
+                                   msg,## __VA_ARGS__);       \
                                                                         \
       } else {                                                          \
           /*                                                            \

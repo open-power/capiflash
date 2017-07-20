@@ -31,7 +31,6 @@ ALLOW_WARNINGS = yes
 
 ROOTPATH = ../../..
 SUBDIRS  =
-LINKLIBS = -lcflsh_block -lm
 VPATH    = ${ROOTPATH}/src/common
 LCFLAGS  = -g -D__FVT__ -I$(ROOTPATH)/src/block -I$(GTESTINC)
 GTESTS   = run_block_fvt
@@ -41,6 +40,8 @@ DEPS = $(addprefix $(TESTDIR)/, $(run_block_fvt_OFILES:.o=.dep))
 
 include ${ROOTPATH}/config.mk
 include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
+
+LINKLIBS += -lcflsh_block$(SOVER) -lm
 
 unit:
 ifeq ($(BLOCK_FILEMODE_ENABLED), 1)

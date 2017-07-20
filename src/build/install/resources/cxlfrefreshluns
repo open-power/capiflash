@@ -25,7 +25,7 @@
 # IBM_PROLOG_END_TAG
 
 BIN_DIR=/usr/bin
-source $BIN_DIR/cflashutils.sh
+source $BIN_DIR/cflashutils
 
 
 showhelp()

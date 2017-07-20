@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/capi_flash.pl $
+# $Source: src/build/install/resources/capi_flash $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -112,7 +112,7 @@ my $VSEC_REG = 0x904;                    # Flash VSEC Register
 sub usage
 {
   print "\n";
-  print "Usage: capi_flash.pl [-f fw_file] [-l] [-t <target>] [-v]\n";
+  print "Usage: capi_flash [-f fw_file] [-l] [-t <target>] [-v]\n";
   print "    -l             : List pci location of capi devices            \n";
   print "    -f             : Firmware image                               \n";
   print "    -t or --target : Target pcie device to flash                  \n";
@@ -120,11 +120,11 @@ sub usage
   print "    -h or --help   : Help - Print this message                    \n";
   if ($_VM)
   {
-    print "\n  ex: capi_flash.pl -f 1410f0041410f004.00000001160413D1 -t afu0.0\n\n";
+    print "\n  ex: capi_flash -f 1410f0041410f004.00000001160413D1 -t afu0.0\n\n";
   }
   else
   {
-    print "\n  ex: capi_flash.pl -f 1410f0041410f004.00000001160413D1 -t 0000:01:00.0\n\n";
+    print "\n  ex: capi_flash -f 1410f0041410f004.00000001160413D1 -t 0000:01:00.0\n\n";
   }
   exit 0;
 }

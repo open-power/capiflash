@@ -154,18 +154,18 @@ then
   rpm -qa|egrep "cflash|cflashimage"   >> $DATADIR/codelevels
 fi
 
-/usr/bin/capi_flash.pl -l >> $DATADIR/codelevels
+/usr/bin/capi_flash -l >> $DATADIR/codelevels
 /usr/bin/cflash_version   >> $DATADIR/codelevels
 
-/usr/bin/cflash_temp.pl   >  $DATADIR/cflash_temp&
+/usr/bin/cflash_temp   >  $DATADIR/cflash_temp&
 check_pid $!
-/usr/bin/cflash_wear.pl   >  $DATADIR/cflash_wear&
+/usr/bin/cflash_wear   >  $DATADIR/cflash_wear&
 check_pid $!
 /usr/bin/cxlfstatus       >  $DATADIR/cxlfstatus&
 check_pid $!
-/usr/bin/cflash_capacity.pl -v >  $DATADIR/cflash_capacity&
+/usr/bin/cflash_capacity -v >  $DATADIR/cflash_capacity&
 check_pid $!
-/usr/bin/cflash_capacity.pl -t 04cf >> $DATADIR/cflash_capacity&
+/usr/bin/cflash_capacity -t 04cf >> $DATADIR/cflash_capacity&
 check_pid $!
 
 if [[ ! -z $(ls -A $MISCDIR) ]]

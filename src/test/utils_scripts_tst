@@ -2,7 +2,7 @@
 #  IBM_PROLOG_BEGIN_TAG
 #  This is an automatically generated prolog.
 #
-#  $Source: src/test/utils_scripts_tst.sh $
+#  $Source: src/test/utils_scripts_tst $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -208,7 +208,7 @@ function CFLVER_ERRSTR_TEST {
 #Run capi_flash test for "Found CAPI"
 ################################################################
 function CFLASH_RC_TEST {
-    setup; CMD=capi_flash.pl;
+    setup; CMD=capi_flash;
     ${CMD} -l &> $BUFFER
     CMD_RC=$?
     expect_eq 0 $CMD_RC "CFLASH_RC_TEST"
@@ -216,16 +216,16 @@ function CFLASH_RC_TEST {
 }
 
 function CFLASH_FIND_CAPI_TEST {
-    setup; CMD=capi_flash.pl;
+    setup; CMD=capi_flash;
     ${CMD} -l &> $BUFFER
     expect_str $BUFFER "CFLASH_FIND_CAPI_TEST" "Found CAPI";
 }
 
 ################################################################
-#Run capi_flash.pl searching for -help screen
+#Run capi_flash searching for -help screen
 ################################################################
 function CFLASH_USAGE_TEST {
-    setup; CMD=capi_flash.pl;
+    setup; CMD=capi_flash;
     ${CMD} &> $BUFFER
     expect_str $BUFFER "CFLASH_USAGE_TEST" "Usage";
 }
@@ -283,13 +283,13 @@ function CXLREFRESH_ERRSTR_TEST {
 }
 
 ################################################################
-#Run cflash_perfcheck.pl
+#Run cflash_perfcheck
 ################################################################
 function CFLASH_PERFCHK_RC_TEST {
-    setup; CMD=cflash_perfcheck.pl
+    setup; CMD=cflash_perfcheck
 
     superpipe_dev=$(cxlfrefreshluns | grep "superpipe" | cut -d: -f1 | sed -n 1p)
-    dev='';dev=$(cflash_devices.pl | grep $superpipe_dev )
+    dev='';dev=$(cflash_devices | grep $superpipe_dev )
 
     if [[ -z $dev || -z $superpipe_dev ]]; then
         echoerr "${CMD} no dev found";
@@ -302,8 +302,8 @@ function CFLASH_PERFCHK_RC_TEST {
 }
 
 function CFLASH_PERFCHK_ERRSTR_TEST {
-    setup; CMD=cflash_perfcheck.pl
-    dev='';dev=$(cflash_devices.pl | sed -n 1p)    
+    setup; CMD=cflash_perfcheck
+    dev='';dev=$(cflash_devices | sed -n 1p)    
     superpipe_dev=$(cxlfrefreshluns | grep "superpipe" | cut -d: -f1 | sed -n 1p)
 
     if [[ -z $dev || -z $superpipe_dev ]]; then
@@ -318,10 +318,10 @@ function CFLASH_PERFCHK_ERRSTR_TEST {
 }
 
 ################################################################
-#Run cflash_capacity.pl
+#Run cflash_capacity
 ################################################################
 function CFLASH_CAP_RC_TEST {
-    setup; CMD=cflash_capacity.pl
+    setup; CMD=cflash_capacity
     ${CMD} &> $BUFFER
     CMD_RC=$?
     expect_eq 0 $CMD_RC "CFLASH_CAP_RC_TEST"
@@ -329,7 +329,7 @@ function CFLASH_CAP_RC_TEST {
 }
 
 function CFLASH_CAP_ERRSTR_TEST {
-    setup; CMD=cflash_capacity.pl
+    setup; CMD=cflash_capacity
     ${CMD} &> $BUFFER
     expect_no_err_strings $BUFFER "CFLASH_CAP_ERRSTR_TEST" "ERROR[: ]"
     expect_no_err_strings $BUFFER "CFLASH_CAP_ERRSTR_TEST" "error[: ]"
@@ -337,33 +337,33 @@ function CFLASH_CAP_ERRSTR_TEST {
 }
 
 ################################################################
-#Run cflash_devices.pl and check for at least one sg* dev
+#Run cflash_devices and check for at least one sg* dev
 ################################################################
 function CFLASH_DEV_RC_TEST {
-    setup; CMD=cflash_devices.pl
+    setup; CMD=cflash_devices
     ${CMD} &> $BUFFER
     CMD_RC=$?
     expect_eq 0 $CMD_RC "CFLASH_DEV_RC_TEST"
 }
 
 function CFLASH_DEV_FIND_SG_TEST {
-    setup; CMD=cflash_devices.pl
+    setup; CMD=cflash_devices
     ${CMD} &> $BUFFER
     expect_str $BUFFER "CFLASH_DEV_FIND_SG_TEST" "/dev/sg*"
 }
 
 ################################################################
-##Run cflash_temp.pl and check for at least one sg* dev
+##Run cflash_temp and check for at least one sg* dev
 ################################################################
 function CFLASH_TEMP_RC_TEST {
-    setup; CMD=cflash_temp.pl
+    setup; CMD=cflash_temp
     ${CMD} &> $BUFFER
     CMD_RC=$?
     expect_eq 0 $CMD_RC "CFLASH_TEMP_RC_TEST"
 }
 
 function CFLASH_TEMP_FIND_DEV {
-    setup; CMD=cflash_temp.pl
+    setup; CMD=cflash_temp
     ${CMD} &> $BUFFER
     expect_str $BUFFER "CFLASH_TEMP_FIND_DEV" "Found"
 }
@@ -424,10 +424,10 @@ function RELOAD_ADAPS_SUCC_TEST {
 }
 
 ################################################################
-#Run cflash_wear.pl
+#Run cflash_wear
 ################################################################
 function CFLASH_WEAR_RC_TEST {
-    setup; CMD=cflash_wear.pl
+    setup; CMD=cflash_wear
     ${CMD} &> $BUFFER
     CMD_RC=$?
     expect_eq 0 $CMD_RC "CFLASH_WEAR_RC_TEST"
@@ -435,7 +435,7 @@ function CFLASH_WEAR_RC_TEST {
 }
 
 function CFLASH_WEAR_ERRSTR_TEST {
-    setup; CMD=cflash_wear.pl
+    setup; CMD=cflash_wear
     ${CMD} &> $BUFFER
     expect_no_err_strings $BUFFER "CFLASH_WEAR_ERRSTR_TEST" "ERROR[: ]"
     expect_no_err_strings $BUFFER "CFLASH_WEAR_ERRSTR_TEST" "error[: ]"
@@ -444,7 +444,7 @@ function CFLASH_WEAR_ERRSTR_TEST {
 }
 
 function CFLASH_WEAR_FOUND_TEST {
-    setup; CMD=cflash_wear.pl
+    setup; CMD=cflash_wear
     ${CMD} &> $BUFFER
     expect_str $BUFFER "CFLASH_WEAR_FOUND_TEST" "Found 0601"
     expect_str $BUFFER "CFLASH_WEAR_FOUND_TEST" "sg[0-9]"
@@ -525,10 +525,10 @@ function CXLFSETLUNMODE_ERRSTR_TEST {
 }
 
 ################################################################
-#Run cflash_stick.pl
+#Run cflash_stick
 ################################################################
 function CFLASH_STILST_RC_TEST {
-    setup; CMD=cflash_stick.pl
+    setup; CMD=cflash_stick
     ${CMD} -l &> $BUFFER
     CMD_RC=$?
     expect_eq 0 $CMD_RC "CFLASH_STILST_RC_TEST"
@@ -536,7 +536,7 @@ function CFLASH_STILST_RC_TEST {
 }
 
 function CFLASH_STILST_ERRSTR_TEST {
-    setup; CMD=cflash_stick.pl
+    setup; CMD=cflash_stick
     ${CMD} -l &> $BUFFER
     expect_no_err_strings $BUFFER "CFLASH_STILST_ERRSTR_TEST" "ERROR[: ]"
     expect_no_err_strings $BUFFER "CFLASH_STILST_ERRSTR_TEST" "error[: ]"
@@ -545,12 +545,12 @@ function CFLASH_STILST_ERRSTR_TEST {
 }
 
 ################################################################
-#Run cflash_perst.pl
+#Run cflash_perst
 ################################################################
 function CFLASH_PERST_RC_TEST {
-    setup; CMD=cflash_perst.pl
+    setup; CMD=cflash_perst
 
-    slot=$(capi_flash.pl -l | grep 0601 | sed -n 1p |awk '{print $6}')
+    slot=$(capi_flash -l | grep 0601 | sed -n 1p |awk '{print $6}')
     if [[ -z $slot ]]; then
         echoerr "Slot not found."
         FAILED_CHECKS=$((FAILED_CHECKS+1));TOTAL_CHECKS=$((TOTAL_CHECKS+1))
@@ -566,9 +566,9 @@ function CFLASH_PERST_RC_TEST {
 }
 
 function CFLASH_PERST_ERRSTR_TEST {
-    setup; CMD=cflash_perst.pl
+    setup; CMD=cflash_perst
 
-    slot=$(capi_flash.pl -l | grep 0601 | sed -n 1p |awk '{print $6}')
+    slot=$(capi_flash -l | grep 0601 | sed -n 1p |awk '{print $6}')
     if [[ -z $slot ]]; then
         echoerr "Slot not found."
         FAILED_CHECKS=$((FAILED_CHECKS+1));TOTAL_CHECKS=$((TOTAL_CHECKS+1))
@@ -586,12 +586,12 @@ function CFLASH_PERST_ERRSTR_TEST {
 }
 
 ################################################################
-#Run cflash_reset.pl
+#Run cflash_reset
 ################################################################
 function CFLASH_RESET_RC_TEST {
-    setup; CMD=cflash_reset.pl
+    setup; CMD=cflash_reset
  
-    slot=$(capi_flash.pl -l | grep 0601 | sed -n 1p |awk '{print $6}')
+    slot=$(capi_flash -l | grep 0601 | sed -n 1p |awk '{print $6}')
     if [[ -z $slot ]]; then
         echoerr "Slot not found."
         FAILED_CHECKS=$((FAILED_CHECKS+1));TOTAL_CHECKS=$((TOTAL_CHECKS+1))
@@ -604,9 +604,9 @@ function CFLASH_RESET_RC_TEST {
 }
 
 function CFLASH_RESET_ERRSTR_TEST {
-    setup; CMD=cflash_reset.pl
+    setup; CMD=cflash_reset
 
-    slot=$(capi_flash.pl -l | grep 0601 | sed -n 1p |awk '{print $6}')
+    slot=$(capi_flash -l | grep 0601 | sed -n 1p |awk '{print $6}')
     if [[ -z $slot ]]; then
         echoerr "Slot not found."
         FAILED_CHECKS=$((FAILED_CHECKS+1));TOTAL_CHECKS=$((TOTAL_CHECKS+1))
@@ -654,7 +654,7 @@ done
 ################################################################
 START_TIME=$(date +%H%M)
 
-#cflash_perst.pl
+#cflash_perst
 
 if [[ -n $TESTFUNCTION ]]; then
     #execute single test

@@ -26,12 +26,10 @@ ROOTPATH = ../../..
 
 OBJS = zmalloc.o
 MODULE = arkalloc
-
 MODLIBS =
-MODULE_LINKLIBS =
-
 LINKLIBS = -l${MODULE}
 EXPFLAGS = -bexpall
 SUBDIRS =
+LCFLAGS =
 
 include ${ROOTPATH}/config.mk

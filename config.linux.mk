@@ -23,6 +23,14 @@
 #
 # IBM_PROLOG_END_TAG
 
+#######################################################################################
+# > make "default", buildall
+#  -if debian build, no rpath is set so the default lib path of /usr/lib works
+#  -if sb build, then rpath is set to /opt/ATx.y, so LD_LIBRARY_PATH is required
+# > make install, prod[all], allpkgs
+#  -builds with rpath set to /opt/ATx.y and /usr/lib
+#######################################################################################
+
 SHELL=/bin/bash
 
 .PHONY: default
@@ -82,6 +90,7 @@ endif
 VERSIONMAJOR=4
 VERSIONMINOR=3
 GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
+SOVER=-0
 
 #generate VPATH based on these dirs.
 VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img
@@ -105,11 +114,12 @@ GTESTS_NM_DIR = $(addprefix $(TESTDIR)/, $(GTESTS_NO_MAIN))
 BIN_TESTS     = $(addprefix ${TESTDIR}/, ${BTESTS})
 PROGRAMS      = $(addprefix ${PGMDIR}/, ${PGMS})
 BITS          =
+CFLAGS        =
+LDFLAGS       = -z relro -z now
 
 ifdef MODULE
 OBJDIR            = ${ROOTPATH}/obj/modules/${MODULE}
 BEAMDIR           = ${ROOTPATH}/obj/beam/${MODULE}
-EXTRACOMMONFLAGS += -fPIC
 ifdef STRICT
 EXTRACOMMONFLAGS += -Weffc++
 endif
@@ -143,15 +153,15 @@ ifeq ($(USE_ADVANCED_TOOLCHAIN),yes)
 	VPATH_DIRS:= ${ADV_TOOLCHAIN_PATH}/lib64 ${VPATH_DIRS}
 	#see the ld flags below (search for rpath). This puts the atx.x stuff on the front
 	#which is REQUIRED by the toolchain.
-	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS} ${ARCHFLAGS} ${MODFLAGS}
-    LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,${ADV_TOOLCHAIN_PATH}/lib64
+	CFLAGS  += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS} ${ARCHFLAGS} ${MODFLAGS}
+    LDFLAGS += ${COMMONFLAGS} -Wl,-rpath,${ADV_TOOLCHAIN_PATH}/lib64
 else
 	CC  = gcc
 	CXX = g++
 	LD  = gcc
 	OBJDUMP = objdump
-	CFLAGS += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} ${MODFLAGS}
-    LDFLAGS = ${COMMONFLAGS} -Wl,-rpath,
+	CFLAGS  += ${COMMONFLAGS} -Wall ${CUSTOMFLAGS}  ${ARCHFLAGS} ${MODFLAGS}
+    LDFLAGS += ${COMMONFLAGS} -Wl,-rpath,
 endif
 
 OPT_LDFLAGS="${LDFLAGS}:/usr/lib"
@@ -174,7 +184,8 @@ CFLAGS   += -DGITREVISION='"${GITREVISION}"'
 CFLAGS   += -Wno-unused-result
 LIBPATHS  = -L${ROOTPATH}/img
 LINKLIBS += -lpthread -ludev
-MODULE_LINKLIBS += -lpthread -ludev
+
+MODLIBS += -lpthread -ludev
 
 #if ALLOW_WARNINGS is NOT defined, we assume we are compiling production code
 #as such, we adhere to strict compile flags. If this is defined then we warn
@@ -211,11 +222,11 @@ endif
 
 ${OBJDIR}/%.o: %.C
 	@mkdir -p ${OBJDIR}
-	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+	${CXX} -fPIC -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${OBJDIR}/%.o: %.c
 	@mkdir -p ${OBJDIR}
-	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+	${CC} -fPIC -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${OBJDIR}/%.o : %.S
 	@mkdir -p ${OBJDIR}
@@ -244,16 +255,16 @@ ${OBJDIR}/%.dep : %.S
 
 ${IMGDIR}/%.so : ${OBJECTS}
 	@mkdir -p ${IMGDIR}
-	${LD} -shared -z now ${LDFLAGS} -o $@ $(OBJECTS) $(MODULE_LINKLIBS) ${LIBPATHS}
-#	${LD} -shared -z now ${LDFLAGS} -o $@ $(OBJECTS)
+	${LD} -shared ${LDFLAGS} -Wl,-soname,$(notdir $(@:.so=))$(SOVER).so -o $(@:.so=)$(SOVER).so $(OBJECTS) $(MODLIBS) ${LIBPATHS}
+	@chmod -x $(@:.so=)$(SOVER).so
 
 ${PGMDIR}/%.o : %.c
 	@mkdir -p ${PGMDIR}
-	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+	${CC} -fPIE -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${PGMDIR}/%.o : %.C
 	@mkdir -p ${PGMDIR}
-	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+	${CXX} -fPIE -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${PGMDIR}/%.dep : %.C
 	@mkdir -p ${PGMDIR};
@@ -271,11 +282,11 @@ ${PGMDIR}/%.dep : %.c
 
 ${TESTDIR}/%.o : %.c
 	@mkdir -p ${TESTDIR}
-	${CC} -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+	${CC} -fPIE -c ${CFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${TESTDIR}/%.o : %.C
 	@mkdir -p ${TESTDIR}
-	${CXX} -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
+	${CXX} -fPIE -c ${CXXFLAGS} $< -o $@ ${INCFLAGS} -iquote . -fverbose-asm -Wa,-acdnhl=$(@:.o=.s)
 
 ${TESTDIR}/%.dep : %.C
 	@mkdir -p ${TESTDIR};
@@ -331,7 +342,7 @@ $(foreach pgm,$(PROGRAMS),$(eval $(call PROGRAMS_template,$(pgm))))
 
 $(PROGRAMS):
 	@mkdir -p ${PGMDIR}
-	$(LINK.o) $(CFLAGS) $(LDFLAGS) $($(@)_PGM_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(LINK.o) $(CFLAGS) -pie $(LDFLAGS) $($(@)_PGM_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
 
 #-------------------------------------------------------------------------------
 #Build a C-file main, build the *_OFILES into TESTDIR, and link them together
@@ -343,7 +354,7 @@ endef
 $(foreach bin_test,$(BIN_TESTS),$(eval $(call BIN_TESTS_template,$(bin_test))))
 
 $(BIN_TESTS):
-	$(LINK.o) $(CFLAGS) $($(@)_BTEST_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(LINK.o) $(CFLAGS) -pie $(LDFLAGS) $($(@)_BTEST_OFILES) $(LINKLIBS) ${LIBPATHS} -o $@
 
 #Build a C++ file that uses gtest, build *_OFILES into TESTDIR, link with gtest_main
 define GTESTS_template
@@ -355,7 +366,7 @@ endef
 $(foreach _gtest,$(GTESTS_DIR),$(eval $(call GTESTS_template,$(_gtest))))
 
 $(GTESTS_DIR):
-	$(CXX) $(CFLAGS) $(LDFLAGS) $($(@)_GTESTS_OFILES) $(GTEST_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(CXX) $(CFLAGS) -pie $(LDFLAGS) $($(@)_GTESTS_OFILES) $(GTEST_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
 #-------------------------------------------------------------------------------
 
 #Build a C++ file that uses gtest, build *_OFILES into TESTDIR, link with gtest_main
@@ -368,7 +379,7 @@ endef
 $(foreach _gtest_nm,$(GTESTS_NM_DIR),$(eval $(call GTESTS_NM_template,$(_gtest_nm))))
 
 $(GTESTS_NM_DIR):
-	$(CXX) $(CFLAGS) $(LDFLAGS) $($(@)_GTESTS_NM_OFILES) $(GTEST_NM_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
+	$(CXX) $(CFLAGS) -pie $(LDFLAGS) $($(@)_GTESTS_NM_OFILES) $(GTEST_NM_DEPS) $(LINKLIBS) ${LIBPATHS} -o $@
 #-------------------------------------------------------------------------------
 
 DEPS += $(addsuffix .dep, ${BIN_TESTS}) $(addsuffix .dep, ${PROGRAMS}) \

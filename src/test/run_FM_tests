@@ -1,7 +1,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/test/run_UMC_tests.sh $
+# $Source: src/test/run_FM_tests $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -22,7 +22,8 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-# Run block fvt tests that are supported in User MC mode
-# Tests are run on GA1 hardware with User MC enabled.
+# Following command allowd to run block api tests without 
+# CAPI hardware installed.
+# Run block API fvt tests in filemode
 
-run_block_fvt --gtest_filter=*_UMC_*
+run_block_fvt --gtest_filter=*_FM_*

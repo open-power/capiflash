@@ -5,7 +5,6 @@ img/libarkdb.so
 img/libcflsh_block.so
 img/libcflsh_usfs.so
 img/libcflshcom.so
-img/libcxl.so
 img/libprov.so
 obj/modules/afu/afu.o
 obj/modules/afu/capi_dev_nodes.o
@@ -157,5 +156,4 @@ pkg/install_root/usr/lib/libarkdb.so
 pkg/install_root/usr/lib/libcflsh_block.so
 pkg/install_root/usr/lib/libcflsh_usfs.so
 pkg/install_root/usr/lib/libcflshcom.so
-pkg/install_root/usr/lib/libcxl.so
 pkg/install_root/usr/lib/libprov.so

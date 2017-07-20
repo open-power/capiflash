@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/cflash_inject.pl $
+# $Source: src/build/install/resources/cflash_inject $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -78,17 +78,17 @@ sub usage()
   print "    -P or --perm   : make the r/w inject for an afu/port permanent                   \n";
   print "    -C or --clear  : clear the inject for an afu/port/entry                          \n";
   print "    -h or --help   : Help - Print this message                                     \n\n";
-  print "  *set   sg9, to wear% 33,             cflash_inject.pl -d sg9 -W 33                 \n";
-  print "  *set   sg9, to temp  64,             cflash_inject.pl -d sg9 -T 64                 \n";
-  print "  *clear sg9, wear or temp inject      cflash_inject.pl -d sg9 -C                    \n";
-  print "  *reset sg9 NVMe port,                cflash_inject.pl -d sg9 -reset                \n";
-  print "  *set   sg9 NVMe port offline,        cflash_inject.pl -d sg9 -offline              \n";
-  print "  *set   sg9 NVMe port back online,    cflash_inject.pl -d sg9 -reset                \n";
-  print "  *set   sg9 rd err, lba 10, status 1, cflash_inject.pl -d sg9 -rd -lba 10 -status 1 \n";
-  print "  *set   sg9 wr err, lba 90, status 4, cflash_inject.pl -d sg9 -wr -lba 90 -status 4 \n";
-  print "  *perm  sg9 wr err, lba 90, status 4, cflash_inject.pl -d sg9 -wr -lba 90 -s 4 -P   \n";
-  print "  *clear sg9 wr err,                   cflash_inject.pl -d sg9 -wr -C                \n";
-  print "  *set   sg9 parity write error,       cflash_inject.pl -d sg9 -parity_error       \n\n";
+  print "  *set   sg9, to wear% 33,             cflash_inject -d sg9 -W 33                 \n";
+  print "  *set   sg9, to temp  64,             cflash_inject -d sg9 -T 64                 \n";
+  print "  *clear sg9, wear or temp inject      cflash_inject -d sg9 -C                    \n";
+  print "  *reset sg9 NVMe port,                cflash_inject -d sg9 -reset                \n";
+  print "  *set   sg9 NVMe port offline,        cflash_inject -d sg9 -offline              \n";
+  print "  *set   sg9 NVMe port back online,    cflash_inject -d sg9 -reset                \n";
+  print "  *set   sg9 rd err, lba 10, status 1, cflash_inject -d sg9 -rd -lba 10 -status 1 \n";
+  print "  *set   sg9 wr err, lba 90, status 4, cflash_inject -d sg9 -wr -lba 90 -status 4 \n";
+  print "  *perm  sg9 wr err, lba 90, status 4, cflash_inject -d sg9 -wr -lba 90 -s 4 -P   \n";
+  print "  *clear sg9 wr err,                   cflash_inject -d sg9 -wr -C                \n";
+  print "  *set   sg9 parity write error,       cflash_inject -d sg9 -parity_error       \n\n";
   exit 0;
 }
 

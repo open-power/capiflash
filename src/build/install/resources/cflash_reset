@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/cflash_reset.pl $
+# $Source: src/build/install/resources/cflash_reset $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -59,10 +59,10 @@ sub runcmd
 sub usage()
 {
   print "\n";
-  print "Usage: cflash_reset.pl [-t <target>]                              \n";
+  print "Usage: cflash_reset [-t <target>]                              \n";
   print "    -t or --target : Target device to perst                       \n";
   print "    -h or --help   : Help - Print this message                    \n";
-  print "\n  ex: cflash_reset.pl -t 000N:01:00.0                         \n\n";
+  print "\n  ex: cflash_reset -t 000N:01:00.0                         \n\n";
   exit 0;
 }
 

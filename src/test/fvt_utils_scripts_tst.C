@@ -33,7 +33,7 @@
 #include <gtest/gtest.h>
 #include <stdlib.h>
 
-#define SCRIPT_PATH "/usr/bin/utils_scripts_tst.sh"
+#define SCRIPT_PATH "/usr/bin/utils_scripts_tst"
 #define STDOUT_REDIRECTION "1>/dev/null "
 
 #define CHECK_TESTCASE_SKIP                                                    \
@@ -132,7 +132,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLVER_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_resett.pl expect rc == 0
+ *  Run script: cflash_reset expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_RC_TEST)
 {
@@ -151,7 +151,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: cflash_reset.pl expect no ERROR string
+ *   Run script: cflash_reset expect no ERROR string
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_ERRSTR_TEST)
 {
@@ -170,7 +170,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RESET_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_perst.pl expect rc == 0
+ *  Run script: cflash_perst expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_RC_TEST)
 {
@@ -189,7 +189,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: cflash_perst.pl expect no ERROR string
+ *   Run script: cflash_perst expect no ERROR string
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_ERRSTR_TEST)
 {
@@ -208,7 +208,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERST_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: capi_flash.pl that listing devices rc == 0
+ *   Run script: capi_flash that listing devices rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RC_TEST)
 {
@@ -227,7 +227,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: capi_flash.pl find at least one CAPI device
+ *   Run script: capi_flash find at least one CAPI device
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_FIND_CAPI_TEST)
 {
@@ -246,7 +246,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_FIND_CAPI_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: capi_flash.pl usage test no errors
+ *   Run script: capi_flash usage test no errors
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_USAGE_TEST)
 {
@@ -341,7 +341,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CXLREFRESH_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_perfcheck.pl expect rc == 0
+ *  Run script: cflash_perfcheck expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERFCHK_RC_TEST)
 {
@@ -360,7 +360,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERFCHK_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: cflash_perfcheck.pl expect no ERROR string
+ *   Run script: cflash_perfcheck expect no ERROR string
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERFCHK_ERRSTR_TEST)
 {
@@ -379,7 +379,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_PERFCHK_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_capacity.pl expect rc == 0
+ *  Run script: cflash_capacity expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_CAP_RC_TEST)
 {
@@ -398,7 +398,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_CAP_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: cflash_capacity.pl expect no ERROR string
+ *   Run script: cflash_capacity expect no ERROR string
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_CAP_ERRSTR_TEST)
 {
@@ -417,7 +417,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_CAP_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_devices.pl expect rc == 0
+ *  Run script: cflash_devices expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_DEV_RC_TEST)
 {
@@ -436,7 +436,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_DEV_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_devices.pl find some sg devices
+ *  Run script: cflash_devices find some sg devices
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_DEV_FIND_SG_TEST)
 {
@@ -455,7 +455,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_DEV_FIND_SG_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_temp.pl expect rc == 0
+ *  Run script: cflash_temp expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_TEMP_RC_TEST)
 {
@@ -473,7 +473,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_TEMP_RC_TEST)
 /**
 ****************************************************************
  * \brief
- *  Run script: cflash_temp.pl find a device
+ *  Run script: cflash_temp find a device
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_TEMP_FIND_DEV)
 {
@@ -530,7 +530,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, MACHINE_INFO_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_wear.pl expect rc == 0
+ *  Run script: cflash_wear expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_WEAR_RC_TEST)
 {
@@ -549,7 +549,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_WEAR_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: cflash_wear.pl expect no ERROR string
+ *   Run script: cflash_wear expect no ERROR string
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_WEAR_ERRSTR_TEST)
 {
@@ -568,7 +568,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_WEAR_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: cflash_wear.pl expect at least one device
+ *   Run script: cflash_wear expect at least one device
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_WEAR_FOUND_TEST)
 {
@@ -625,7 +625,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CXLFSETLUNMODE_ERRSTR_TEST)
 /**
  ****************************************************************
  * \brief
- *  Run script: cflash_stick.pl expect rc == 0
+ *  Run script: cflash_stick expect rc == 0
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_STICK_RC_TEST)
 {
@@ -644,7 +644,7 @@ TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_STICK_RC_TEST)
 /**
  ****************************************************************
  * \brief
- *   Run script: cflash_stick.pl expect no ERROR string
+ *   Run script: cflash_stick expect no ERROR string
  ****************************************************************/
 TEST(UTIL_SCRIPTS_FVT_SUITE, CFLASH_STICK_ERRSTR_TEST)
 {

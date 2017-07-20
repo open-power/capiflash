@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/cflash_temp.pl $
+# $Source: src/build/install/resources/cflash_wear $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -32,6 +32,7 @@ use Getopt::Long;
 
 my $cmd="";
 my $out;
+
 my $ubuntu=0;
 my $redhat=0;
 
@@ -43,7 +44,7 @@ if ( `lsb_release -a 2>/dev/null` =~ "Ubuntu" ) {$ubuntu=1;}
 (`id -u` == 0) || die "Run with sudo permissions";
 
 #ensure sg_write_buffer is available
-if ( $redhat ) {$cmd="rpm -qa | grep -v udev|grep -v libs | grep sg3_utils >/dev/null "; }
+if ( $redhat ) {$cmd="rpm -qa | grep -v udev | grep -v libs | grep sg3_utils >/dev/null "; }
 if ( $ubuntu ) {$cmd="dpkg -l|grep -v udev|grep sg3-utils >/dev/null ";}
 
 system($cmd);
@@ -53,7 +54,6 @@ if ($? != 0) {print "ERROR: package sg3-utils is not installed\n"; exit -1;}
 select(STDOUT);
 $| = 1;
 
-# print temps
 my @cards = `lspci |egrep "0601|0628"`;
 
 for my $adap (@cards)
@@ -70,8 +70,6 @@ for my $adap (@cards)
   chomp $cardstr;
   my $cardN=substr $cardstr,-1;
   print "\nFound $Acard[5] $card $afu\n";
-  $out=`/usr/bin/flashgt_temp $card $cardN`;
-  print "  $out";
 
   for (my $i=0; $i<2; $i++)
   {
@@ -80,7 +78,7 @@ for my $adap (@cards)
     my @sdev=split /\//, $Astick;
     my $dev=$sdev[12];
     chomp $dev;
-    $out=`sg_logs -p 0xd /dev/$dev |grep "Current temp"`;
+    $out=`sg_logs -p 0x11 /dev/$dev |grep "endurance"`;
     print "  $dev: $out";
   }
 }

@@ -97,10 +97,10 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
             devNStr[1] = pdevs[7];
             devN_in    = atoi(devNStr);
         }
-        fp = popen("/usr/bin/cflash_devices.pl -S", "r");
+        fp = popen("/usr/bin/cflash_devices -S", "r");
         if (!fp)
         {
-            CBLK_TRACE_LOG_FILE(1, "cflash_devices.pl failed");
+            CBLK_TRACE_LOG_FILE(1, "cflash_devices failed");
             errno = ENODEV;
             goto error_devs;
         }

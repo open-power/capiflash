@@ -90,6 +90,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu);
 int cblk_retry_new_path(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, int delay_needed_same_afu);
 void cblk_trace_log_data_ext(trace_log_ext_arg_t *ext_arg, FILE *logfp,char *filename, char *function, 
 			     uint line_num,char *msg, ...);
+void cblk_trace_log_data_syslog(char *fn, char *fcn, uint ln, char *msg, ...);
 void  cblk_display_stats(cflsh_chunk_t *chunk, int verbosity);
 
 int  cblk_setup_dump_file(void);

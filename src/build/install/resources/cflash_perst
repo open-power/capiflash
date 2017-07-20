@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/cflash_perst.pl $
+# $Source: src/build/install/resources/cflash_perst $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -60,10 +60,10 @@ sub runcmd
 sub usage()
 {
   print "\n";
-  print "Usage: cflash_perst.pl [-t <target>]                              \n";
+  print "Usage: cflash_perst [-t <target>]                              \n";
   print "    -t or --target : Target device to perst                       \n";
   print "    -h or --help   : Help - Print this message                    \n";
-  print "\n  ex: cflash_perst.pl -t 000N:01:00.0                         \n\n";
+  print "\n  ex: cflash_perst -t 000N:01:00.0                         \n\n";
   exit 0;
 }
 

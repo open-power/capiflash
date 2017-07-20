@@ -34,7 +34,6 @@ OBJS   = ut.o cl.o ea.o ll.o bv.o iv.o si.o vi.o bl.o bt.o arkdb.o am.o ari.o \
 
 MODULE          = arkdb
 EXPFLAGS        = -bexpall
-MODLIBS         = -lcflsh_block -lcflshcom
-MODULE_LINKLIBS = -lcflsh_block -lcflshcom -larkalloc
+MODLIBS         = -lcflsh_block$(SOVER) -lcflshcom$(SOVER) -larkalloc$(SOVER)
 
 include ${ROOTPATH}/config.mk

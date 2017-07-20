@@ -84,28 +84,28 @@ Found 04cf 0040:01:00.0 U78CB.001.WZS0073-P1-C5
 ```
 ### query the devices for an adapter type
 ```
-> cflash_devices.pl -t 0601 -s
+> cflash_devices -t 0601 -s
 /dev/sg8:/dev/sg10:/dev/sg11:/dev/sg9
 
-> cflash_devices.pl -t 04cf -s
+> cflash_devices -t 04cf -s
 /dev/sg12:/dev/sg13
 ```
 ### query the capacity for an adapter type
 ```
-> cflash_capacity.pl -v
+> cflash_capacity -v
 /dev/sg8:  894        NSID: 1 NSZE: 6fc81ab0  NCAP: 6fc81ab0  NUSE: 9c14fb0 percent used: 8.73
 /dev/sg9:  894        NSID: 1 NSZE: 6fc81ab0  NCAP: 6fc81ab0  NUSE: 36b5470 percent used: 3.06
 /dev/sg10: 894        NSID: 1 NSZE: 6fc81ab0  NCAP: 6fc81ab0  NUSE: 3a56950 percent used: 3.26
 /dev/sg11: 894        NSID: 1 NSZE: 6fc81ab0  NCAP: 6fc81ab0  NUSE: 2063b58 percent used: 1.81
 3576
 
-> cflash_capacity.pl -v -t 04cf
+> cflash_capacity -v -t 04cf
 /dev/sg12: 1000    
 1000
 ```
 ### query the AFU firmware level and card serial#
 ```
-> capi_flash.pl -l
+> capi_flash -l
 Found CAPI device 10140601 afu0 0000:01:00.0 U78CB.001.WZS0073-P1-C7 07210026       =>160910N1
 Found CAPI device 10140601 afu1 0002:01:00.0 U78CB.001.WZS0073-P1-C6 07210024       =>160910N1
 Found CAPI device 101404cf afu2 0004:01:00.0 U78CB.001.WZS0073-P1-C5 YH10HT55F006   =>160512D1
@@ -126,7 +126,7 @@ ASYNC: /dev/sg8: QD:100
 ### run performance checks to get a quick evaluation of the health of an adapter/lun
 ##### (/dev/sgN must be in "superpipe" mode)
 ```
-> cflash_perfcheck.pl -d /dev/sg8
+> cflash_perfcheck -d /dev/sg8
 latency       vlun    plun
   rd            48      25
   wr            20      19
@@ -150,14 +150,14 @@ latency       vlun    plun
 ```
 ### query the current iops and rd% of each lun, as a single line or a histogram
 ```
-> cflash_perf.pl -l -s 1
+> cflash_perf -l -s 1
 Tue Sep 13 10:26:53  =>   sg22:203313  sg23:197664  sg8:205370  sg9:208960    total:815308   rds:100%
 Tue Sep 13 10:26:54  =>   sg22:222474  sg23:215126  sg8:222352  sg9:224629    total:884581   rds:100%
 Tue Sep 13 10:26:55  =>   sg22:222855  sg23:214484  sg8:221969  sg9:223865    total:883173   rds:100%
 ```
 ### query the temperatures of the NVMe sticks
 ```
-> cflash_temp.pl
+> cflash_temp
 
 Found 0601 0000:01:00.0 afu0.0m
   FPGA Temperature is 52.49218750 degrees Celsius
@@ -171,7 +171,7 @@ Found 0601 0002:01:00.0 afu1.0m
 ```
 ### query the wear of the NVMe sticks
 ```
-> cflash_wear.pl
+> cflash_wear
 
 Found 0601 0000:01:00.0 afu0.0m
   sg22:   Percentage used endurance indicator: 2%
@@ -183,7 +183,7 @@ Found 0601 0002:01:00.0 afu1.0m
 ```
 ### query the NVMe stick controller firmware level
 ```
-> cflash_stick.pl -l
+> cflash_stick -l
 
 Found 0601 0000:01:00.0 afu0.0m
  /dev/sg22

@@ -25,8 +25,8 @@
 # IBM_PROLOG_END_TAG
 
 KERNEL_MOD="cxlflash"
-CAPI_FLASH_PL=capi_flash.pl
-RESET_PL=cflash_reset.pl
+CAPI_FLASH_PL=capi_flash
+RESET_PL=cflash_reset
 IMAGES_DIR=/lib/firmware/cxlflash
 FLASH_ROOT=/usr/bin
 MINCAPMASK="0003"
@@ -43,7 +43,7 @@ if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=
 if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
 
 #if [[ $redhat ]]; then
-RESET_PL=cflash_perst.pl
+RESET_PL=cflash_perst
 #fi
 #if [[ $ubuntu ]]; then
 #concurrent="--concurrent"

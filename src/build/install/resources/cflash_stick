@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/cflash_stick.pl $
+# $Source: src/build/install/resources/cflash_stick $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -44,12 +44,12 @@ my $v="";
 sub usage()
 {
   print "\n";
-  print "Usage: cflash_stick.pl [-l] [-f fw_file] [-t <target>]        \n";
+  print "Usage: cflash_stick [-l] [-f fw_file] [-t <target>]        \n";
   print "    -l             : List capi sticks available for download  \n";
   print "    -f             : Firmware file                            \n";
   print "    -t or --target : Target device to flash                   \n";
   print "    -h or --help   : Help - Print this message                \n";
-  print "\n  ex: cflash_stick.pl -f fw -t /dev/sgX                   \n\n";
+  print "\n  ex: cflash_stick -f fw -t /dev/sgX                   \n\n";
   exit 0;
 }
 

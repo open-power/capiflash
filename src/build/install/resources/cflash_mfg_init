@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/cflash_mfg_init.pl $
+# $Source: src/build/install/resources/cflash_mfg_init $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -106,7 +106,7 @@ my $cardN=substr $card,-1;
 if (defined $serial)
 {
   chdir('/usr/share/cxlflash') || die "cxlflashimage pkg is not installed\n";
-  `/usr/bin/surelock_vpd2rbf.pl -f $csv -s $serial`;
+  `/usr/bin/surelock_vpd2rbf -f $csv -s $serial`;
   (-f "/usr/share/cxlflash/vpd_FlashGT.vpdrbf") || die "failure creating the VPD\n";
   `/usr/bin/flashgt_vpd_access $target $cardN /usr/share/cxlflash/$rbf`;
   if ($? != 0) {print "VPD update failed\n";}

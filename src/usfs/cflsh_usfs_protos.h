@@ -69,6 +69,7 @@ void  cusfs_child_post_fork (void);
 void cusfs_trace_log_data_ext(trace_log_ext_arg_t *ext_arg, 
 			     FILE *logfp,char *filename, char *function, 
 			     uint line_num,char *msg, ...);
+void cusfs_trace_log_data_syslog(char *fn, char *fcn, uint ln, char *msg, ...);
 
 void  cusfs_display_stats(cflsh_usfs_t *cufs, int verbosity);
 int  cusfs_setup_dump_file(void);

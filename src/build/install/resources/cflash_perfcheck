@@ -2,7 +2,7 @@
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
-# $Source: src/build/install/resources/cflash_perfcheck.pl $
+# $Source: src/build/install/resources/cflash_perfcheck $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -121,53 +121,53 @@ if ($all)
 {
   print "\n";
   print "100% reads 1P QD1    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q1\"   -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q1\"   -n 1`;
   print "100% reads 1P QD8    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q8\"   -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q8\"   -n 1`;
   print "100% reads 1P QD16   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q16\"  -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q16\"  -n 1`;
   print "100% reads 1P QD32   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q32\"  -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q32\"  -n 1`;
   print "100% reads 1P QD128  ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q128\" -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q128\" -n 1`;
   print "\n";
   print "70%  reads 1P QD1    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q1   -r70\"   -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q1   -r70\"   -n 1`;
   print "70%  reads 1P QD8    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q8   -r70\"   -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q8   -r70\"   -n 1`;
   print "70%  reads 1P QD16   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q16  -r70\"  -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q16  -r70\"  -n 1`;
   print "70%  reads 1P QD32   ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q32  -r70\"  -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q32  -r70\"  -n 1`;
   print "70%  reads 1P QD128  ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S100 -q128 -r70\" -n 1`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S100 -q128 -r70\" -n 1`;
   print "\n";
 
   print "400P QD1  blockio vlun  100% reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q1\" -n 400`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -q1\" -n 400`;
 
   print "400P QD1  blockio vlun  100% writes    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q1 -r0\" -n 400`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -q1 -r0\" -n 400`;
 
   print "100P QD64 blockio vlun  100% reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S7 -q64\" -n 100`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S7 -q64\" -n 100`;
 
   print "100P QD64 blockio vlun  100% writes    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -S7 -q64 -r0\" -n 100`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -S7 -q64 -r0\" -n 100`;
 
   print "100P QD64 blockio plun  100% reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q64 -p\" -n 100`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -q64 -p\" -n 100`;
 
   print "100P QD64 blockio plun  100% writes    ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q64 -r0 -p\" -n 100`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -q64 -r0 -p\" -n 100`;
 
   print "100P QD64 kv_benchmark  100% reads     ";
-  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s $secs -q64\" -n 100`;
+  print `ioppt -c \"run_kv_benchmark -d $devstr -s $secs -q64\" -n 100`;
 
   print "100P QD64 kv_benchmark  75%  reads     ";
-  print `ioppt.pl -c \"run_kv_benchmark -d $devstr -s $secs -q64 -r75\" -n 100`;
+  print `ioppt -c \"run_kv_benchmark -d $devstr -s $secs -q64 -r75\" -n 100`;
 
   print "100P QD64 blockio vlun  75%  reads     ";
-  print `ioppt.pl -c \"blockio -d $devstr -s $secs -q64 -S7 -r75\" -n 100`;
+  print `ioppt -c \"blockio -d $devstr -s $secs -q64 -S7 -r75\" -n 100`;
 }
 

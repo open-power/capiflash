@@ -33,6 +33,7 @@ SIO_FILE=$ETC_DIR/sioluntable.ini
 LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 TDIR=tmp
+EXT_DIR=/usr/lib/cxlflash/ext
 
 #Creating empty SIO lun table and etc dir
 if [[ -z $(grep cxl /etc/passwd) ]]
@@ -75,6 +76,11 @@ else
     fi
   fi
 fi
+
+tar -xzf ${EXT_DIR}/ext.tgz -C ${EXT_DIR}
+chmod +x ${EXT_DIR}/*
+
+ln -fs /usr/lib/powerpc64le-linux-gnu/libcxl.so.1 /usr/lib/libcxl.so.1
 
 case "$1" in 
        configure) 

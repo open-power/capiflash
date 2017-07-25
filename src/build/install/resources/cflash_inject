@@ -198,19 +198,19 @@ elsif ($clear)
 {
   $opcode="0xff";
   $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 4 --mask 0xFFFF00FF --data 0";
-  $cmd="/usr/bin/flashgt_nvme_override $parms";
+  $cmd="/usr/lib/cxlflash/ext/flashgt_nvme_override $parms";
 }
 elsif ($wear>=0)
 {
   $data=sprintf("0x%.2x00", $wear);
   $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 4 --mask 0xFFFF00FF --data $data";
-  $cmd="/usr/bin/flashgt_nvme_override $parms";
+  $cmd="/usr/lib/cxlflash/ext/flashgt_nvme_override $parms";
 }
 elsif ($temp>=0)
 {
   $data=sprintf("0x0%.3x00", $temp+273);
   $parms="$afustr --opcode $opcode --param 0x02 --port $port --entry $entry --offset 0 --mask 0xFF0000FF --data $data";
-  $cmd="/usr/bin/flashgt_nvme_override $parms";
+  $cmd="/usr/lib/cxlflash/ext/flashgt_nvme_override $parms";
 }
 
 system($cmd);

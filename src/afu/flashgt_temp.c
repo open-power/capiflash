@@ -48,7 +48,7 @@ int main (int argc, char *argv[])
   char bar2[1024];
   char cfg_file[1024];
 
-  if (argc < 2) {
+  if (argc < 2 || (argc==2 && argv[1][0]=='-')) {
     printf("Usage: ./flashgt_temp <pci_number> <card#>\nExample: ./flashgt_temp 0000:01:00.0 0\n");
     return -1;
   }

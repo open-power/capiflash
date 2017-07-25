@@ -24,6 +24,9 @@
 #
 # IBM_PROLOG_END_TAG
 
+if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
+if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
+
 export CFLSH_BLK_TRC_VERBOSITY=1
 unset  CFLSH_BLK_TRC_SYSLOG
 export KV_TRC_VERBOSITY=1

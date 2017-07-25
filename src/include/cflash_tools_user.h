@@ -22,6 +22,12 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
+/**
+ **************************************************************************
+ * \file
+ * \brief Interface definition for CAPI Block user tools
+ **************************************************************************
+ */
 #ifndef _H_CFLASH_TOOLS_USER
 #define _H_CFLASH_TOOLS_USER
 

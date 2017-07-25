@@ -24,6 +24,9 @@
 #
 # IBM_PROLOG_END_TAG
 
+if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
+if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
+
 grep pSeries /proc/cpuinfo >/dev/null 2>&1 && _VM=1
 if [[ $_VM -eq 1 ]]; then echo "Not Supported on VM"; exit 0; fi
 

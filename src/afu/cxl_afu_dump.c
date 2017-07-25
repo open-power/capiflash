@@ -156,10 +156,11 @@ int main(int argc, char **argv) {
   struct cxl_ioctl_start_work *work;
   long reported = 0;
 
-  if (argc < 2) {
+  if (argc < 2 || (argc==2 && argv[1][0]=='-')) {
     printf("usage: %s <path-to-afu>\n",argv[0]);
     exit(2);
   }
+
   struct cxl_afu_h *afu = cxl_afu_open_dev(argv[1]);
   if (!afu) {
     perror ("malloc");

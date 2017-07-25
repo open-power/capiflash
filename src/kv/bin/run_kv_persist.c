@@ -315,6 +315,11 @@ int main(int argc, char **argv)
     int64_t  newark = 0;
     uint64_t flags  = 0;
 
+    if (argc < 2 || (argc==2 && argv[1][0]=='-')) {
+      printf("usage: %s </dev/sgN>\n",argv[0]);
+      exit(0);
+    }
+
     if (argv[1] == NULL)
     {
         printf("dev name required as parameter\n");

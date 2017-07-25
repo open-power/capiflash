@@ -63,6 +63,7 @@ prod: setversion
 
 prodall: prod
 	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 test
+	${MAKE} docs
 
 prodpkgs: prod
 	${MAKE} pkg_code
@@ -204,7 +205,7 @@ endif
 ASMFLAGS = ${COMMONFLAGS}
 CXXFLAGS += ${CFLAGS} -fno-rtti -fno-exceptions -Wall
 
-INCDIR = ${ROOTPATH}/src/include .
+INCDIR =  ${ROOTPATH}/src/include . /usr/include /usr/include/misc
 _INCDIRS = ${INCDIR} ${EXTRAINCDIR}
 INCFLAGS = $(addprefix -I, ${_INCDIRS} )
 ASMINCFLAGS = $(addprefix $(lastword -Wa,-I), ${_INCDIRS})
@@ -404,7 +405,10 @@ beam:      ${SUBDIRS:.d=.beamdir} ${BEAMOBJS}
 
 docs: ${ROOTPATH}/src/build/doxygen/doxygen.conf
 	@rm -rf ${ROOTPATH}/obj/doxygen/*
+	@mkdir -p ${ROOTPATH}/obj/doxygen/*
+ifneq ($(TARGET_PLATFORM),x86_64)
 	@cd ${ROOTPATH}; doxygen src/build/doxygen/doxygen.conf
+endif
 
 bins:
 	${MAKE} -j10 bin

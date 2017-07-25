@@ -479,6 +479,11 @@ int main(int argc, char **argv)
     uint32_t    i    = 1;
     uint32_t    ctxt = 0;
 
+    if (argc < 2 || (argc==2 && argv[1][0]=='-' && argv[1][0]=='h')) {
+      printf("usage: %s </dev/sgN>\n",argv[0]);
+      exit(0);
+    }
+
     if (argv[1] != NULL && argv[1][0] == '?')
     {
         printf("usage: run_kv_async_multi [-p] <dev1> <dev2> ...\n");

@@ -30,7 +30,7 @@ source $BIN_DIR/cflashutils
 
 showhelp()
 {
-    echo "Usage: $0 <LUN> <mode 0=legacy/1=superpipe>"
+    echo "Usage: $(basename $0) <LUN> <mode 0=legacy/1=superpipe>"
     echo "    Change a LUN's CXLFlash Mode."
 }
 

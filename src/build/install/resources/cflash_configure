@@ -24,6 +24,9 @@
 #
 # IBM_PROLOG_END_TAG
 
+if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
+if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
+
 if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 
 if [[ ! -e /opt ]]; then mkdir /opt; fi

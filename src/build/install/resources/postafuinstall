@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
@@ -23,7 +23,7 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-set -e #halt on error
+
 USERNAME=cxl
 GROUPNAME=$USERNAME
 

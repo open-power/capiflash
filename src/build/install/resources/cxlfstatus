@@ -27,10 +27,9 @@
 CAPIKV=/usr/bin
 source $CAPIKV/cflashutils
 
-
 showhelp()
 {
-    echo "Usage: $0"
+    echo "Usage: $(basename $0)"
     echo "    Print LUN modes for all cxlflash devices."
 }
 

@@ -64,9 +64,6 @@ sub usage()
   exit 0;
 }
 
-#check sudo permissions
-(`id -u` == 0) || die "Run with sudo permissions";
-
 #-------------------------------------------------------------------------------
 # Make stdout autoflush
 #-------------------------------------------------------------------------------
@@ -97,6 +94,9 @@ if ($ARGV[0])
 }
 if ($prthelp) {usage();}
 $sleep = $sleep > 60 ? 60 : $sleep;
+
+#check sudo permissions
+(`id -u` == 0) || die "Run with sudo permissions";
 
 #-------------------------------------------------------------------------------
 # BMC -list CAPI Devices

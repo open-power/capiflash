@@ -70,6 +70,7 @@ enum argp_char_options {
     PROV_DEBUG                = 'D',
     PROV_WWPNS_PGM            = 'W',
     PROV_LOOPBACK             = 'L',
+    PROV_HELP                 = 'h',
 
 
 };
@@ -80,6 +81,7 @@ static struct argp_option   options[] = {
     {"wwpn-pgm",            PROV_WWPNS_PGM,  "device path",  OPTION_ARG_OPTIONAL, "Program WWPNs"},
     {"debug",               PROV_DEBUG,  "<LV>", 0, "Internal trace level for tool"},
     {"loopback",            PROV_LOOPBACK,  "<seconds>", OPTION_ARG_OPTIONAL, "Run loopback diagnostics on all present adapters. Time defaults to 1 second"},
+    {"help",                PROV_HELP,       0, 0, "print help"},
     {0}
 };
 
@@ -96,6 +98,7 @@ extern int32_t                 g_traceE;   /* error traces */
 extern int32_t                 g_traceI;       /* informative 'where we are in code' traces */
 extern int32_t                 g_traceF;       /* function exit/enter */
 extern int32_t                 g_traceV;       /* verbose trace...lots of information */
+int32_t usage=0;
 
 /*----------------------------------------------------------------------------*/
 /* Defines                                                                    */
@@ -119,6 +122,7 @@ error_t parse_opt (int key,
     
     switch (key)
     {
+        case PROV_HELP: usage=1; break;
         case PROV_LIST_AFUS:
             g_args.list_afus = 1;
             break;
@@ -207,9 +211,14 @@ int main (int argc, char *argv[])
     
     memset(&g_args,0,sizeof(g_args));
     
-    argp_parse (&argp, argc, argv, ARGP_IN_ORDER, 0, &g_args);
+    error_t err=argp_parse (&argp, argc, argv, ARGP_IN_ORDER, 0, &g_args);
 
-    
+    if (err || usage)
+    {
+        printf("Usage: provtool\n");
+        exit(0);
+    }
+
     if(g_args.loopback)
     {
         TRACEV("Calling prov_get_all_adapters\n");

@@ -180,7 +180,7 @@ int ready_status = 1;
 
   //Final Check to make sure GPIO select took effect
   if(i2c_read_data == 0x06) {
-    printf("Successfully targetting proper GPIO\n");
+    printf("Successfully targeting proper GPIO\n");
   }
   else {
     printf("ERROR: I2C to target EEPROM wp GPIO did not work\n");

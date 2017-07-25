@@ -24,6 +24,9 @@
 #
 # IBM_PROLOG_END_TAG
 
+if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
+if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
+
 export PATH=$PATH:/usr/bin
 
 DATADIR=/var/log/cflash/cxlffdc
@@ -98,14 +101,13 @@ cd $DATADIR
 cardnums=`ls -d /sys/class/cxl/card* | awk -F"/sys/class/cxl/card" '{ print $2 }'`
 for i in $cardnums
 do
-  #psl_trace_dump needs to be on our path
   mkdir card$i;
   if [[ $VM ]]
   then
     printf "\n ERROR:  psl_trace_dump on VM Not Supported! \n\n"
   else
     echo "Dumping PSL data for card$i"
-    $AFUDIR/psl_trace_dump card$i $i >/dev/null
+    /usr/lib/cxlflash/ext/psl_trace_dump card$i $i >/dev/null
   fi
 done
 

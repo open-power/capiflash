@@ -74,12 +74,14 @@ enum argp_char_options {
     // Note that we need to be careful to not re-use char's
     CXLF_DEBUG                = 'D',
     CXLF_TIMERFREQ            = 't',
+    CXLF_HELP                 = 'h',
 
 };
 
 static struct argp_option   options[] = {
     {"timer",      CXLF_TIMERFREQ,  "<interval>",  OPTION_HIDDEN, "Update interval for commands to be sent to cxlflash driver (in seconds)."},
-    {"debug",       CXLF_DEBUG,     "<LV>", 0, "Internal trace level for tool"},
+    {"debug",      CXLF_DEBUG,      "<LV>", 0, "Internal trace level for tool"},
+    {"help",       CXLF_HELP,       0, 0, "print help"},
     {0}
 };
 
@@ -100,6 +102,8 @@ lun_table_entry_t               g_cxldevs[MAX_NUM_SGDEVS] = {{{0}}};
 int32_t                         g_cxldevs_sz = 0;
 lun_table_entry_t               g_luntable[MAX_NUM_LUNS] = {{{0}}};
 int32_t                         g_luntable_sz = 0;
+int32_t                         usage=0;
+
 /*----------------------------------------------------------------------------*/
 /* Defines                                                                    */
 /*----------------------------------------------------------------------------*/
@@ -129,6 +133,7 @@ error_t parse_opt (int key,
             //g_args.get_mode = 1;
             //break;
             
+        case CXLF_HELP: usage=1; break;
         case CXLF_TIMERFREQ:
             if(((uint16_t)strtol(arg,&endptr, 10)<= 0) || (endptr != (arg+strlen(arg))))
             {
@@ -190,9 +195,14 @@ int main (int argc, char *argv[])
     
     memset(&g_args,0,sizeof(g_args));
     
-    argp_parse (&argp, argc, argv, ARGP_IN_ORDER, 0, &g_args);
+    error_t err=argp_parse (&argp, argc, argv, ARGP_IN_ORDER, 0, &g_args);
 
-    
+    if (err || usage)
+    {
+        printf("Usage: cxlfd\n");
+        exit(0);
+    }
+
     if(g_args.timer_override != 0)
     {
         timer_interval = g_args.timer_override;

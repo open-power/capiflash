@@ -22,6 +22,12 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
+/**
+ **************************************************************************
+ * \file
+ * \brief Interface definition for the AFU
+ **************************************************************************
+ */
 #ifndef _AFU_MEMCOPY_H_
 #define _AFU_MEMCOPY_H_
 

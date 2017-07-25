@@ -34,6 +34,43 @@ my $cmd="";
 my $out;
 my $ubuntu=0;
 my $redhat=0;
+my $prthelp;
+
+#-------------------------------------------------------------------------------
+# print usage
+#-------------------------------------------------------------------------------
+sub usage()
+{
+  print "\n";
+  print "Usage: \n";
+  print "    -h or --help   : Help - Print this message  \n\n";
+  exit 0;
+}
+
+#-------------------------------------------------------------------------------
+# Make stdout autoflush
+#-------------------------------------------------------------------------------
+select(STDOUT);
+$| = 1;
+
+#-------------------------------------------------------------------------------
+# Main
+#-------------------------------------------------------------------------------
+if (! GetOptions ("h|help!"    => \$prthelp,))
+{
+  usage();
+}
+if ($ARGV[0])
+{
+  print "\nUnknown Command Line Options:\n";
+  foreach(@ARGV)
+  {
+    print "   $_\n";
+  }
+  print "\n";
+  usage();
+}
+if ($prthelp) {usage();}
 
 #determine distro
 if ( `cat /etc/redhat-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}

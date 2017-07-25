@@ -65,6 +65,7 @@ override_dh_installdeb:
 	cp src/build/install/resources/preremove      debian/cxlflash/DEBIAN/prerm
 	cp src/build/install/resources/postafuinstall debian/cxlflashimage/DEBIAN/postinst
 	cp src/build/install/resources/preafuremove   debian/cxlflashimage/DEBIAN/prerm
+	echo 'activate-noawait ldconfig' > debian/cxlflash/DEBIAN/triggers
 
 override_dh_auto_test:
 override_dh_testroot:

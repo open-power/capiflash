@@ -76,16 +76,23 @@ else
   fi
 fi
 
-case "$1" in 
-       configure) 
-               ldconfig
-               ;;
-       abort-upgrade|abort-remove|abort-deconfigure)
-               ;;
-esac
-
 echo "INFO: enabling cxlfd service for LUN Management"
-systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
-systemctl start cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+
+# was-enabled defaults to true, so new installations run enable.
+if deb-systemd-helper --quiet was-enabled cxlfd.service; then
+    # Enables the unit on first installation, creates new
+    # symlinks on upgrades if the unit file has changed.
+    deb-systemd-helper enable cxlfd.service >/dev/null || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+else
+    # Update the statefile to add new symlinks (if any), which need to be
+    # cleaned up on purge. Also remove old symlinks.
+    deb-systemd-helper update-state cxlfd.service >/dev/null || true
+fi
+
+if [ -d /run/systemd/system ]; then
+    systemctl --system daemon-reload >/dev/null || true
+    deb-systemd-invoke start cxlfd.service >/dev/null || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+fi
+
 
 exit 0

@@ -49,9 +49,6 @@ sub usage()
   exit 0;
 }
 
-#check sudo permissions
-(`id -u` == 0) || die "Run with sudo permissions\n";
-
 #-------------------------------------------------------------------------------
 # Parse Options
 #-------------------------------------------------------------------------------
@@ -75,6 +72,10 @@ if ($ARGV[0])
   usage();
 }
 if ($prthelp) {usage();}
+
+#check sudo permissions
+(`id -u` == 0) || die "Run with sudo permissions\n";
+
 
 if (defined $serial) {(length($serial)==8) || die "serial is not 8 chars\n";}
 
@@ -118,7 +119,7 @@ if (defined $target)
   for (my $i=0; $i<4; $i++)
   {
     if ($out =~ /0601/ && $i>1) {last;}
-    `/usr/bin/cxl_afu_fmt_unit -p$i /dev/cxl/$afu`;
+    `/usr/lib/cxlflash/ext/cxl_afu_fmt_unit -p$i /dev/cxl/$afu`;
     if ($? != 0) {print "format lun $i failed\n";}
     else         {print "lun $i cleaned\n";}
   }

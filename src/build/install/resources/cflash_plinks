@@ -27,7 +27,9 @@
 rules="/etc/udev/rules.d/10-local.rules"
 fstatus="$(/usr/bin/cxlfstatus)"
 
-if [[ $1 = "-h" ]]
+if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
+
+if [[ $1 =~ help || $1 = "-h" ]]
 then
   echo "cflash_plinks  [<prefix>] [-v] [-vv] [-r <parm>] [-unused] [-rmunused] [-rmall]"
   exit 0

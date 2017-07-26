@@ -24,6 +24,7 @@
 # IBM_PROLOG_END_TAG
 [Unit]
 Description="Data Engine for NoSQL - Power Systems Edition CXL Flash LUN Management Daemon"
+Documentation="info: Data Engine for NoSQL - Power Systems Edition CXL Flash LUN Management Daemon"
 
 [Service]
 Group=cxl

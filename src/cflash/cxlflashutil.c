@@ -72,7 +72,8 @@ enum argp_char_options {
     CXLF_DEBUG                = 'D',
     CXLF_LUN_ID               = 'l',
     CXLF_SET_MODE             = 'm',
-    
+    CXLF_HELP                 = 'h',
+
 };
 
 static struct argp_option   options[] = {
@@ -82,6 +83,7 @@ static struct argp_option   options[] = {
     {"device",      CXLF_DEV,       "<device path>",  0, "Target device (e.g. /dev/sg123)"},
     {"debug",       CXLF_DEBUG,     "<LV>", 0, "Internal trace level for tool"},
     {"config",      CXLF_CONFIG,    0, 0, "Configure device according to the LUN table"},
+    {"help",        CXLF_HELP,      0, 0, "print help"},
     {0}
 };
 
@@ -98,6 +100,8 @@ int32_t                         g_traceE = 1;       /* error traces */
 int32_t                         g_traceI = 0;       /* informative 'where we are in code' traces */
 int32_t                         g_traceF = 0;       /* function exit/enter */
 int32_t                         g_traceV = 0;       /* verbose trace...lots of information */
+int32_t                         usage    = 0;
+
 /*----------------------------------------------------------------------------*/
 /* Defines                                                                    */
 /*----------------------------------------------------------------------------*/
@@ -119,6 +123,8 @@ error_t parse_opt (int key,
     
     switch (key)
     {
+        case CXLF_HELP: usage=1; break;
+
             //        case CXLF_GET_MODE:
             //g_args.get_mode = 1;
             //break;
@@ -207,7 +213,7 @@ error_t parse_opt (int key,
             break;
             
         case 0 :
-            
+
             TRACEI("Got a naked argument: '%s'\n", arg);
             break;
             
@@ -240,8 +246,14 @@ int main (int argc, char *argv[])
     
     memset(&g_args,0,sizeof(g_args));
     
-    argp_parse (&argp, argc, argv, ARGP_IN_ORDER, 0, &g_args);
+    error_t err = argp_parse (&argp, argc, argv, ARGP_IN_ORDER, 0, &g_args);
     
+    if (err || usage)
+    {
+        printf("Usage: cxlflashutil\n");
+        exit(0);
+    }
+
     do
     {
         //if a LUN was specified, we need to make up a single-item LUN table

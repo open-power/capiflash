@@ -22,6 +22,12 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
+/**
+ **************************************************************************
+ * \file
+ * \brief Interface definition for CAPI Block
+ **************************************************************************
+ */
 #ifndef _H_CFLASH_BLOCK
 #define _H_CFLASH_BLOCK
 
@@ -89,11 +95,11 @@ typedef struct chunk_stats_s {
     uint64_t num_aresult_no_cmplt;  /* Number of times cblk_aresult    */
                                     /* returned with no command        */
                                     /* completion                      */
-    uint64_t num_retries;           /* Total number of all commmand    */
+    uint64_t num_retries;           /* Total number of all command    */
                                     /* retries.                        */
-    uint64_t num_timeouts;          /* Total number of all commmand    */
+    uint64_t num_timeouts;          /* Total number of all command    */
                                     /* time-outs.                      */
-    uint64_t num_fail_timeouts;     /* Total number of all commmand    */
+    uint64_t num_fail_timeouts;     /* Total number of all command    */
                                     /* time-outs that led to a command */
                                     /* failure.                        */
     uint64_t num_no_cmds_free;      /* Total number of times we didm't */
@@ -243,7 +249,7 @@ typedef off_t cflash_offset_t;
 /************************************************************************/
 
 
-#define CBLK_ARW_WAIT_CMD_FLAGS 1 /* Wait for commmand for cblk_aread   */
+#define CBLK_ARW_WAIT_CMD_FLAGS 1 /* Wait for command for cblk_aread   */
                                   /* or cblk_awrite.                    */
 #define CBLK_ARW_USER_TAG_FLAG 2 /* The caller is specifying a user     */
                                   /* defined tag for this request.      */
@@ -302,7 +308,7 @@ typedef struct cblk_arw_status_s {
 /* cblk_listio flags and structure                                      */
 /************************************************************************/
 
-#define CBLK_LISTIO_WAIT_ISSUE_CMD 1 /* Wait for commmand for all commands   */
+#define CBLK_LISTIO_WAIT_ISSUE_CMD 1 /* Wait for command for all commands   */
                                   /* in issue_io_list.                    */
 
 typedef struct cblk_io {

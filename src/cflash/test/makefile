@@ -46,7 +46,8 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 DEPS=$(addprefix $(TESTDIR)/, $(run_cflash_fvt_OFILES:.o=.dep))
 
 unit:
-	-@if [[ -e /dev/cxl ]]; then \
+	@#if cxl hw exist AND env is not ENABLED_FILE/ENABLED_MEM
+	-@if [[ -e /dev/cxl && ! ${FILEMODE}_ =~ ENABLED ]]; then \
        LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_cflash_fvt --gtest_output=xml:$(TESTDIR)/cflash_fvt_results.xml; \
     else \
       echo "SKIPPING run_cflash_fvt"; \

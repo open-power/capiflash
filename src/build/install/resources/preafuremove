@@ -24,11 +24,10 @@
 #
 # IBM_PROLOG_END_TAG
 
+BIN_DIR=/usr/bin
 for f in $(cat /lib/firmware/cxlflash/.remove|awk '{print $2}')
 do
   rm -f /lib/firmware/cxlflash/$f
 done
-
-rm -f /lib/firmware/cxlflash/*.bin
 
 exit 0

@@ -24,6 +24,8 @@
 #
 # IBM_PROLOG_END_TAG
 
+BIN_DIR=/usr/bin
+EXT_DIR=/usr/lib/cxlflash/ext
 CRON_FILE=/etc/cron.hourly/cflash_logs_cron
 
 if [[ -e $CRON_FILE ]]; then rm -f $CRON_FILE; fi
@@ -32,5 +34,7 @@ echo "INFO: stopping cxlfd service for LUN Management"
 if [ -d /run/systemd/system ]; then
     deb-systemd-invoke stop cxlfd.service >/dev/null || echo "WARNING: Unable to stop the cxlfd service via systemctl"
 fi
+
+rm -f ${EXT_DIR}/*
 
 exit 0

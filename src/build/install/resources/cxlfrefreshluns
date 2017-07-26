@@ -30,7 +30,7 @@ source $BIN_DIR/cflashutils
 
 showhelp()
 {
-    echo "Usage: $0"
+    echo "Usage: $(basename $0)"
     echo "    Refresh the cxlflash driver's internal LUN tables and set LUN modes for all cxlflash devices."
 }
 

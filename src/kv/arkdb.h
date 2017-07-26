@@ -22,6 +22,12 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
+/**
+ **************************************************************************
+ * \file
+ * \brief Interface definition for the ArkDB
+ **************************************************************************
+ */
 #ifndef __ARKDB_H__
 #define __ARKDB_H__
 

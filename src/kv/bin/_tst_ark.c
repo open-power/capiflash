@@ -23,9 +23,17 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
+#include <stdlib.h>
+#include <stdio.h>
+
 int tst_ark_entry(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
+    if (argc < 2 || (argc==2 && argv[1][0]=='-')) {
+      printf("usage: %s <path-to-afu>\n",argv[0]);
+      exit(0);
+    }
+
     return tst_ark_entry(argc, argv);
 }

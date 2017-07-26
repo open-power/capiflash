@@ -22,6 +22,12 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
+/**
+ **************************************************************************
+ * \file
+ * \brief Definitions for an Ark
+ **************************************************************************
+ */
 #ifndef __ARK_H__
 #define __ARK_H__
 

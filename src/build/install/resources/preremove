@@ -35,6 +35,33 @@ if [ -d /run/systemd/system ]; then
     deb-systemd-invoke stop cxlfd.service >/dev/null || echo "WARNING: Unable to stop the cxlfd service via systemctl"
 fi
 
+#cleanup ext bins
 rm -f ${EXT_DIR}/*
+
+#cleanup migration links
+FILES="\
+/opt/ibm/capikv/version.txt \
+/opt/ibm/capikv/readme.txt \
+/opt/ibm/capikv/etc/cflash_configure \
+/opt/ibm/capikv/afu/cflash_perf.pl \
+/opt/ibm/capikv/afu/cflash_temp.pl \
+/opt/ibm/capikv/afu/cflash_mfg_init.pl \
+/opt/ibm/capikv/afu/cflash_capacity.pl \
+/opt/ibm/capikv/afu/capi_flash.pl \
+/opt/ibm/capikv/afu/cflash_stick.pl \
+/opt/ibm/capikv/afu/cflash_perst.pl \
+/opt/ibm/capikv/afu/cxlffdc \
+/opt/ibm/capikv/afu/cflash_wear.pl \
+/opt/ibm/capikv/afu/cflash_perfcheck.pl \
+/opt/ibm/capikv/afu/cflash_devices.pl \
+/opt/ibm/capikv/bin/provtool \
+/opt/ibm/capikv/bin/afucfg.sh \
+/opt/ibm/capikv/bin/cxlflashutil \
+/opt/ibm/capikv/bin/cflash_version \
+/opt/ibm/capikv/bin/cxlfsetlunmode \
+/opt/ibm/capikv/bin/cxlfrefreshluns \
+/opt/ibm/capikv/bin/cxlfstatus \
+/opt/ibm/capikv/bin/setup.sh"
+for f in ${FILES}; do if [[ -f $f ]]; then rm -f $f; fi; done
 
 exit 0

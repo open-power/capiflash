@@ -1,0 +1,71 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/tools/create_tarball $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+if [[ ! $PWD =~ surelock-sw &&-z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
+source env.bash >/dev/null 2>&1
+
+if [[ $1 =~ rhel ]]; then rhel=1; else debian=1; fi
+
+cd $SURELOCKROOT
+make setversion
+ver=$(cat obj/tests/version.txt)
+orig=cxlflash_${ver%-*}.orig.tar
+pkg=cxlflash_${ver}
+
+BDIR=${SURELOCKROOT%/*}/build
+
+if [[ -e ${BDIR} ]]; then rm -fR ${BDIR}; fi
+mkdir -p ${BDIR}/$pkg
+
+# copy source
+cp * ${BDIR}/$pkg 2>/dev/null
+if [[ -e ${BDIR}/$pkg/customrc ]]; then rm -f ${BDIR}/$pkg/customrc; fi
+cp customrc.p8elblkkermc ${BDIR}/$pkg/customrc
+cp -R src ${BDIR}/$pkg
+cp obj/tests/version.txt ${BDIR}/$pkg/src/build
+find ${BDIR}/$pkg -name "*.bak" -exec rm {} \;
+find ${BDIR}/$pkg -name "*.save" -exec rm {} \;
+
+if [[ $debian ]]
+then
+  #copy debian specifics
+  echo "add debian"
+  cp -R src/build/debian ${BDIR}/$pkg
+  cd ${BDIR}/$pkg
+  if [[ -e debian/changelog ]]; then rm -f debian/changelog; fi
+  dch --create --distribution xenial --package cxlflash -v $ver "latest update"
+  if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
+elif [[ $rhel ]]
+then
+  #copy rhel specifics
+  echo "add rhel"
+fi
+
+# create tarball
+cd ${BDIR}
+tar -czf $orig.gz $pkg
+
+exit 0

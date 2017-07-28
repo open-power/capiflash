@@ -1,0 +1,3 @@
+# -there are multiple libraries installed with the cxlflash package
+# -cxlflash supports multiple adapters
+cxlflash: package-name-doesnt-match-sonames

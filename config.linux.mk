@@ -37,6 +37,10 @@ SHELL=/bin/bash
 
 default:
 	@-mkdir -p $(ROOTPATH)/obj/tests
+	@if [[ EMPTY${GITREVISION} = EMPTY ]]; then \
+       GITREVISION=$(shell cat src/build/version.txt);\
+       GITREVISION=${GITREVISION##*.}; GITREVISION=${GITREVISION%-*}; \
+     fi
 	${MAKE} -j10 SKIP_TEST=1 dep
 	${MAKE} -j10 SKIP_TEST=1 code_pass
 	${MAKE} -j10 SKIP_TEST=1 bin
@@ -165,7 +169,7 @@ else
     LDFLAGS += ${COMMONFLAGS} -Wl,-rpath,
 endif
 
-OPT_LDFLAGS="${LDFLAGS}:/usr/lib"
+OPT_LDFLAGS="${LDFLAGS}:/usr/lib:/usr/lib64"
 
 ifdef DBG
 	CFLAGS += -g

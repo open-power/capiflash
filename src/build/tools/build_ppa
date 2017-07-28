@@ -24,52 +24,24 @@
 #
 # IBM_PROLOG_END_TAG
 
-if [[ ! $PWD =~ surelock-sw &&-z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
+if [[ ! $PWD =~ surelock-sw && -z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
 source env.bash >/dev/null 2>&1
 
-branch=$(git branch|grep ^*)
-if [[ $branch =~ master ]]
-then
-  branch=4.3;
-elif [[ $branch =~ GA4.2 ]]
-then 
-  branch=4.2;
-fi
+${SURELOCKROOT}/src/build/tools/create_tarball
 
-ver=$branch.$(git rev-list HEAD 2>/dev/null| wc -l)-$(git rev-parse --short HEAD 2>/dev/null)
-orig=cxlflash_$branch.$(git rev-list HEAD 2>/dev/null| wc -l).orig.tar
-pkg=cxlflash_$ver
+BDIR=${SURELOCKROOT%/*}/build
+if [[ ! -e ${BDIR} ]]; then echo "no build dir found"; exit 0; fi
 
-if [[ ! -z $1 ]]; then pkg+=.$1; fi
+cd ${BDIR}
+tar -xzf *.gz
+cd ${BDIR}/cxlflash_*
+debuild -uc -us
+if [[ $? -ne 0 ]]; then echo "debuild failed"; exit -1; fi
 
-cd $SURELOCKROOT
-make setversion
-
-if [[ -e build ]]; then rm -fR build; fi
-mkdir -p build/$pkg
-cp * build/$pkg 2>/dev/null
-if [[ -e build/$pkg/customrc ]]; then rm -f build/$pkg/customrc; fi
-cp customrc.p8elblkkermc build/$pkg/customrc
-
-cp -R src build/$pkg
-cp obj/tests/version.txt build/$pkg/src/build
-cd build
-tar -cf $orig $pkg
-gzip -f $orig
-
-cp -R $SURELOCKROOT/src/build/debian $pkg
-cd $pkg
-
-if [[ -e debian/changelog ]]; then rm debian/changelog; fi
-dch --create --distribution xenial --package cxlflash -v $ver "latest update"
-if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
-
-echo "<enter> to build, q to quit"
+echo "<enter> to build source, q to quit"
 read char
 if [[ $char = [qQ] ]]; then exit 0; fi
 
-debuild
-if [[ $? -ne 0 ]]; then echo "debuild failed"; exit -1; fi
 debuild -S -sa
 if [[ $? -ne 0 ]]; then echo "debuild -S -sa failed"; exit -1; fi
 

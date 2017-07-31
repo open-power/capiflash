@@ -27,9 +27,21 @@
 if [[ ! $PWD =~ surelock-sw && -z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
 source env.bash >/dev/null 2>&1
 
+BDIR=${SURELOCKROOT%/*}/build
+
+sed -i 's/#override_dh_fixperms/override_dh_fixperms/'     src/build/debian/rules
+sed -i 's/#override_dh_md5sums/override_dh_md5sums/'       src/build/debian/rules
+sed -i 's/#override_dh_makeshlibs/override_dh_makeshlibs/' src/build/debian/rules
+
+if [[ -e ${BDIR} ]]; then
+  echo "<enter> to remove: ${BDIR}, q to quit"
+  read char
+  if [[ $char = [qQ] ]]; then exit 0; fi
+  sudo rm -fR ${BDIR}
+fi
+
 ${SURELOCKROOT}/src/build/tools/create_tarball
 
-BDIR=${SURELOCKROOT%/*}/build
 if [[ ! -e ${BDIR} ]]; then echo "no build dir found"; exit 0; fi
 
 cd ${BDIR}

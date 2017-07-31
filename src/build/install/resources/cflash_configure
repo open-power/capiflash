@@ -173,7 +173,9 @@ then
  if [[ ! $EXISTS_LVL =~ cxlflashimage || \
         ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
  then
-   dpkg -i cxlflashimage*$CF_VER*.deb
+   #pkg is not required, only install if it exists
+   ls cxlflashimage*$CF_VER*.deb >/dev/null 2>&1
+   if [[ $? -eq 0 ]]; then dpkg -i cxlflashimage*$CF_VER*.deb; fi
  fi
 
  ##################################
@@ -195,6 +197,7 @@ then
    echo -e "\nERROR: cxlflash packages failed to install\n"
    exit 15
  fi
+ if [[ ! -z $(dpkg -l|grep 'i  cxlflashimage') ]]; then imagepkg=1; fi
 fi
 
 
@@ -348,7 +351,9 @@ EOF
   if [[ ! $EXISTS_LVL =~ cxlflashimage || \
          ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
   then
-    rpm -i -v cxlflashimage*$CF_VER*.rpm
+    #pkg is not required, only install if it exists
+    ls cxlflashimage*$CF_VER*.rpm >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then rpm -i -v cxlflashimage*$CF_VER*.rpm; fi
   fi
 
   ##################################
@@ -374,6 +379,7 @@ EOF
     echo -e "\nERROR: cxlflash packages failed to install\n"
     exit 15
   fi
+  if [[ ! -z $(rpm -qa|grep "cxlflashiamge") ]]; then imagepkg=1; fi
 fi
 
 
@@ -460,10 +466,15 @@ fi
 
   if [[ $do_flash ]]
   then
-    systemctl stop cxlfd.service
-    if [[ $(lsmod |grep cxlflash) =~ cxlflash ]]; then rmmod cxlflash; fi
-    flash_all_adapters -reload
-    systemctl daemon-reload
+    if [[ $imagepkg ]]
+    then
+      systemctl stop cxlfd.service
+      if [[ $(lsmod |grep cxlflash) =~ cxlflash ]]; then rmmod cxlflash; fi
+      flash_all_adapters -reload
+      systemctl daemon-reload
+    else
+      echo "INFO: unable to download firmware. The package cxlflashimage is not installed."
+    fi
   fi
 
   if [[ ! $(lsmod |grep cxlflash) =~ cxlflash ]]; then modprobe cxlflash; fi

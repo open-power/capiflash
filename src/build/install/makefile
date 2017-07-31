@@ -212,7 +212,7 @@ endif
 	${INSTALL} ${RESOURCEDIR}/cxlfsetlunmode ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cxlfstatus ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflashutils ${BIN_DIR}
-	${INSTALL} ${RESOURCEDIR}/setup ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/cflash_setup ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_version ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/machine_info ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_logs_cron ${BIN_DIR}

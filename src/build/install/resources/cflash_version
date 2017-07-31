@@ -112,8 +112,7 @@ then
   EXISTS_CF_IMAGE_VER=$(dpkg -l|grep cxlflashimage|awk '{print $3}')
   if   [[ -z $EXISTS_CF_IMAGE_VER ]]
   then
-    err_rc=4
-    echo "ERROR:     cxlflashimage: missing"
+    echo "INFO:      cxlflashimage: missing"
   elif [[ ! $EXISTS_CF_IMAGE_VER =~ $CF_VER ]]
   then
     err_rc=4
@@ -251,8 +250,7 @@ then
   EXISTS_CF_IMAGE_VER=$(rpm -qa |grep cxlflashimage|head -1 | awk -F- '{print $2}')
   if   [[ -z $EXISTS_CF_IMAGE_VER ]]
   then
-    err_rc=4
-    echo "ERROR:     cxlflashimage: missing"
+    echo "INFO:      cxlflashimage: missing"
   elif [[ ! $EXISTS_CF_IMAGE_VER =~ $CF_VER ]]
   then
     err_rc=4

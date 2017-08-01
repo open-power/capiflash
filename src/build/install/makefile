@@ -64,7 +64,6 @@ EXT_DIR=${LIB_DIR}/cxlflash/ext
 INC_DIR=${INSTALL_ROOT}/include
 SHARE_DIR=${INSTALL_ROOT}/share/cxlflash
 
-
 MAN3_DIR=${PREFIX}/usr/share/man/man3
 MAN1_DIR=${PREFIX}/usr/share/man/man1
 SYSTEMD_DIR=${PREFIX}/lib/systemd/system

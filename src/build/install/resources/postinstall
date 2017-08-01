@@ -123,42 +123,6 @@ for f in ${BINFILES}; do
   ln -s ${exist} $f
 done
 
-#setup links for migration
-mkdir -p /opt/ibm/capikv/bin
-mkdir -p /opt/ibm/capikv/afu
-mkdir -p /opt/ibm/capikv/etc
-ln -s /usr/share/cxlflash/version.txt /opt/ibm/capikv/version.txt
-ln -s /usr/share/cxlflash/readme.txt /opt/ibm/capikv/readme.txt
-ln -s /usr/bin/cflash_configure /opt/ibm/capikv/etc/cflash_configure
-AFUFILES="\
-/opt/ibm/capikv/afu/cflash_perf.pl \
-/opt/ibm/capikv/afu/cflash_temp.pl \
-/opt/ibm/capikv/afu/cflash_capacity.pl \
-/opt/ibm/capikv/afu/capi_flash.pl \
-/opt/ibm/capikv/afu/cflash_stick.pl \
-/opt/ibm/capikv/afu/cflash_perst.pl \
-/opt/ibm/capikv/afu/cxlffdc \
-/opt/ibm/capikv/afu/cflash_wear.pl \
-/opt/ibm/capikv/afu/cflash_devices.pl"
-for f in ${AFUFILES}; do
-  rm -f $f
-  exist=$(ls /usr/bin/$(basename ${f%.*}))
-  ln -s ${exist} $f
-done
-BINFILES="\
-/opt/ibm/capikv/bin/provtool \
-/opt/ibm/capikv/bin/afucfg.sh \
-/opt/ibm/capikv/bin/cxlflashutil \
-/opt/ibm/capikv/bin/cflash_version \
-/opt/ibm/capikv/bin/cxlfsetlunmode \
-/opt/ibm/capikv/bin/cxlfrefreshluns \
-/opt/ibm/capikv/bin/cxlfstatus \
-/opt/ibm/capikv/bin/setup.sh"
-for f in ${BINFILES}; do
-  exist=$(ls /usr/bin/$(basename ${f%.*}))
-  ln -s ${exist} $f
-done
-
 echo "INFO: enabling cxlfd service for LUN Management"
 # was-enabled defaults to true, so new installations run enable.
 if deb-systemd-helper --quiet was-enabled cxlfd.service; then

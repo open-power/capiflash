@@ -36,11 +36,6 @@ SHELL=/bin/bash
 .PHONY: default
 
 default:
-	@-mkdir -p $(ROOTPATH)/obj/tests
-	@if [[ EMPTY${GITREVISION} = EMPTY ]]; then \
-       GITREVISION=$(shell cat src/build/version.txt);\
-       GITREVISION=${GITREVISION##*.}; GITREVISION=${GITREVISION%-*}; \
-     fi
 	${MAKE} -j10 SKIP_TEST=1 dep
 	${MAKE} -j10 SKIP_TEST=1 code_pass
 	${MAKE} -j10 SKIP_TEST=1 bin
@@ -55,13 +50,7 @@ run_fvt:
 run_unit:
 	${MAKE} unit
 
-setversion:
-	@-mkdir -p $(ROOTPATH)/obj/tests
-	@if [[ EMPTY$(shell git rev-list HEAD 2>/dev/null| wc -l) != EMPTY ]]; then\
-       echo ${VERSIONMAJOR}.${VERSIONMINOR}.${GITREVISION} > $(ROOTPATH)/obj/tests/version.txt; \
-     fi
-
-prod: setversion
+prod:
 	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 SKIP_TEST=1 code_pass
 	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 SKIP_TEST=1 bin
 
@@ -86,16 +75,35 @@ installsb:
 
 install: prodall install_code install_test installsb
 
+#this target queries the GITREVISION to be used
+setversion:
+	$(info GITREVISION=${GITREVISION})
+
 #ensure build env is setup
 ifndef SURELOCKROOT
 $(error run: "source env.bash")
+else
+$(shell mkdir -p ${SURELOCKROOT}/obj/tests)
 endif
 
 #setup package version
 VERSIONMAJOR=4
 VERSIONMINOR=3
-GITREVISION:=$(shell git rev-list HEAD 2>/dev/null| wc -l)-$(shell git rev-parse --short HEAD 2>/dev/null)
 SOVER=-0
+
+GITBRANCH=$(shell git branch 2>/dev/null | grep ^"* "|cut -c3-8)
+FS=$(findstring surelock-sw, ${SURELOCKROOT})
+GB=$(findstring master, ${GITBRANCH})
+
+#if this is surelock-sw:master, extract and save rev-list
+#else this is a tarball or capiflash, so use version.txt
+ifeq (surelock-sw:master,${FS}:${GB})
+  GITREVISION=$(shell git rev-list HEAD 2>/dev/null | wc -l)
+  $(shell echo ${VERSIONMAJOR}.${VERSIONMINOR}.${GITREVISION} > ${SURELOCKROOT}/obj/tests/version.txt)
+else
+  GITREVISION=$(shell cat ${SURELOCKROOT}/src/build/version.txt 2>/dev/null)
+  GITREVISION:=$(lastword $(subst ., ,${GITREVISION}))
+endif
 
 #generate VPATH based on these dirs.
 VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img

@@ -194,7 +194,7 @@ ifndef NO_O3
 endif
 
 #add support for the rev ID header
-GITREVISION:=$(shell git rev-list HEAD | wc -l | sed -e 's/^ *//')-$(shell git rev-parse --short HEAD)
+GITREVISION:=$(shell git rev-list HEAD | wc -l | sed -e 's/^ *//')
 CFLAGS += -DGITREVISION='"${GITREVISION}"'
 
 CFLAGS   += ${COMMONFLAGS} ${CUSTOMFLAGS} ${ARCHFLAGS}

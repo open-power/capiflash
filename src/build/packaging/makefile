@@ -44,18 +44,19 @@ endif
 
 SHORT_VERSION=${VERSIONMAJOR}.${VERSIONMINOR}
 VERSION=${VERSIONMAJOR}.${VERSIONMINOR}.${GITREVISION}
+ITER=1
 
 cxlflash:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	fpm -f -s dir -t rpm -n $@ -v ${VERSION} --iteration=1 \
+	fpm -f -s dir -t rpm -n $@ -v ${VERSION} --iteration=${ITER} \
 		--depends 'advance-toolchain-at10.0-runtime' \
 		--depends 'systemd-devel' \
 		-C ./install_root \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall \
 		--before-remove ${SURELOCKROOT}/src/build/install/resources/preremove \
 		--conflicts ibmcapikv --replaces ibmcapikv .; \
-	fpm -f -s dir -t deb -n $@ -v ${VERSION} \
+	fpm -f -s dir -t deb -n $@ -v ${VERSION}-${ITER} \
 		--depends 'advance-toolchain-at10.0-runtime' \
 		--depends 'libudev1' \
 		-C ./install_root \
@@ -67,12 +68,12 @@ cxlflash:
 cxlflash-test:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	fpm -f -s dir -t rpm -n $@ -v ${VERSION} -C ./test_root --iteration=1 \
-		--depends 'cxlflash = ${VERSION}-1' \
+	fpm -f -s dir -t rpm -n $@ -v ${VERSION} -C ./test_root --iteration=${ITER} \
+		--depends 'cxlflash = ${VERSION}-${ITER}' \
 		--depends 'systemd-devel' \
 		--conflicts ibmcapikv-test --replaces ibmcapikv-test .; \
-	fpm -f -s dir -t deb -n $@ -v ${VERSION} -C ./test_root \
-		--depends 'cxlflash = ${VERSION}' \
+	fpm -f -s dir -t deb -n $@ -v ${VERSION}-${ITER} -C ./test_root \
+		--depends 'cxlflash = ${VERSION}-${ITER}' \
 		--depends 'libudev-dev' \
 		--conflicts ibmcapikv-test --replaces ibmcapikv-test .; \
 	tar -cvzf $@-${GITREVISION}.tar.gz -C ./test_root .
@@ -80,13 +81,13 @@ cxlflash-test:
 cxlflashimage:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	fpm -f -s dir -t rpm -a all -n $@ -v ${VERSION} -C ./afu_root --iteration=1 \
-		--depends 'cxlflash = ${VERSION}-1' \
+	fpm -f -s dir -t rpm -a all -n $@ -v ${VERSION} -C ./afu_root --iteration=${ITER} \
+		--depends 'cxlflash = ${VERSION}-${ITER}' \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
 		--before-remove ${SURELOCKROOT}/src/build/install/resources/preafuremove \
 		--conflicts afuimage --replaces afuimage .; \
-	fpm -f -s dir -t deb -a all -n $@ -v ${VERSION} -C ./afu_root \
-		--depends 'cxlflash = ${VERSION}' \
+	fpm -f -s dir -t deb -a all -n $@ -v ${VERSION}-${ITER} -C ./afu_root \
+		--depends 'cxlflash = ${VERSION}-${ITER}' \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
 		--before-remove ${SURELOCKROOT}/src/build/install/resources/preafuremove \
 		--conflicts afuimage --replaces afuimage .; \

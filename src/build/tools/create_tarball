@@ -29,9 +29,12 @@ source env.bash >/dev/null 2>&1
 
 if [[ $1 =~ rhel ]]; then rhel=1; else debian=1; fi
 
+ITER=1
+
 cd $SURELOCKROOT
 make setversion
-ver=$(cat obj/tests/version.txt)
+if [[ -e obj/tests/version.txt ]]; then ver=$(cat obj/tests/version.txt); fi
+if [[ -e src/build/version.txt ]]; then ver=$(cat src/build/version.txt); fi
 orig=cxlflash_${ver%-*}.orig.tar
 pkg=cxlflash_${ver}
 
@@ -56,7 +59,7 @@ then
   cp -R src/build/debian ${BDIR}/$pkg
   cd ${BDIR}/$pkg
   if [[ -e debian/changelog ]]; then rm -f debian/changelog; fi
-  dch --create --distribution xenial --package cxlflash -v $ver "latest update"
+  dch --create --distribution xenial --package cxlflash -v $ver-${ITER} "latest update"
   if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
 elif [[ $rhel ]]
 then

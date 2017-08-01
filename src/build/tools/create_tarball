@@ -48,7 +48,8 @@ cp * ${BDIR}/$pkg 2>/dev/null
 if [[ -e ${BDIR}/$pkg/customrc ]]; then rm -f ${BDIR}/$pkg/customrc; fi
 cp customrc.p8elblkkermc ${BDIR}/$pkg/customrc
 cp -R src ${BDIR}/$pkg
-cp obj/tests/version.txt ${BDIR}/$pkg/src/build
+if [[ -e obj/tests/version.txt ]]; then cp obj/tests/version.txt ${BDIR}/$pkg/src/build; fi
+if [[ -e src/build/version.txt ]]; then cp src/build/version.txt ${BDIR}/$pkg/src/build; fi
 find ${BDIR}/$pkg -name "*.bak" -exec rm {} \;
 find ${BDIR}/$pkg -name "*.save" -exec rm {} \;
 

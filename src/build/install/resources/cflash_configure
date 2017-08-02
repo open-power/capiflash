@@ -379,7 +379,7 @@ EOF
     echo -e "\nERROR: cxlflash packages failed to install\n"
     exit 15
   fi
-  if [[ ! -z $(rpm -qa|grep "cxlflashiamge") ]]; then imagepkg=1; fi
+  if [[ ! -z $(rpm -qa|grep "cxlflashimage") ]]; then imagepkg=1; fi
 fi
 
 

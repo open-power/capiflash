@@ -83,7 +83,7 @@ then
   echo 'DRIVERS=="cxl-pci", PROGRAM="/usr/bin/cflash_getslot %b", ENV{SLOT}="%c"' > $rules
 fi
 
-cards=$(lspci |egrep "0601|04cf"|awk '{print $1}');
+cards=$(lspci |egrep "0601|04cf|0628"|awk '{print $1}');
 
 ##############
 # main

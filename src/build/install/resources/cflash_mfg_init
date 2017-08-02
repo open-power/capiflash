@@ -108,7 +108,7 @@ if (defined $serial)
 {
   chdir('/usr/share/cxlflash') || die "cxlflashimage pkg is not installed\n";
   `/usr/bin/surelock_vpd2rbf -f $csv -s $serial`;
-  (-f "/usr/share/cxlflash/vpd_FlashGT.vpdrbf") || die "failure creating the VPD\n";
+  (-f "/usr/share/cxlflash/$rbf") || die "failure creating the VPD\n";
   `/usr/bin/flashgt_vpd_access $target $cardN /usr/share/cxlflash/$rbf`;
   if ($? != 0) {print "VPD update failed\n";}
   else         {print "VPD updated\n";}

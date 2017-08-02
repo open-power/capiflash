@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 # IBM_PROLOG_BEGIN_TAG
 # This is an automatically generated prolog.
 #
@@ -24,7 +24,7 @@
 #
 # IBM_PROLOG_END_TAG
 
-
+set -e
 USERNAME=cxl
 GROUPNAME=$USERNAME
 BIN_DIR=/usr/bin

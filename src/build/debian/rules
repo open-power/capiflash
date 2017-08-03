@@ -70,7 +70,7 @@ override_dh_installdeb:
 
 override_dh_auto_test:
 override_dh_testroot:
-override_dh_installman:
+#override_dh_installman:
 #override_dh_fixperms:
 #override_dh_md5sums:
 #override_dh_makeshlibs:

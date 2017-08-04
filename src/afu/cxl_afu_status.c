@@ -30,7 +30,7 @@
 #include <afu_fc.h>
 #include <unistd.h>
 
-#define DEBUG 0
+int     DEBUG=0;
 #define debug(fmt, ...) do { if (DEBUG) fprintf(stderr,fmt,__VA_ARGS__); fflush(stderr);} while (0)
 #define debug0(fmt)     do { if (DEBUG) fprintf(stderr,fmt); fflush(stderr);} while (0)
 
@@ -59,7 +59,7 @@ uint64_t no_rec               = 0b000000000000000;
 *******************************************************************************/
 void usage(void)
 {
-    printf("Usage: [-d afuX]\n");
+    printf("Usage: [-d afuX] [-p port]\n");
     exit(0);
 }
 
@@ -71,17 +71,17 @@ void usage(void)
 *******************************************************************************/
 void show_port(uint32_t port)
 {
-    uint64_t base;
-    uint64_t status2;
-    uint32_t num;
+    uint64_t base    = 0;
+    uint64_t status2 = 0;
+    uint32_t num     = 0;
 
-    if (port)  base=FC_PORT1_OFFSET;
-    else       base=FC_PORT0_OFFSET;
+    SET_BASE(port,base);
 
     printf(" NVMe%d: ", port);
 
     addr=base+FC_STATUS2;
     cxl_mmio_read64(afu, addr,(__u64 *)&status2);
+    debug("rd FC_STATUS2: 0x%016lx\n", status2);
     if (status2&gen1)                    printf("GEN1 ");
     if (status2&gen2)                    printf("GEN2 ");
     if (status2&gen3)                    printf("GEN3 ");
@@ -99,21 +99,25 @@ void show_port(uint32_t port)
 
     addr=base+FC_MTIP_STATUS;
     cxl_mmio_read64(afu, addr,(__u64 *)&r);
+    debug("rd FC_MTIP_STATUS: 0x%016lx\n", r);
     if (r&0b10000)                       printf("   offline\n");
 
     addr=base+FC_CONFIG;
     cxl_mmio_read64(afu, addr,(__u64 *)&r);
+    debug("rd FC_CONFIG: 0x%016lx\n", r);
     if (r&0b10000000)                    printf("   timeouts disabled\n");
     if (r&0b10000)                       printf("   fc_reset asserted\n");
     if (!r&0b1)                          printf("   autologin not enabled\n");
 
     addr=base+FC_CONFIG2;
     cxl_mmio_read64(afu, addr,(__u64 *)&r);
+    debug("rd FC_CONFIG2: 0x%016lx\n", r);
     if (r&0b100000)                      printf("   shutdown abrupt started\n");
     if (r&0b10000)                       printf("   shutdown normal started\n");
 
     addr=base+FC_STATUS;
     cxl_mmio_read64(afu, addr,(__u64 *)&r);
+    debug("rd FC_STATUS: 0x%016lx\n", r);
     if      (!(r&link_training_cmplt))   printf("   link train failed\n");
     else if (!(r&cntrl_rdy))             printf("   NVMe controller not rdy\n");
     else if (!(r&ioq_rdy))               printf("   ioq not ready\n");
@@ -179,17 +183,21 @@ int main(int argc, char **argv)
   long  reported  = 0;
   char  FF        = 0xFF;
   char  c         = '\0';
-  char  dev[128];
+  char  dev[128]  = {0};
+  int   port      = -1;
   char *_dev      = NULL;
+  char *_port     = NULL;
 
   /*--------------------------------------------------------------------------
    * process and verify input parms
    *------------------------------------------------------------------------*/
-  while (FF != (c=getopt(argc, argv, "d:h")))
+  while (FF != (c=getopt(argc, argv, "d:p:hv")))
   {
       switch (c)
       {
-          case 'd': _dev = optarg; break;
+          case 'd': _dev  = optarg; break;
+          case 'p': _port = optarg; break;
+          case 'v': DEBUG=1;        break;
           case 'h':
           case '?': usage();
       }
@@ -197,6 +205,8 @@ int main(int argc, char **argv)
   if (!_dev) {usage();}
   if (strncmp(_dev,"afu",3) == 0) {sprintf(dev, "/dev/cxl/%s",_dev);}
   else                            {sprintf(dev, "%s",_dev);}
+  if (_port) {port=atoi(_port);}
+  else       {usage();}
 
   afu = cxl_afu_open_dev(dev);
   if (!afu) {printf("unable to open %s", dev); exit(-1);}
@@ -226,8 +236,7 @@ int main(int argc, char **argv)
   debug0 ("Installing libcxl SIGBUS handler\n");
   cxl_mmio_install_sigbus_handler();
 
-  show_port(0);
-  show_port(1);
+  if (port >= 0) {show_port(port);}
 
   exit(0);
 }

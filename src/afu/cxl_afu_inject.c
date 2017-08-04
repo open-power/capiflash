@@ -89,7 +89,10 @@ void usage(void)
 *******************************************************************************/
 void nvme_link(uint32_t port, uint32_t state)
 {
-    uint64_t base = port ? FC_PORT1_OFFSET : FC_PORT0_OFFSET;
+    uint64_t base;
+    int      i=0;
+
+    SET_BASE(port,base);
 
     addr = base+FC_CONFIG;
 
@@ -102,10 +105,14 @@ void nvme_link(uint32_t port, uint32_t state)
         r &= ~0x1;   //clear auto-login
         debug("wr FC_CONFIG: 0x%016lx\n", r);
         cxl_mmio_write64(afu, addr, r);
-        usleep(50000);
-        addr=base+FC_STATUS;
-        cxl_mmio_read64(afu, addr, &r);
-        debug("rd FC_STATUS: 0x%016lx\n", r);
+        for (i=0; i<10; i++)
+        {
+            usleep(100000);
+            addr=base+FC_STATUS;
+            cxl_mmio_read64(afu, addr, &r);
+            debug("rd FC_STATUS: 0x%016lx\n", r);
+            if ((r&nvme_port_online) != nvme_port_online) {break;}
+        }
         if ((r&nvme_port_online) == nvme_port_online)
         {
             printf("NVMe port offline failed\n");
@@ -120,10 +127,14 @@ void nvme_link(uint32_t port, uint32_t state)
         r |= 0x11;   //set reset and auto-login
         debug("wr FC_CONFIG: 0x%016lx\n", r);
         cxl_mmio_write64(afu, addr, r);
-        usleep(50000);
-        addr=base+FC_STATUS;
-        cxl_mmio_read64(afu, addr, &r);
-        debug("rd FC_STATUS: 0x%016lx\n", r);
+        for (i=0; i<10; i++)
+        {
+            usleep(100000);
+            addr=base+FC_STATUS;
+            cxl_mmio_read64(afu, addr, &r);
+            debug("rd FC_STATUS: 0x%016lx\n", r);
+            if ((r&nvme_port_online) == nvme_port_online) {break;}
+        }
         if ((r&nvme_port_online) != nvme_port_online)
         {
             printf("NVMe port online failed\n");
@@ -145,9 +156,11 @@ void io_error(uint32_t port,
               uint64_t status,
               uint32_t interval)
 {
-    uint64_t base   = port ? FC_PORT1_OFFSET : FC_PORT0_OFFSET;
+    uint64_t base;
     uint64_t errinj = 0x80000000 | interval;
     uint64_t data   = (status<<32)|lba;
+
+    SET_BASE(port,base);
 
     if (type == CLEAR_PERM) {errinj=0; data=0;}
     else                    {errinj|=(type<<20);}
@@ -178,9 +191,11 @@ void parity_err(uint32_t port,
                 uint64_t status,
                 uint32_t interval)
 {
-    uint64_t base   = port ? FC_PORT1_OFFSET : FC_PORT0_OFFSET;
+    uint64_t base;
     uint64_t errinj = 0;
     uint64_t data   = 0;
+
+    SET_BASE(port,base);
 
     debug("port:%d type:%d lba:%.8d perm:%d status:%.2lx interval:%d\n",
             port,type,lba,perm,status,interval);

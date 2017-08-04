@@ -46,6 +46,13 @@ typedef enum
 #define FC_PORT_BASE_OFFSET  0x2012000
 #define FC_PORT_MMAP_SIZE ((FC_PORT_BASE_OFFSET) + (MAX_WWPNS_PER_ADAPTER) * (FC_PORT_REG_SIZE))
 
+#define SET_BASE(_p,_b)                                                               \
+do                                                                                    \
+{                                                                                     \
+  if (_p<2) {_b = FC_PORT_BASE_OFFSET + (_p*FC_PORT_REG_SIZE);}                       \
+  else      {_b = FC_PORT_BASE_OFFSET + (2*FC_PORT_REG_SIZE) + (_p*FC_PORT_REG_SIZE);}\
+} while (0);
+
 
 // FC module register offset (byte address)
 #define FC_MTIP_REV 0x000
@@ -117,5 +124,40 @@ typedef enum
 #define FC_MTIP_STATUS_MASK         0x30ull
 #define FC_MTIP_STATUS_ONLINE       0x20ull
 #define FC_MTIP_STATUS_OFFLINE      0x10ull
+
+#define FC_CNT_CRCTOT 0x610
+#define FC_CNT_AFURD 0x618
+#define FC_CNT_AFUWR 0x620
+#define FC_CNT_AFUABORT 0x628
+#define FC_CNT_RSPOVER 0x630
+#define FC_CNT_ABORT1 0x638
+#define FC_CNT_ABORT2 0x640
+#define FC_CNT_ABORT3 0x648
+#define FC_CNT_ABORT4 0x650
+#define FC_CNT_WBUFREL 0x658
+#define FC_CNT_RXRSP 0x660
+
+// command encodes
+// perl -ne 'if( /localparam\s+(\S+)\s*=\s*32.h([0-9a-f]+)/i ) { print "#define $1 0x$2\n";}' fc_module/src/ctms_fc_afu.inc
+#define FCP_READ 0x01
+#define FCP_WRITE 0x02
+#define FCP_GSCSI_RD 0x03
+#define FCP_GSCSI_WR 0x04
+#define FCP_ABORT 0x05
+
+// response interface encodes
+#define FCP_RSP_GOOD 0x00
+#define FCP_RSP_CHECK 0x02
+#define FCP_RSP_BUSY 0x08
+#define FCP_RSP_CRCERR 0x51
+#define FCP_RSP_ABORTPEND 0x52
+#define FCP_RSP_BADREQ 0x53
+#define FCP_RSP_NOLOGI 0x54
+#define FCP_RSP_NOEXP 0x55
+#define FCP_RSP_INUSE 0x56
+#define FCP_RSP_LINKDOWN 0x57
+#define FCP_RSP_ABORTOK 0x58
+#define FCP_RSP_ABORTFAIL 0x59
+#define FCP_RSP_FCPERR 0x60
 
 #endif

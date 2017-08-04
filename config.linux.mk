@@ -128,7 +128,7 @@ BIN_TESTS     = $(addprefix ${TESTDIR}/, ${BTESTS})
 PROGRAMS      = $(addprefix ${PGMDIR}/, ${PGMS})
 BITS          =
 CFLAGS        =
-LDFLAGS       = -z relro -z now
+LDFLAGS       = -Wl,-Bsymbolic-functions -Wl,-z,relro,-z,now
 
 ifdef MODULE
 OBJDIR            = ${ROOTPATH}/obj/modules/${MODULE}
@@ -194,7 +194,7 @@ endif
 
 CFLAGS   += ${LCFLAGS}
 CFLAGS   += -DGITREVISION='"${GITREVISION}"'
-CFLAGS   += -Wno-unused-result
+CFLAGS   += -Wno-unused-result -fstack-protector-strong -Wformat
 LIBPATHS  = -L${ROOTPATH}/img
 LINKLIBS += -lpthread -ludev
 

@@ -1,6 +1,2 @@
-# Currently there is a version to be uploaded through 
-# https://github.com/open-power/capiflash/archive/master.zip
-# but this is not a tar file and it seems not up-to-date with
-# upstream master release maintained by git.
-version=3
-https://github.com/open-power/capiflash/archive/master.zip
+version=4
+https://github.com/open-power/capiflash/tags (?:.*?/)?v?(\d[\d.]*)\.tar\.gz

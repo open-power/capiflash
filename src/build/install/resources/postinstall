@@ -33,8 +33,11 @@ SIO_FILE=$ETC_DIR/sioluntable.ini
 LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 TDIR=tmp
-EXT_DIR=/usr/lib/cxlflash/ext
 CKV_DIR=/opt/ibm/capikv
+if [[ -e /usr/lib64 ]]; then LIB_DIR=/usr/lib64; EXT_DIR=${LIB_DIR}/cxlflash/ext;
+else                         LIB_DIR=/usr/lib;   EXT_DIR=${LIB_DIR}/cxlflash/ext; fi
+
+if [[ -f /etc/redhat-release ]]; then redhat=1; fi
 
 #Creating empty SIO lun table and etc dir
 if [[ -z $(grep cxl /etc/passwd) ]]
@@ -70,10 +73,11 @@ else
       echo "*** run /usr/bin/cflash_configure to complete the install ***"
       echo "************************************************************************"
     fi
-    if [[ -e /lib/libcflsh_block.so ]]
+    ls ${LIB_DIR}/libcflsh_block* >/dev/null 2>&1; if [[ $? -eq 0 ]]; then liclib=yes; else liclib=no; fi
+    if [[ $liclib = yes ]]
     then
       if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-      mv /lib/libcflsh_block.so /opt/$HD >/dev/null 2>&1
+      mv ${LIB_DIR}/libcflsh_block*.so /opt/$HD >/dev/null 2>&1
     fi
   fi
 fi
@@ -123,22 +127,24 @@ for f in ${BINFILES}; do
   ln -s ${exist} $f
 done
 
-echo "INFO: enabling cxlfd service for LUN Management"
-# was-enabled defaults to true, so new installations run enable.
-if deb-systemd-helper --quiet was-enabled cxlfd.service; then
+if [[ ! ${redhat} ]]
+then
+  echo "INFO: enabling cxlfd service for LUN Management"
+  # was-enabled defaults to true, so new installations run enable.
+  if deb-systemd-helper --quiet was-enabled cxlfd.service; then
     # Enables the unit on first installation, creates new
     # symlinks on upgrades if the unit file has changed.
     deb-systemd-helper enable cxlfd.service >/dev/null || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
-else
+  else
     # Update the statefile to add new symlinks (if any), which need to be
     # cleaned up on purge. Also remove old symlinks.
     deb-systemd-helper update-state cxlfd.service >/dev/null || true
-fi
+  fi
 
-if [ -d /run/systemd/system ]; then
+  if [ -d /run/systemd/system ]; then
     systemctl --system daemon-reload >/dev/null || true
     deb-systemd-invoke start cxlfd.service >/dev/null || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+  fi
 fi
 
 exit 0
-

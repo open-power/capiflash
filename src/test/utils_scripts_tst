@@ -39,12 +39,6 @@ if [[ $(uname) =~ "AIX" ]]; then
     exit 0;
 fi
 
-if [[ -z $FVT_DEV || ! $FVT_DEV =~ "/dev"  || $FVT_DEV == '' ]]; then
-    echo "[  SKIPPED ] FVT_DEV is a file or is unset";
-    exit 0;
-fi
-
-
 
 ################################################################
 #        Utility functions to help asserting conditions        #

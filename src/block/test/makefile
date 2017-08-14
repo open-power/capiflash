@@ -43,13 +43,16 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 
 LINKLIBS += -lcflsh_block$(SOVER) -lm
 
+ifeq ($(BLOCK_FILEMODE_ENABLED),1)
+GFILTER="--gtest_filter=*_FM_*"
+endif
+ifeq ($(BLOCK_MC_ENABLED), 1)
+GFILTER="--gtest_filter=*_UMC_*"
+endif
+
 unit:
-ifeq ($(BLOCK_FILEMODE_ENABLED), 1)
-	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_FM_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
-else ifeq ($(BLOCK_MC_ENABLED), 1)
-	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_filter=*_UMC_* --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
-else ifeq ($(BLOCK_KERNEL_MC_ENABLED), 1)
-	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+ifneq ($(FVT_DEV),)
+	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) ${GFILTER} --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else
-	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	@echo "FVT_DEV is unset for BLOCK_FILEMODE_ENABLED=1"
 endif

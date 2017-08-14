@@ -119,7 +119,7 @@ if (defined $target)
   for (my $i=0; $i<4; $i++)
   {
     if ($out =~ /0601/ && $i>1) {last;}
-    `/usr/lib/cxlflash/ext/cxl_afu_fmt_unit -p$i /dev/cxl/$afu`;
+    `/usr/lib*/cxlflash/ext/cxl_afu_fmt_unit -p$i /dev/cxl/$afu`;
     if ($? != 0) {print "format lun $i failed\n";}
     else         {print "lun $i cleaned\n";}
   }

@@ -39,12 +39,14 @@ rc=0
 LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 force=no
-ADV_TC=at10
 LIC_DIR=/usr/share/cxlflash/license
 SHARE_DIR=/usr/share/cxlflash
 
 wget www.ibm.com >/dev/null 2>&1
 internet=$?
+
+if [[ -e /usr/lib64 ]]; then LIB_DIR=/usr/lib64; else LIB_DIR=/usr/lib; fi
+ls ${LIB_DIR}/libcflsh_block* >/dev/null 2>&1; if [[ $? -eq 0 ]]; then liclib=yes; else liclib=no; fi
 
 ##################################
 # Determine distro
@@ -79,46 +81,33 @@ then
     echo "------------------------------"
     echo -e "INFO: Attempting to configure version($CF_VER)\n"
   else
-    echo "ERROR: no cxlflash pkgs are installed nor found in `pwd`"
+    echo "ERROR: no cxlflash pkgs are installed"
     exit 30
   fi
 
- ##################################
- # install Adv Toolchain and others
- if [[ -z $(dpkg -l|grep $ADV_TC) && $internet -ne 0 ]]
- then
-   echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
- else
-   echo "------------------------------"
-   echo -e "INFO: Checking other dependencies\n"
+  ##################################
+  # install dependencies
+  echo "------------------------------"
+  echo -e "INFO: Checking other dependencies\n"
 
-  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev1:|i  libudev-dev:|i  sg3-utils   ") -ne 6 ]]
+  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev1:|i  libudev-dev:|i  sg3-utils   |i  make   |i  cscope   |i  doxygen   |i  git   |i  gitk   ") -ne 11 ]]
   then
-    apt-get -y install software-properties-common python3-software-properties python3 libudev1 libudev-dev sg3-utils
-  fi
-  if [[ -z $(dpkg -l|grep $ADV_TC) ]]
-  then
-    if [[ $(dpkg -l|egrep -c "i  make   |i  cscope   |i  doxygen   |i  git   |i  gitk   ") -ne 5 ]]
+    if [[ $internet -ne 0 ]]
     then
-      apt-get -fy install make cscope ctags doxygen git
+      echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
+    else
+      apt-get -y install software-properties-common python3-software-properties python3 libudev1 libudev-dev sg3-utils make cscope ctags doxygen git
     fi
-    wget ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu/dists/precise/6976a827.gpg.key
-    apt-key add 6976a827.gpg.key
-    add-apt-repository "deb ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu trusty at10.0 "
-    apt-get -y update
-    apt-get -y install advance-toolchain-at10.0-runtime advance-toolchain-at10.0-perf advance-toolchain-at10.0-devel advance-toolchain-at10.0-mcore-libs
   fi
- fi
 
  if [[ -z $(dpkg -l|grep "i  libudev1:") ]]; then echo "ERROR: libudev1 is not installed."; fi
- if [[ -z $(dpkg -l|grep $ADV_TC) ]];        then echo "ERROR: $ADV_TC is not installed.";  fi
 
  ##################################
  # Check usr-mode software version
  echo "------------------------------"
  echo -e "INFO: Checking software versions\n"
 
- if [[ $1 =~ mfg && ! -e /usr/lib/libcflsh_block* ]]; then force=yes; fi
+ if [[ $1 =~ mfg && $liclib = no ]]; then force=yes; fi
 
  #remove old
  EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
@@ -156,7 +145,8 @@ then
  if [[ ! $EXISTS_LVL =~ "i  cxlflash " || $force =~ yes || \
         ($EXISTS_LVL =~ "i  cxlflash " && ! $EXISTS_LVL =~ $CF_VER) ]]
  then
-   dpkg -i cxlflash_*$CF_VER*.deb
+    ls cxlflash_*$CF_VER*.deb >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then dpkg -i cxlflash_*$CF_VER*.deb; fi
  fi
 
  EXISTS_LVL=$(dpkg -l|egrep "i  cxlflash-test")
@@ -233,71 +223,22 @@ then
   fi
 
   ##################################
-  # install Adv Toolchain and others
-  if [[ -z $(rpm -qa|grep $ADV_TC) && $internet -ne 0 ]]
+  # install dependencies
+  echo "------------------------------"
+  echo -e "INFO: Checking other depencencies\n"
+  if [[ $(rpm -qa | egrep -c -e "sg3_utils-1|systemd-devel|make|cscope|doxygen|git-" ) -ne 6 ]]
   then
-    echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
-  else
-    echo "------------------------------"
-    echo -e "INFO: Checking other depencencies\n"
-  fi
-  if [[ $(rpm -qa | egrep -c -e "sg3_utils-|systemd-devel" ) -ne 3 ]]
-  then
-    yum -y install sg3_utils systemd-devel
-  fi
-  if [[ -z $(rpm -qa | grep $ADV_TC) ]]
-  then
-    if [[ $(rpm -qa| egrep -c -e"make|cscope|doxygen|git-") -ne 4 ]]
-    then
-      yum -y install make cscope ctags doxygen git
-    fi
-
-    #These commands retrieved from :
-    wget ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-6976a827-5164221b
-    rpm --import gpg-pubkey-6976a827-5164221b
-
-    if [[ ! -e /etc/yum.repos.d/atX.X.repo ]]
-    then
-      #create repo configuration file for advanced tool chain
-      cat > /etc/yum.repos.d/atX.X.repo <<EOF
-#Beginning of configuration file
-[atX.X]
-name=Advance Toolchain Unicamp FTP
-baseurl=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/
-failovermethod=priority
-enabled=1
-gpgcheck=1
-gpgkey=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-6976a827-5164221b
-#End of configuration file
-EOF
-  fi
-
-    if [[ ! -e /etc/yum.repos.d/rhel.kte.repo ]]
-    then
-      #create configuration for RHEL 7.3 repo
-      cat > /etc/yum.repos.d/rhel.kte.repo <<EOF
-[rhel7u3le]
-name=Red Hat Enterprise Linux
-baseurl=http://9.3.117.9/distros/RHEL7.3-LE-Snapshot4/
-enabled=1
-gpgcheck=0
-EOF
-    fi
-
-    yum repolist
-    yum -y update; yum -y upgrade
-    yum -y install advance-toolchain-at10.0-runtime advance-toolchain-at10.0-perf advance-toolchain-at10.0-devel advance-toolchain-at10.0-mcore-libs
+    yum -y install sg3_utils systemd-devel make cscope ctags doxygen git
   fi
 
   if [[ -z $(rpm -qa|grep "systemd-devel") ]]; then echo "ERROR: systemd-devel is not installed."; exit 1 ;fi
-  if [[ -z $(rpm -qa|grep $ADV_TC) ]];         then echo "ERROR: $ADV_TC is not installed.";       exit 1;fi
 
   ##################################
   # Check usr-mode software version
   echo "------------------------------"
   echo -e "INFO: Checking software versions\n"
 
-  if [[ $1 =~ mfg && ! -e /usr/lib/libcflsh_block* ]]; then force=yes; fi
+  if [[ $1 =~ mfg && $liclib = no ]]; then force=yes; fi
 
   ################
   #remove old
@@ -332,19 +273,22 @@ EOF
   fi
 
   #################
-  #install new: redhat if another version exists can't install
+  #install new pkgs
   EXISTS_LVL=$(rpm -qa|grep -v test|egrep "cxlflash")
-  if [[ ! $EXISTS_LVL =~ "cxlflash" || $force =~ yes || \
+  if [[ ! $EXISTS_LVL =~ "cxlflash" || $force = yes || \
          ($EXISTS_LVL =~ "cxlflash" && ! $EXISTS_LVL =~ $CF_VER) ]]
   then
-    rpm -i -v cxlflash-*$CF_VER*.rpm
+    ls cxlflash-[0-9]*$CF_VER*.rpm >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then rpm -i -v cxlflash-*$CF_VER*.rpm; fi
   fi
 
   EXISTS_LVL=$(rpm -qa|egrep "cxlflash-test")
   if [[ ! $EXISTS_LVL =~ "cxlflash-test" || \
          ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
   then
-    rpm -i -v cxlflash-test*$CF_VER*.rpm
+    #pkg is not required, only install if it exists
+    ls cxlflash-test*$CF_VER*.rpm >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then rpm -i -v cxlflash-test*$CF_VER*.rpm; fi
   fi
 
   EXISTS_LVL=$(rpm -qa|grep 'cxlflashimage')
@@ -397,6 +341,8 @@ fi
 
   ##################################
   # Check LIC
+  ls ${LIB_DIR}/libcflsh_block* >/dev/null 2>&1; if [[ $? -eq 0 ]]; then liclib=yes; else liclib=no; fi
+
   if [[ ! $1 =~ mfg ]]
   then
     if [[ -e /tmp/cxlflash_headless ]]
@@ -404,31 +350,28 @@ fi
       echo "INFO: running headless"
       date > /opt/.lic/$LD
     else
-      if [[ ! $1 =~ dev ]]
+      if [[ ! -e /opt/.lic/$LD ]]
       then
-        if [[ ! -e /opt/.lic/$LD ]]
+        echo ""
+        echo "Please review the licenses available in $LIC_DIR"
+        echo "Press 'y' to accept the license agreement, or skip now and rerun later"
+        read char
+        if [[ $char = [yY] ]]
         then
-          echo ""
-          echo "Please review the licenses available in $LIC_DIR"
-          echo "Press 'y' to accept the license agreement, or skip now and rerun later"
-          read char
-          if [[ $char = [yY] ]]
+          date > /opt/.lic/$LD
+          if [[ -e /opt/$HD && $liclib = no ]]
           then
-            date > /opt/.lic/$LD
-            if [[ -e /opt/$HD && ! -e /usr/lib/libcflsh_block* ]]
-            then
-              mv /opt/$HD/* /lib >/dev/null 2>&1
-            fi
-            rm -R /opt/$HD >/dev/null 2>&1
-          else
-            echo "ERROR: The license must be accepted"
-            if [[ -e /usr/lib/libcflsh_block* ]]
-            then
-              if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD >/dev/null 2>&1; fi
-              mv /usr/lib/libcflsh_block* /opt/$HD >/dev/null 2>&1
-            fi
-            exit 128
+            mv /opt/$HD/* ${LIB_DIR} >/dev/null 2>&1
           fi
+          rm -R /opt/$HD >/dev/null 2>&1
+        else
+          echo "ERROR: The license must be accepted"
+          if [[ $liclib = yes ]]
+          then
+            if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD >/dev/null 2>&1; fi
+            mv ${LIB_DIR}/libcflsh_block* /opt/$HD >/dev/null 2>&1
+          fi
+          exit 128
         fi
       fi
     fi
@@ -496,6 +439,8 @@ fi
   # Check for devices
   echo -e "\n------------------------------"
   echo -e "INFO: Checking for devices\n"
+
+ if [[ $1 =~ mfg && $liclib = no ]]; then cp /opt/$HD/libcflsh_block* ${LIB_DIR}; fi
 
   #check GT devices
   adapN=0
@@ -598,7 +543,7 @@ fi
   then
     if [[ -e /opt/.lic/$LD ]]; then rm -f /opt/.lic/$LD; fi
     if [[ ! -e /opt/$HD ]]; then mkdir /opt/$HD; fi
-    mv /usr/lib/libcflsh_block* /opt/$HD >/dev/null 2>&1
+    mv ${LIB_DIR}/libcflsh_block* /opt/$HD >/dev/null 2>&1
   fi
 
   echo -e "\nINSTALL success"

@@ -23,11 +23,16 @@
 #
 # IBM_PROLOG_END_TAG
 
+if [ -e customrc ]
+then
+
 export CUSTOMFLAGS=
 export BLOCK_FILEMODE_ENABLED=
+export BLOCK_FILEMODE_OVERRIDE=
 export BLOCK_MC_ENABLED=
 export TARGET_PLATFORM=
 export BLOCK_KERNEL_MC_ENABLED=
+export USE_ADVANCED_TOOLCHAIN=no
 
 #allow a user to specify a custom RC file if needed
 #e.g. disable the advanced toolchain with "export USE_ADVANCED_TOOLCHAIN=no"
@@ -51,8 +56,6 @@ fi
 export MCP_PATH=/opt/mcp/toolchains/fr_SL1_2014-05-12-194021
 
 #configure advanced toolchain for linux
-AT71PATH=/opt/at7.1
-AT90PATH=/opt/at9.0-2-rc2
 ATPATH=/opt/at10.0
 
 if [ -d $MCP_PATH ]; then
@@ -81,7 +84,7 @@ export PATH=${PATH}:`pwd`/src/build/tools
 
 #enable advanced toolchain, if no one has an opinion
 if [ -z "$USE_ADVANCED_TOOLCHAIN" ]; then
-    #enabling advanced toolchain by default. If you don't want this, set USED_ADVANCED_TOOLCHAIN in your environment
+    #enabling advanced toolchain by default. If you don't want this, set USE_ADVANCED_TOOLCHAIN in your environment
     export USE_ADVANCED_TOOLCHAIN=yes
 fi
 if [ "$USE_ADVANCED_TOOLCHAIN" = "yes" ]; then
@@ -100,5 +103,14 @@ if [ -n "${SANDBOXROOT}" ]; then
 fi
 
 #set the default ulimit -c for a developer
-ulimit -c unlimited 2>/dev/null
-ulimit -n 5000      2>/dev/null
+if [ ROOT$(id -u) = ROOT0 ]; then
+  ulimit -c unlimited 2>/dev/null
+  ulimit -n 5000      2>/dev/null
+fi
+
+if   [ ! -z "$(egrep -i "Red Hat|Fedora" /etc/os-release)" ]; then export TARGET_OS=redhat
+elif [ ! -z "$(egrep -i "Ubuntu" /etc/os-release)" ];         then export TARGET_OS=ubuntu; fi
+
+else
+  echo "ERROR: setup a customrc and retry"
+fi

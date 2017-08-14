@@ -107,7 +107,7 @@ do
     printf "\n ERROR:  psl_trace_dump on VM Not Supported! \n\n"
   else
     echo "Dumping PSL data for card$i"
-    /usr/lib/cxlflash/ext/psl_trace_dump card$i $i >/dev/null
+    /usr/lib*/cxlflash/ext/psl_trace_dump card$i $i >/dev/null
   fi
 done
 
@@ -156,18 +156,18 @@ then
   rpm -qa|egrep "cflash|cflashimage"   >> $DATADIR/codelevels
 fi
 
-/usr/bin/capi_flash -l >> $DATADIR/codelevels
-/usr/bin/cflash_version   >> $DATADIR/codelevels
+capi_flash -l >> $DATADIR/codelevels
+cflash_version   >> $DATADIR/codelevels
 
-/usr/bin/cflash_temp   >  $DATADIR/cflash_temp&
+cflash_temp   >  $DATADIR/cflash_temp&
 check_pid $!
-/usr/bin/cflash_wear   >  $DATADIR/cflash_wear&
+cflash_wear   >  $DATADIR/cflash_wear&
 check_pid $!
-/usr/bin/cxlfstatus       >  $DATADIR/cxlfstatus&
+cxlfstatus       >  $DATADIR/cxlfstatus&
 check_pid $!
-/usr/bin/cflash_capacity -v >  $DATADIR/cflash_capacity&
+cflash_capacity -v >  $DATADIR/cflash_capacity&
 check_pid $!
-/usr/bin/cflash_capacity -t 04cf >> $DATADIR/cflash_capacity&
+cflash_capacity -t 04cf >> $DATADIR/cflash_capacity&
 check_pid $!
 
 if [[ ! -z $(ls -A $MISCDIR) ]]

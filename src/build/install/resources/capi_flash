@@ -685,7 +685,7 @@ if ($_VM)
 {
   my $addhdr="";
   if ($filename =~ /.bin/ || $filename =~ /.rbf/) {$addhdr=" -a ";}
-  my $cmd="/usr/lib/cxlflash/ext/cxl_flash_vm -c $cardN -f $filename $addhdr";
+  my $cmd="/usr/lib*/cxlflash/ext/cxl_flash_vm -c $cardN -f $filename $addhdr";
   $verbose && printf(" Running: $cmd\n");
   system($cmd);
   exit $?;

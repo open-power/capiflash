@@ -29,9 +29,16 @@ ROOTPATH = ..
 
 #common is built first to satisfy dependencies elsewhere. We likely need to support
 #different makefile passes for exported libs vs regular programs, libs, and shared libs.
-SUBDIRS = lib.d common.d afu.d block.d usfs.d kv.d test.d
+SUBDIRS = lib.d common.d afu.d block.d kv.d test.d
 ifneq ($(TARGET_PLATFORM),x86_64)
 SUBDIRS += build.d cflash.d provisioning.d
+endif
+
+#if red hat and no AT, exclude usfs
+ifneq (redhat_no,$(TARGET_OS)_$(USE_ADVANCED_TOOLCHAIN))
+SUBDIRS += usfs.d
+else
+$(info SKIPPING usfs)
 endif
 
 BASE_OBJECTS = 

@@ -81,6 +81,13 @@ if ($prthelp) {usage();}
 select(STDOUT);
 $| = 1;
 
+#check sudo permissions
+if (`id -u` != 0)
+{
+  print "Run with sudo permissions\n";
+  exit -2;
+}
+
 #-------------------------------------------------------------------------------
 # list Devices
 #-------------------------------------------------------------------------------
@@ -131,7 +138,7 @@ for my $cardN (@cards)
         printf("/dev/%s: %d    ",$pdev, $size);
         if ($type =~ /0601/ || $type =~ /0628/)
         {
-          $nsq=`/usr/lib/cxlflash/ext/flashgt_nvme_nsq --port $i /dev/cxl/$afu`;
+          $nsq=`/usr/lib*/cxlflash/ext/flashgt_nvme_nsq --port $i /dev/cxl/$afu`;
           chomp $nsq;
           printf("    $nsq");
         }

@@ -26,15 +26,14 @@
 
 if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 
-if [[ ! -e /opt ]]; then mkdir /opt; fi
-
-export PATH=$PATH:/usr/bin
-
-rc=0
-ADV_TC=at10
-
 wget www.ibm.com >/dev/null 2>&1
 internet=$?
+if [[ $internet -ne 0 ]]
+then
+  echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
+else
+  src/build/install/resources/gtest_add
+fi
 
 ##################################
 # Determine distro
@@ -56,49 +55,28 @@ if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1; fi
 if [[ $ubuntu ]]
 then
 
- ##################################
- # install Adv Toolchain and others
- if [[ -z $(dpkg -l|grep $ADV_TC) && $internet -ne 0 ]]
- then
-   echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
- else
-   echo "------------------------------"
-   echo -e "INFO: Checking other dependencies\n"
-
-  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev1:|i  libudev-dev:|i  sg3-utils   ") -ne 6 ]]
+  ##################################
+  # install dependencies
+  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev1:|i  libudev-dev:|i  sg3-utils   |i  make   |i  cscope   |i  doxygen   |i  git   |i  gitk   ") -ne 11 ]]
   then
-    apt-get -y install software-properties-common python3-software-properties python3 libudev1 libudev-dev sg3-utils
+    if [[ $internet -ne 0 ]]
+    then
+      echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
+    else
+      apt-get -y install software-properties-common python3-software-properties python3 libudev1 libudev-dev sg3-utils make cscope ctags doxygen git
+    fi
   fi
 
-  if [[ $(dpkg -l|egrep -c "i  make   |i  cscope   |i  doxygen   |i  git   |i  gitk   ") -ne 5 ]]
-  then
-    apt-get -fy install make cscope ctags doxygen git
-  fi
+ if [[ -z $(dpkg -l|grep "i  libudev1:") ]]; then echo "ERROR: libudev1 is not installed."; fi
 
-  if [[ -z $(dpkg -l|grep $ADV_TC) && ! $TARGET_PLATFORM =~ x86 ]]
-  then
-    wget ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu/dists/xenial/6976a827.gpg.key
-    apt-key add 6976a827.gpg.key
-    add-apt-repository "deb ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/ubuntu xenial at10.0"
-    apt-get -y update
-    apt-get -y install advance-toolchain-at10.0-runtime advance-toolchain-at10.0-perf advance-toolchain-at10.0-devel advance-toolchain-at10.0-mcore-libs
-  fi
- fi
-
- if [[ -z $(dpkg -l|grep "i  libudev1:") ]];                       then echo "ERROR: libudev1 is not installed."; fi
- if [[ -z $(dpkg -l|grep $ADV_TC) && ! $TARGET_PLATFORM =~ x86 ]]; then echo "ERROR: $ADV_TC is not installed.";  fi
 
  ##################################
  # Check OS version
- echo "------------------------------"
- echo -e "INFO: Checking OS version\n"
-
  if [[ $(lsb_release -a 2>/dev/null|grep Description|awk '{print $3}'|awk -F. '{print $1}') -lt 16 ]]
  then
    echo "The linux OS must be updated to at least 16.04.1"
-   echo -e "Update the OS and retry, aborting...\n"
-   exit 11
  fi
+
 fi
 
 
@@ -115,64 +93,15 @@ fi
 ################################################################################
 if [[ $redhat ]]
 then
+
   ##################################
-  # install Adv Toolchain and others
-  if [[ -z $(rpm -qa|grep $ADV_TC) && $internet -ne 0 ]]
+  # install dependencies
+  if [[ $(rpm -qa | egrep -c -e "sg3_utils-1|systemd-devel|make|cscope|doxygen|git-" ) -ne 6 ]]
   then
-    echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
-  else
-    echo "------------------------------"
-    echo -e "INFO: Checking other depencencies\n"
-  fi
-  if [[ $(rpm -qa | egrep -c -e "sg3_utils-|systemd-devel" ) -ne 3 ]]
-  then
-    yum -y install sg3_utils systemd-devel
-  fi
-  if [[ -z $(rpm -qa | grep $ADV_TC) ]]
-  then
-    if [[ $(rpm -qa| egrep -c -e"make|cscope|doxygen|git-") -ne 4 ]]
-    then
-      yum -y install make cscope ctags doxygen git
-    fi
-
-    #These commands retrieved from :
-    wget ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-6976a827-5164221b
-    rpm --import gpg-pubkey-6976a827-5164221b
-
-    if [[ ! -e /etc/yum.repos.d/atX.X.repo ]]
-    then
-      #create repo configuration file for advanced tool chain
-      cat > /etc/yum.repos.d/atX.X.repo <<EOF
-#Beginning of configuration file
-[atX.X]
-name=Advance Toolchain Unicamp FTP
-baseurl=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/
-failovermethod=priority
-enabled=1
-gpgcheck=1
-gpgkey=ftp://ftp.unicamp.br/pub/linuxpatch/toolchain/at/redhat/RHEL7/gpg-pubkey-6976a827-5164221b
-#End of configuration file
-EOF
-  fi
-
-    if [[ ! -e /etc/yum.repos.d/rhel.kte.repo ]]
-    then
-      #create configuration for RHEL 7.3 repo
-      cat > /etc/yum.repos.d/rhel.kte.repo <<EOF
-[rhel7u3le]
-name=Red Hat Enterprise Linux
-baseurl=http://9.3.117.9/distros/RHEL7.3-LE-Snapshot4/
-enabled=1
-gpgcheck=0
-EOF
-    fi
-
-    yum -y update
-    yum -y install advance-toolchain-at10.0-runtime advance-toolchain-at10.0-perf advance-toolchain-at10.0-devel advance-toolchain-at10.0-mcore-libs
+    yum -y install sg3_utils systemd-devel make cscope ctags doxygen git
   fi
 
   if [[ -z $(rpm -qa|grep "systemd-devel") ]]; then echo "ERROR: systemd-devel is not installed."; exit 1 ;fi
-  if [[ -z $(rpm -qa|grep $ADV_TC) ]];         then echo "ERROR: $ADV_TC is not installed.";       exit 1;fi
 
   ##################################
   # Check OS version
@@ -180,28 +109,10 @@ EOF
   v1=$(echo $ver|awk -F. '{print $1}')
   v2=$(echo $ver|awk -F. '{print $2}')
 
-  echo "------------------------------"
-  echo -e "INFO: Checking OS version\n"
-
   if [[ ! (($v1 -eq 7 && $v2 -ge 3) || ($v1 -ge 8)) ]]
   then
     echo "The linux OS must be updated to at least 7.3"
-    echo -e "Update the OS and retry, aborting...\n"
-    exit 11
   fi
-
 fi
-
-################################################################################
-################################################################################
-################################################################################
-#                                                                              #
-#                                                                              #
-#                                  Common                                      #
-#                                                                              #
-#                                                                              #
-################################################################################
-################################################################################
-################################################################################
 
 exit 0

@@ -25,10 +25,25 @@
 UNAME=$(shell uname)
 ROOTPATH = ../../..
 
-APPNAME?=cflash
-PREFIX?=${PKGDIR}/install_root
-TEST_PREFIX?=${PKGDIR}/test_root
-AFU_PREFIX?=${PKGDIR}/afu_root
+#check for rpm build env
+ifeq (cxlflash, $(findstring cxlflash,${RPM_PACKAGE_NAME}))
+ RPMBUILD=yes
+ifeq (ppc64, $(findstring ppc64,${RPM_ARCH}))
+ RPMBUILD64=yes
+endif
+endif
+
+ifeq (yes,${RPMBUILD})
+PREFIX=${RPM_BUILD_ROOT}
+TEST_PREFIX=${RPM_BUILD_ROOT}
+AFU_PREFIX=${RPM_BUILD_ROOT}
+LIB_PERMS="755"
+else
+PREFIX=${PKGDIR}/install_root
+TEST_PREFIX=${PKGDIR}/test_root
+AFU_PREFIX=${PKGDIR}/afu_root
+LIB_PERMS="644"
+endif
 
 ifeq ($(UNAME),AIX)
 INSTALL=/usr/bin/cp
@@ -45,7 +60,6 @@ else
 INSTALL=install
 INSTALL_ROOT=${PREFIX}/usr
 AFU_BIN=${AFU_PREFIX}/usr/bin
-AFU_IMAGES_DIR=${AFU_PREFIX}/lib/firmware/cxlflash
 TEST_DIR=${TEST_PREFIX}/usr/bin
 ETC_DIR=${PREFIX}/etc/cxlflash
 LIC_DIR=${PREFIX}/usr/share/cxlflash/license
@@ -59,17 +73,31 @@ RESOURCEDIR=${ROOTPATH}/src/build/install/resources
 AFUDIR=${ROOTPATH}/src/afu
 
 BIN_DIR=${INSTALL_ROOT}/bin
-LIB_DIR=${INSTALL_ROOT}/lib
-EXT_DIR=${LIB_DIR}/cxlflash/ext
 INC_DIR=${INSTALL_ROOT}/include
 SHARE_DIR=${INSTALL_ROOT}/share/cxlflash
 
-MAN3_DIR=${PREFIX}/usr/share/man/man3
-MAN1_DIR=${PREFIX}/usr/share/man/man1
+ifeq (yes,${RPMBUILD64})
+LIB_DIR=${INSTALL_ROOT}/lib64
+else
+LIB_DIR=${INSTALL_ROOT}/lib
+endif
+
+ifeq (yes,${RPMBUILD})
+SYSTEMD_DIR=${PREFIX}/usr/lib/systemd/system
+UDEV_RULES_DIR=${PREFIX}/usr/lib/udev/rules.d
+AFU_IMAGES_DIR=${AFU_PREFIX}/usr/lib/firmware/cxlflash
+else
 SYSTEMD_DIR=${PREFIX}/lib/systemd/system
 UDEV_RULES_DIR=${PREFIX}/lib/udev/rules.d
+AFU_IMAGES_DIR=${AFU_PREFIX}/lib/firmware/cxlflash
+endif
+
+EXT_DIR=${LIB_DIR}/cxlflash/ext
+MAN3_DIR=${PREFIX}/usr/share/man/man3
+MAN1_DIR=${PREFIX}/usr/share/man/man1
 IMAGE="${RESOURCEDIR}/corsa*"
 IMAGEH="${RESOURCEDIR}/1410*"
+
 
 ifeq ($(UNAME),AIX)
 .PHONY: aixinstall
@@ -86,7 +114,6 @@ codeinstall:
 	${MAKE} cflash cflashimage
 
 testinstall:
-	rm -rf ${TEST_PREFIX}
 	${MAKE} cflash-test
 endif
 
@@ -109,14 +136,14 @@ ${MAN3_FILES}:
       gzip -9fn ${MAN3_DIR}/$@; \
      fi
 
-cflash_man1:
-	$(eval cflash_MAN1_FILES:=$(shell find ${PREFIX} -executable -type f))
+install_root_man1:
+	$(eval cflash_MAN1_FILES:=$(shell find ${PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/img:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 
-cflashimage_man1:
-	$(eval cflashimage_MAN1_FILES:=$(shell find ${AFU_PREFIX} -executable -type f))
+afu_root_man1:
+	$(eval cflashimage_MAN1_FILES:=$(shell find ${AFU_PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/img:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
@@ -189,6 +216,10 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${RESOURCEDIR}/cflash_stick ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_perfcheck ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_mfg_init ${BIN_DIR}
+ifeq (yes,${RPMBUILD})
+	${INSTALL} ${RESOURCEDIR}/postinstall ${EXT_DIR}
+	${INSTALL} ${RESOURCEDIR}/preremove ${EXT_DIR}
+endif
 endif
 	${INSTALL} -s ${TESTSRCDIR}/blockio ${BIN_DIR}
 	${INSTALL} -s ${TESTSRCDIR}/blocksio ${BIN_DIR}
@@ -243,11 +274,11 @@ endif
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${LIBSRCDIR}/lib*.a ${LIB_DIR}
 else
-ifeq ($(TARGET_PLATFORM),x86_64)
+ ifeq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} -s -m 644 ${LIBSRCDIR}/libark*.so ${LIB_DIR}
 	${INSTALL} -s -m 644 ${LIBSRCDIR}/libcf*.so ${LIB_DIR}
-else
-	${INSTALL} -s -m 644 ${LIBSRCDIR}/lib*.so ${LIB_DIR}
+ else
+	${INSTALL} -s -m ${LIB_PERMS} ${LIBSRCDIR}/lib*.so ${LIB_DIR}
 endif
 endif
 
@@ -260,20 +291,21 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_sync.c ${EXAMPLES_DIR}
 	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_persist.c ${EXAMPLES_DIR}
 else
+ifneq (yes,${RPMBUILD})
 	${INSTALL} -m 644 ${ROOTPATH}/src/block/bin/blockio.c ${EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/block/bin/blocklistio.c ${EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/block/bin/blockplistio.c ${EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_async.c ${EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_sync.c ${EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_persist.c ${EXAMPLES_DIR}
-
+endif
 	@#SystemD Daemons
 	${INSTALL} -m 644 ${RESOURCEDIR}/cxlfd.service ${SYSTEMD_DIR}
 
 	@#Linux Readme
 	${INSTALL} -m 644 ${RESOURCEDIR}/readme.txt ${SHARE_DIR}
 
-	${MAKE} cflash_man1
+	${MAKE} install_root_man1
 endif
 
 cflash-test:
@@ -363,9 +395,9 @@ cflashimage: ${FW_FILES}
 	@mkdir -p ${AFU_BIN}
 	@mkdir -p ${SHARE_DIR}
 	@mkdir -p ${AFU_IMAGES_DIR}
-	mkdir -p ${MAN1_DIR}
+	@mkdir -p ${MAN1_DIR}
 ifneq ($(UNAME),AIX)
-	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${AFU_IMAGES_DIR}/.remove
+	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${AFU_IMAGES_DIR}/remove_list
 	${INSTALL} -m 644 ${RESOURCEDIR}/blacklist-cxlflash.conf ${SHARE_DIR}
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGT.csv ${SHARE_DIR}
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGTplus.csv ${SHARE_DIR}
@@ -375,8 +407,12 @@ endif
 	${INSTALL} ${AFUDIR}/surelock_vpd2rbf ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/reload_all_adapters ${AFU_BIN}
+ifeq (yes,${RPMBUILD})
+	${INSTALL} ${RESOURCEDIR}/postafuinstall ${EXT_DIR}
+	${INSTALL} ${RESOURCEDIR}/preafuremove ${EXT_DIR}
+endif
 
-	${MAKE} cflashimage_man1
+	${MAKE} afu_root_man1
 
 endif
 

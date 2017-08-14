@@ -60,11 +60,7 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER) -larkdb$(SOVER) -larkalloc$(SOVER)
 
 unit:
-	-@if [[ -e /dev/cxl ]]; then \
 	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt_scripts$(BITS) --gtest_output=xml:$(TESTDIR)/scripts_fvt_results.xml; \
-    else \
-      echo "SKIPPING run_fvt_scripts"; \
-    fi
 
 fvt:
 	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt$(BITS)

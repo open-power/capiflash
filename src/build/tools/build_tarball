@@ -1,0 +1,79 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/tools/build_ppa $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+if [[ $1 =~ -h || $1 =~ help ]]; then
+  echo "Usage: [-rpm] [-test]"
+  echo "   $0             *build debian"
+  echo "   $0 -test       *build debian + test pkg"
+  echo "   $0 -rpm        *build rpm"
+  echo "   $0 -rpm -test  *build rpm + test pkg"
+  exit 0
+fi
+
+if [[ ! $PWD =~ surelock-sw && -z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
+source env.bash >/dev/null 2>&1
+cd $SURELOCKROOT
+
+if [[ $1 =~ rpm  || $2 =~ rpm ]];  then rpm=1; else deb=1; fi
+if [[ $1 =~ test || $2 =~ test ]]; then export CXLFLASH_TEST=yes; fi
+
+if [[ $deb ]]
+then
+  BDIR=${SURELOCKROOT%/*}/build/deb
+  if [[ -d ${BDIR} ]]; then rm -Rf ${BDIR}; fi
+
+  #PPA wont build unless these are overridden
+  sed -i 's/#override_dh_fixperms/override_dh_fixperms/'     debian/rules
+  sed -i 's/#override_dh_md5sums/override_dh_md5sums/'       debian/rules
+  sed -i 's/#override_dh_makeshlibs/override_dh_makeshlibs/' debian/rules
+
+  ${SURELOCKROOT}/src/build/tools/create_tarball
+
+  #put it back the way it was
+  sed -i 's/override_dh_fixperms/#override_dh_fixperms/'     debian/rules
+  sed -i 's/override_dh_md5sums/#override_dh_md5sums/'       debian/rules
+  sed -i 's/override_dh_makeshlibs/#override_dh_makeshlibs/' debian/rules
+
+  cd ${BDIR}
+  tar -xzf *.gz
+  cd ${BDIR}/cxlflash_*
+
+  debuild -eBLOCK_FILEMODE_OVERRIDE -eCXLFLASH_TEST -uc -us
+
+else
+
+  BDIR=${SURELOCKROOT%/*}/build/rpm
+  if [[ -d ${BDIR} ]]; then rm -Rf ${BDIR}; fi
+  mkdir -p ${BDIR}/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+  ${SURELOCKROOT}/src/build/tools/create_tarball -rpm
+  cp src/build/rpm/cxlflash.spec ${BDIR}/SPECS
+  if [[ -e obj/tests/version.txt ]]; then export TARGET_VERSION=$(cat obj/tests/version.txt); fi
+  if [[ -e src/build/version.txt ]]; then export TARGET_VERSION=$(cat src/build/version.txt); fi
+  rpmbuild -ba --define "_topdir ${BDIR}" ${BDIR}/SPECS/cxlflash.spec
+fi
+
+exit 0

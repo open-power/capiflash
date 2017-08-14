@@ -27,7 +27,7 @@
 set -e
 BIN_DIR=/usr/bin
 LFW_DIR=/lib/firmware/cxlflash
-for f in $(cat ${LFW_DIR}/.remove|awk '{print $2}')
+for f in $(cat ${LFW_DIR}/remove_list|awk '{print $2}')
 do
   if [[ -e ${LFW_DIR}/$f ]]; then rm -f ${LFW_DIR}/$f; fi
 done

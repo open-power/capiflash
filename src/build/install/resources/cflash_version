@@ -69,7 +69,7 @@ if [[ $ubuntu ]]
 then
   if [[ -z $CF_VER ]]
   then
-    CF_VER=$(dpkg -l |grep -v test|grep "cxlflash  "|awk '{print $3}')
+    CF_VER=$(dpkg -l cxlflash|grep "cxlflash"|awk '{print $3}'|awk -F- '{print $1}')
   fi
 
   EXISTS_OS_VER=$(lsb_release -a 2>&1|grep -v LSB|grep Description|awk '{print $3}')
@@ -90,13 +90,7 @@ then
 
   if [[ ! -z $1 ]]; then K_VER=$1; fi
 
-  EXISTS_CF_TEST_VER=$(dpkg -l|grep cxlflash-test|awk '{print $3}')
-  if [[ ! -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
-  then
-    echo "INFO:      cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
-  fi
-
-  EXISTS_CF_VER=$(dpkg -l|egrep -v "image|test"|grep cxlflash|awk '{print $3}')
+  EXISTS_CF_VER=$(dpkg -l cxlflash|grep "cxlflash  "|awk '{print $3}'|awk -F- '{print $1}')
   if [[ -z $EXISTS_CF_VER ]]
   then
     err_rc=3
@@ -109,7 +103,7 @@ then
     echo "INFO:      cxlflash:      $EXISTS_CF_VER"
   fi
 
-  EXISTS_CF_IMAGE_VER=$(dpkg -l|grep cxlflashimage|awk '{print $3}')
+  EXISTS_CF_IMAGE_VER=$(dpkg -l cxlflashimage|grep cxlflashimage|awk '{print $3}'|awk -F- '{print $1}')
   if   [[ -z $EXISTS_CF_IMAGE_VER ]]
   then
     echo "INFO:      cxlflashimage: missing"
@@ -117,6 +111,12 @@ then
   then
     err_rc=4
     echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) Required($CF_VER)"
+  fi
+
+  EXISTS_CF_TEST_VER=$(dpkg -l cxlflash-test|grep cxlflash-test|awk '{print $3}'|awk -F- '{print $1}')
+  if [[ ! -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
+  then
+    echo "INFO:      cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
   fi
 
   EXISTS_K_VER=$(dpkg -l |grep $(uname -a|awk '{print $3}')|grep linux-image|grep -v extra|awk '{print $3}')
@@ -212,29 +212,20 @@ elif [[ $redhat ]]
 then
   if [[ -z $CF_VER ]]
   then
-    CF_VER=$(rpm -aq | egrep -v "test|image"| grep "cxlflash-" | head -1 | awk -F- '{print $2}')
+    CF_VER=$(rpm -qi cxlflash | grep Version | awk -F": " '{print $2}')
   fi
-  CF_VER=$(echo $CF_VER|sed 's,-,_,g')
 
   EXISTS_OS_VER=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
   if [[ ! $EXISTS_OS_VER =~ $OS_VER ]]
   then
-    err_rc=1
-    echo "WARNING:   OS:            Installed($EXISTS_OS_VER) != Required($OS_VER)"
+    echo "WARNING:   OS:            Installed($EXISTS_OS_VER) must be >= $OS_VER"
   else
     echo "INFO:      OS:            $EXISTS_OS_VER"
   fi
 
   if [[ ! -z $1 ]]; then K_VER=$1; fi
 
-  EXISTS_CF_TEST_VER=$(rpm -qa | grep cxlflash-test| head -1| awk -F- '{print $3}')
-  if [[ ! -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
-  then
-    err_rc=2
-    echo "ERROR:     cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
-  fi
-
-  EXISTS_CF_VER=$(rpm -aq | egrep -v "test|image"| grep "cxlflash-" | grep -v test| head -1 | awk -F- '{print $2}')
+  EXISTS_CF_VER=$(rpm -qi cxlflash | grep Version | awk -F": " '{print $2}')
   if [[ -z $EXISTS_CF_VER ]]
   then
     err_rc=3
@@ -247,7 +238,7 @@ then
     echo "INFO:      cxlflash:      $EXISTS_CF_VER"
   fi
 
-  EXISTS_CF_IMAGE_VER=$(rpm -qa |grep cxlflashimage|head -1 | awk -F- '{print $2}')
+  EXISTS_CF_IMAGE_VER=$(rpm -qi cxlflashimage|grep Version|awk -F": " '{print $2}')
   if   [[ -z $EXISTS_CF_IMAGE_VER ]]
   then
     echo "INFO:      cxlflashimage: missing"
@@ -255,6 +246,13 @@ then
   then
     err_rc=4
     echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) != Required($CF_VER)"
+  fi
+
+  EXISTS_CF_TEST_VER=$(rpm -qi cxlflash-test | grep Version | awk -F": " '{print $2}')
+  if [[ ! -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
+  then
+    err_rc=2
+    echo "ERROR:     cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
   fi
 
   EXISTS_K_VER=$(rpm -q kernel)

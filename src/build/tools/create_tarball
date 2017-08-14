@@ -26,50 +26,63 @@
 
 if [[ ! $PWD =~ surelock-sw &&-z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
 source env.bash >/dev/null 2>&1
+cd $SURELOCKROOT
 
-if [[ $1 =~ rhel ]]; then rhel=1; else debian=1; fi
+if [[ $1 =~ rpm ]]; then rpm=1; else deb=1; fi
 
 ITER=1
 
-cd $SURELOCKROOT
-make setversion
+ls -l customrc
+make setversion >/dev/null
 if [[ -e obj/tests/version.txt ]]; then ver=$(cat obj/tests/version.txt); fi
 if [[ -e src/build/version.txt ]]; then ver=$(cat src/build/version.txt); fi
-orig=cxlflash_${ver%-*}.orig.tar
-pkg=cxlflash_${ver}
+if [[ $deb ]]; then
+  orig=cxlflash_${ver%-*}.orig.tar
+  pkg=cxlflash_${ver}
+else
+  orig=${ver%-*}.tar
+  pkg=cxlflash-${ver}
+fi
 
 BDIR=${SURELOCKROOT%/*}/build
 
-if [[ -e ${BDIR} ]]; then rm -fR ${BDIR}; fi
+if [[ $deb ]]; then  BDIR+=/deb
+else                 BDIR+=/rpm/SOURCES
+fi
+
+if [[ -e ${BDIR}/${pkg} ]];     then rm -fR ${BDIR}/${pkg}; fi
+if [[ -e ${BDIR}/${pkg}*.gz ]]; then rm -f ${BDIR}/${pkg}*.gz; fi
 mkdir -p ${BDIR}/$pkg
 
 # copy source
 cp * ${BDIR}/$pkg 2>/dev/null
-if [[ -e ${BDIR}/$pkg/customrc ]]; then rm -f ${BDIR}/$pkg/customrc; fi
-cp customrc.p8elblkkermc ${BDIR}/$pkg/customrc
 cp -R src ${BDIR}/$pkg
 if [[ -e obj/tests/version.txt ]]; then cp obj/tests/version.txt ${BDIR}/$pkg/src/build; fi
 if [[ -e src/build/version.txt ]]; then cp src/build/version.txt ${BDIR}/$pkg/src/build; fi
 find ${BDIR}/$pkg -name "*.bak" -exec rm {} \;
 find ${BDIR}/$pkg -name "*.save" -exec rm {} \;
 
-if [[ $debian ]]
+if [[ $deb ]]
 then
-  #copy debian specifics
-  echo "add debian"
-  cp -R src/build/debian ${BDIR}/$pkg
+  #remove rpmbuild
+  rm -fR ${BDIR}/$pkg/src/build/rpm
+  cp -R debian ${BDIR}/$pkg
   cd ${BDIR}/$pkg
   if [[ -e debian/changelog ]]; then rm -f debian/changelog; fi
   dch --create --distribution xenial --package cxlflash -v $ver-${ITER} "latest update"
   if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
-elif [[ $rhel ]]
+  if [[ $CXLFLASH_TEST = yes ]]; then cat debian/cxlflash-test.control >> debian/control; fi
+elif [[ $rpm ]]
 then
-  #copy rhel specifics
-  echo "add rhel"
+  #remove deb
+  rm -fR ${BDIR}/$pkg/debian
+  mkdir -p ${BDIR}/../SPECS
+  cp src/build/rpm/cxlflash.spec ${BDIR}/../SPECS
 fi
 
 # create tarball
 cd ${BDIR}
 tar -czf $orig.gz $pkg
 
+echo "created: ${BDIR}/$orig.gz"
 exit 0

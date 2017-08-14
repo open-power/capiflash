@@ -25,7 +25,7 @@
 
 #######################################################################################
 # > make "default", buildall
-#  -if debian build, no rpath is set so the default lib path of /usr/lib works
+#  -if debian or rpm build, no rpath is set so the system lib path works
 #  -if sb build, then rpath is set to /opt/ATx.y, so LD_LIBRARY_PATH is required
 # > make install, prod[all], allpkgs
 #  -builds with rpath set to /opt/ATx.y and /usr/lib
@@ -91,13 +91,12 @@ VERSIONMAJOR=4
 VERSIONMINOR=3
 SOVER=-0
 
-GITBRANCH=$(shell git branch 2>/dev/null | grep ^"* "|cut -c3-8)
 FS=$(findstring surelock-sw, ${SURELOCKROOT})
-GB=$(findstring master, ${GITBRANCH})
+GIT_TREE=$(shell git rev-parse --is-inside-work-tree 2>/dev/null)
 
-#if this is surelock-sw:master, extract and save rev-list
+#if this is surelock-sw, extract and save rev-list
 #else this is a tarball or capiflash, so use version.txt
-ifeq (surelock-sw:master,${FS}:${GB})
+ifeq (surelock-sw:true,${FS}:${GIT_TREE})
   GITREVISION=$(shell git rev-list HEAD 2>/dev/null | wc -l)
   $(shell echo ${VERSIONMAJOR}.${VERSIONMINOR}.${GITREVISION} > ${SURELOCKROOT}/obj/tests/version.txt)
 else

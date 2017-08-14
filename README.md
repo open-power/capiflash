@@ -23,10 +23,9 @@ As a developer, to get started:
 2. cd capiflash
 3. select a customrc file (see below)
 4. source env.bash
-5. src/build/install/resources/gtest_add.sh  #insert the Google Test framework
-6. make configure
-7. make cleanall
-8. make install
+5. make configure     #one-time only
+6. make cleanall
+7. make install
 ```
 Build Targets that set rpath=/usr/lib
 ```

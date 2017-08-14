@@ -29,6 +29,17 @@
 if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
 if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
 
+##################################
+# Determine distro
+if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];               then ubuntu=1; fi
+if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];         then redhat=1; fi
+
+if [[ $ubuntu ]]; then
+  if [[ $(dpkg -l libgtest-dev) =~ libgtest ]]; then exit 0; fi
+else
+  if [[ $(rpm -qa gtest) =~ gtest ]]; then exit 0; fi
+fi
+
 if [[ -z ${SURELOCKROOT} ]]; then echo ". ./env.bash, then rerun"; exit -1; fi
 cd ${SURELOCKROOT}
 if [[ -e src/test/framework/googletest ]]; then rm -fR src/test/framework/googletest; fi

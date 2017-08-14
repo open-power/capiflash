@@ -46,9 +46,13 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 DEPS=$(addprefix $(TESTDIR)/, $(run_cflash_fvt_OFILES:.o=.dep))
 
 unit:
-	@#if cxl hw exist AND env is not ENABLED_FILE/ENABLED_MEM
-	-@if [[ -e /dev/cxl && ! ${FILEMODE}_ =~ ENABLED ]]; then \
+	@#if cxl hw exist AND build env is not FILEMODE_ENABLED
+ifeq ($(BLOCK_FILEMODE_ENABLED),0)
+	-@if [[ -e /dev/cxl ]]; then \
        LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_cflash_fvt --gtest_output=xml:$(TESTDIR)/cflash_fvt_results.xml; \
     else \
       echo "SKIPPING run_cflash_fvt"; \
     fi
+else
+	@echo "SKIPPING for BLOCK_FILEMODE_ENABLED=1"
+endif

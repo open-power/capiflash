@@ -45,17 +45,23 @@ then
   BDIR=${SURELOCKROOT%/*}/build/deb
   if [[ -d ${BDIR} ]]; then rm -Rf ${BDIR}; fi
 
-  #PPA wont build unless these are overridden
-  sed -i 's/#override_dh_fixperms/override_dh_fixperms/'     debian/rules
-  sed -i 's/#override_dh_md5sums/override_dh_md5sums/'       debian/rules
-  sed -i 's/#override_dh_makeshlibs/override_dh_makeshlibs/' debian/rules
+  #make mods to support local builds
+  sed -i 's/debhelper (>=10)/debhelper (>=9)/' debian/control
+  if [[ $(id -u) != 0 ]]
+  then
+    #not root, so skip these steps
+    echo "
+override_dh_fixperms:
+override_dh_md5sums:
+override_dh_makeshlibs:
+override_dh_testroot:
+" >> debian/rules
+  fi
 
   ${SURELOCKROOT}/src/build/tools/create_tarball
 
-  #put it back the way it was
-  sed -i 's/override_dh_fixperms/#override_dh_fixperms/'     debian/rules
-  sed -i 's/override_dh_md5sums/#override_dh_md5sums/'       debian/rules
-  sed -i 's/override_dh_makeshlibs/#override_dh_makeshlibs/' debian/rules
+  #clear local mods
+  git checkout debian/rules
 
   cd ${BDIR}
   tar -xzf *.gz

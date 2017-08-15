@@ -24,7 +24,6 @@
 #
 # IBM_PROLOG_END_TAG
 
-if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
 if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
 
 export PATH=$PATH:/usr/bin
@@ -65,8 +64,9 @@ check_pid()
 ##################
 # print debug help
 ##################
-if [[ $1 =~ help ]]
+if [[ $1 =~ help || $1 =~ -h ]]
 then
+  echo "Usage: $(basename $0)"
   echo "export CFLSH_BLK_TRC_VERBOSITY=4"
   echo "export CFLSH_BLK_TRC_SYSLOG=off"
   echo "export KV_TRC_VERBOSITY=2"

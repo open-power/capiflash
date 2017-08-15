@@ -1,6 +1,3 @@
-pkg/afu_root/usr/bin/cxl_afu_dump
-pkg/afu_root/usr/bin/cxl_afu_status
-pkg/afu_root/usr/bin/flashgt_temp
 pkg/afu_root/usr/bin/flashgt_vpd_access
 pkg/install_root/usr/bin/blockio
 pkg/install_root/usr/bin/blocklistio

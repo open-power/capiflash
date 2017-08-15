@@ -2,8 +2,8 @@
 # See debhelper(7) (uncomment to enable)
 # output every command that modifies files on the build system.
 # Uncomment this to turn on verbose mode.
-export DH_VERBOSE=1
-export DH_OPTIONS=-v
+#export DH_VERBOSE=1
+#export DH_OPTIONS=-v
 
 # see FEATURE AREAS in dpkg-buildflags(1)
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
@@ -74,12 +74,6 @@ override_dh_installdeb:
 	echo 'activate-noawait ldconfig' > debian/cxlflash/DEBIAN/triggers
 
 override_dh_auto_test:
-override_dh_testroot:
-#override_dh_installman:
-#override_dh_fixperms:
-#override_dh_md5sums:
-#override_dh_makeshlibs:
-	echo "Skipping $@"
 
 override_dh_gencontrol:
 	dpkg-gencontrol -pcxlflash      -ldebian/changelog -Tdebian/cxlflash.substvars -Pdebian/cxlflash

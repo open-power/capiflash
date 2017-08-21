@@ -4,8 +4,8 @@ Uploaders: Rodrigo R. Galvao <rosattig@br.ibm.com>
 Section: utils
 Priority: optional
 Standards-Version: 4.0.1
-Build-Depends: debhelper (>=10), doxygen, libudev1, libudev-dev,
-               gcc-5, g++-5, lsb-release, libcxl1, libcxl-dev, help2man
+Build-Depends: debhelper (>=10), doxygen, libudev-dev,
+               lsb-release, libcxl-dev, help2man
 Homepage: https://github.com/open-power
 Vcs-Git: https://github.com/open-power/capiflash.git
 

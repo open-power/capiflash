@@ -69,7 +69,7 @@ if [[ $ubuntu ]]
 then
   if [[ -z $CF_VER ]]
   then
-    CF_VER=$(dpkg -l cxlflash|grep "cxlflash"|awk '{print $3}'|awk -F- '{print $1}')
+    CF_VER=$(dpkg -l cxlflash 2>/dev/null |grep "cxlflash"|awk '{print $3}'|awk -F- '{print $1}')
   fi
 
   EXISTS_OS_VER=$(lsb_release -a 2>&1|grep -v LSB|grep Description|awk '{print $3}')
@@ -90,7 +90,7 @@ then
 
   if [[ ! -z $1 ]]; then K_VER=$1; fi
 
-  EXISTS_CF_VER=$(dpkg -l cxlflash|grep "cxlflash  "|awk '{print $3}'|awk -F- '{print $1}')
+  EXISTS_CF_VER=$(dpkg -l cxlflash 2>/dev/null |grep "cxlflash  "|awk '{print $3}'|awk -F- '{print $1}')
   if [[ -z $EXISTS_CF_VER ]]
   then
     err_rc=3
@@ -103,7 +103,7 @@ then
     echo "INFO:      cxlflash:      $EXISTS_CF_VER"
   fi
 
-  EXISTS_CF_IMAGE_VER=$(dpkg -l cxlflashimage|grep cxlflashimage|awk '{print $3}'|awk -F- '{print $1}')
+  EXISTS_CF_IMAGE_VER=$(dpkg -l cxlflashimage 2>/dev/null |grep cxlflashimage|awk '{print $3}'|awk -F- '{print $1}')
   if   [[ -z $EXISTS_CF_IMAGE_VER ]]
   then
     echo "INFO:      cxlflashimage: missing"
@@ -113,7 +113,7 @@ then
     echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) Required($CF_VER)"
   fi
 
-  EXISTS_CF_TEST_VER=$(dpkg -l cxlflash-test|grep cxlflash-test|awk '{print $3}'|awk -F- '{print $1}')
+  EXISTS_CF_TEST_VER=$(dpkg -l cxlflash-test 2>/dev/null |grep cxlflash-test|awk '{print $3}'|awk -F- '{print $1}')
   if [[ ! -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
   then
     echo "INFO:      cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"

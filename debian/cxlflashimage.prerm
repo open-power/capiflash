@@ -1,8 +1,8 @@
 #!/bin/bash
-#  IBM_PROLOG_BEGIN_TAG
-#  This is an automatically generated prolog.
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
 #
-#  $Source: src/build/install/resources/gtest_add $
+# $Source: debian/cxlflashimage.prerm $
 #
 # IBM Data Engine for NoSQL - Power Systems Edition User Library Project
 #
@@ -24,17 +24,14 @@
 #
 # IBM_PROLOG_END_TAG
 
-# updates src/test/framework/googletest with 1.7.0
+set -e
+BIN_DIR=/usr/bin
+LFW_DIR=/lib/firmware/cxlflash
+for f in $(cat ${LFW_DIR}/remove_list|awk '{print $2}')
+do
+  if [[ -e ${LFW_DIR}/$f ]]; then rm -f ${LFW_DIR}/$f; fi
+done
 
-if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
-if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
+#DEBHELPER#
 
-if [[ -z ${SURELOCKROOT} ]]; then echo ". ./env.bash, then rerun"; exit -1; fi
-cd ${SURELOCKROOT}
-if [[ -e src/test/framework/googletest ]]; then rm -fR src/test/framework/googletest; fi
-wget https://github.com/google/googletest/archive/release-1.7.0.tar.gz
-tar -zxf release-1.7.0.tar.gz
-mkdir src/test/framework/googletest
-mv googletest-release-1.7.0 src/test/framework/googletest/googletest
-rm release-1.7.0.tar.gz
-
+exit 0

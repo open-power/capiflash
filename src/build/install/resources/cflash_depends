@@ -1,0 +1,115 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: src/build/install/resources/cflash_depends $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+if [[ $1 =~ help || $1 =~ -h ]]; then echo "Usage: $(basename $0)"; exit 0; fi
+if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
+
+if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
+
+export PATH=$PATH:/usr/bin
+
+rc=0
+
+wget www.ibm.com >/dev/null 2>&1
+internet=$?
+
+##################################
+# Determine distro
+if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];               then ubuntu=1; fi
+if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];         then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1; fi
+
+if [[ $ubuntu ]]
+then
+  ##################################
+  # install dependencies
+  echo "------------------------------"
+  echo -e "INFO: Checking other depencencies\n"
+
+  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev1:|i  libudev-dev:|i  sg3-utils   |i  make   |i  cscope   |i  doxygen   |i  git   |i  gitk   ") -ne 11 ]]
+  then
+    if [[ $internet -ne 0 ]]
+    then
+      echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
+    else
+      apt-get -y install software-properties-common python3-software-properties python3 libudev1 libudev-dev sg3-utils make cscope ctags doxygen git
+    fi
+  fi
+
+ if [[ -z $(dpkg -l|grep "i  libudev1:") ]]; then echo "ERROR: libudev1 is not installed."; exit 1; fi
+
+ ##################################
+ # Check OS version
+ echo "------------------------------"
+ echo -e "INFO: Checking OS version\n"
+
+ if [[ $(lsb_release -a 2>/dev/null|grep Description|awk '{print $3}'|awk -F. '{print $1}') -lt 16 ]]
+ then
+   echo "The linux OS must be updated to at least 16.04.1"
+   echo -e "Update the OS and retry, aborting...\n"
+   exit 11
+ fi
+
+fi
+
+
+if [[ $redhat ]]
+then
+
+  ##################################
+  # install dependencies
+  echo "------------------------------"
+  echo -e "INFO: Checking other depencencies\n"
+  if [[ $(rpm -qa | egrep -c -e "libgudev1|sg3_utils-1|systemd-devel|make|cscope|doxygen|git-" ) -ne 7 ]]
+  then
+    if [[ $internet -ne 0 ]]
+    then
+      echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
+    else
+      yum -y install libgudev1 sg3_utils systemd-devel make cscope ctags doxygen git
+    fi
+  fi
+
+  if [[ -z $(rpm -qa|grep "systemd-devel") ]]; then echo "ERROR: systemd-devel is not installed."; exit 1; fi
+
+  ##################################
+  # Check OS version
+  echo "------------------------------"
+  echo -e "INFO: Checking OS version\n"
+  ver=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
+  v1=$(echo $ver|awk -F. '{print $1}')
+  v2=$(echo $ver|awk -F. '{print $2}')
+
+  if [[ ! (($v1 -eq 7 && $v2 -ge 3) || ($v1 -ge 8)) ]]
+  then
+    echo "The linux OS must be updated to at least 7.3"
+    echo -e "Update the OS and retry, aborting...\n"
+    exit 11
+  fi
+
+fi
+
+exit 0

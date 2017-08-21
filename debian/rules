@@ -44,41 +44,6 @@ export TARGET_PLATFORM=$(TARGET)
 export USE_ADVANCED_TOOLCHAIN=no
 export MAKECMD=make
 unexport CUSTOMFLAGS
-export ADV_TOOLCHAIN_PATH="/"
-
 
 %:
 	dh $@
-
-override_dh_auto_clean:
-	make cleanall
-	dh_auto_clean
-
-override_dh_auto_build:
-	make default
-	if [ TEST_$(CXLFLASH_TEST) = TEST_yes ]; then make test; fi
-	make docs
-
-override_dh_auto_install:
-	make install_code
-	if [ TEST_$(CXLFLASH_TEST) = TEST_yes ]; then make install_test; fi
-	dh_install -v
-
-override_dh_installdeb:
-	mkdir -p debian/cxlflash/DEBIAN
-	mkdir -p debian/cxlflashimage/DEBIAN
-	cp src/build/install/resources/postinstall    debian/cxlflash/DEBIAN/postinst
-	cp src/build/install/resources/preremove      debian/cxlflash/DEBIAN/prerm
-	cp src/build/install/resources/postafuinstall debian/cxlflashimage/DEBIAN/postinst
-	cp src/build/install/resources/preafuremove   debian/cxlflashimage/DEBIAN/prerm
-	echo 'activate-noawait ldconfig' > debian/cxlflash/DEBIAN/triggers
-
-override_dh_auto_test:
-
-override_dh_gencontrol:
-	dpkg-gencontrol -pcxlflash      -ldebian/changelog -Tdebian/cxlflash.substvars -Pdebian/cxlflash
-	dpkg-gencontrol -pcxlflashimage -ldebian/changelog -Tdebian/cxlflashimage.substvars -Pdebian/cxlflashimage
-	if [ TEST_$(CXLFLASH_TEST) = TEST_yes ]; then dpkg-gencontrol -pcxlflash-test -ldebian/changelog -Tdebian/cxlflash-test.substvars -Pdebian/cxlflash-test; fi
-
-override_dh_shlibdeps:
-	dh_shlibdeps -l$(CURDIR)/img --dpkg-shlibdeps-params=--ignore-missing-info

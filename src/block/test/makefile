@@ -52,7 +52,7 @@ endif
 
 unit:
 ifneq ($(FVT_DEV),)
-	-LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_block_fvt$(BITS) ${GFILTER} --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
+	-LD_LIBRARY_PATH=${ROOTPATH}/lib $(TESTDIR)/run_block_fvt$(BITS) ${GFILTER} --gtest_output=xml:$(TESTDIR)/block_fvt_results.xml;
 else
 	@echo "FVT_DEV is unset for BLOCK_FILEMODE_ENABLED=1"
 endif

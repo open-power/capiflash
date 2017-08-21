@@ -117,6 +117,11 @@ testinstall:
 	${MAKE} cflash-test
 endif
 
+#dont strip symbols if DBG is set
+ifeq (T${DBG},T)
+STRIP_FLAG=-s
+endif
+
 LIC_FILES := $(notdir $(shell ls ${RESOURCEDIR}/license/*.txt 2>/dev/null))
 ${LIC_FILES}:
 	@mkdir -p ${LIC_DIR}
@@ -138,13 +143,13 @@ ${MAN3_FILES}:
 
 install_root_man1:
 	$(eval cflash_MAN1_FILES:=$(shell find ${PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
-	$(foreach f,$(cflash_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/img:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
+	$(foreach f,$(cflash_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 
 afu_root_man1:
 	$(eval cflashimage_MAN1_FILES:=$(shell find ${AFU_PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
-	$(foreach f,$(cflashimage_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/img:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
+	$(foreach f,$(cflashimage_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 
@@ -198,12 +203,12 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} -s ${TESTSRCDIR}/cxl_afu_dump ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/cxl_afu_status ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/flashgt_temp ${BIN_DIR}
-	${INSTALL} -s ${PGMDIR}/cxlfd ${BIN_DIR}
-	${INSTALL} -s ${PGMDIR}/cxlflashutil ${BIN_DIR}
-	${INSTALL} -s ${PGMDIR}/provtool ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_dump ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_status ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_temp ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlfd ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlflashutil ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/provtool ${BIN_DIR}
 	${INSTALL} -m 644 ${RESOURCEDIR}/ext.tgz ${EXT_DIR}
 	${INSTALL} ${RESOURCEDIR}/capi_flash ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_reset ${BIN_DIR}
@@ -221,17 +226,17 @@ ifeq (yes,${RPMBUILD})
 	${INSTALL} ${RESOURCEDIR}/preremove ${EXT_DIR}
 endif
 endif
-	${INSTALL} -s ${TESTSRCDIR}/blockio ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/blocksio ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/blockr0io ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/blockr0sio ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/blocklistio ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/blockplistio ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/run_kv_sync ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/run_kv_async ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/run_kv_persist ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/run_kv_benchmark ${BIN_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/kv_perf ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blocksio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockr0io ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockr0sio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blocklistio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockplistio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_sync ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_async ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_persist ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_benchmark ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/kv_perf ${BIN_DIR}
 	${INSTALL}    ${ROOTPATH}/src/test/ioppt ${BIN_DIR}
 	${INSTALL}    ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 
@@ -266,6 +271,7 @@ endif
 	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${SHARE_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_configure ${PKGDIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_configure ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/cflash_depends ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cxlffdc.debug ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cxlffdc.cleardebug ${BIN_DIR}
 endif
@@ -274,11 +280,11 @@ endif
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${LIBSRCDIR}/lib*.a ${LIB_DIR}
 else
- ifeq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} -s -m 644 ${LIBSRCDIR}/libark*.so ${LIB_DIR}
-	${INSTALL} -s -m 644 ${LIBSRCDIR}/libcf*.so ${LIB_DIR}
+ifeq ($(TARGET_PLATFORM),x86_64)
+	${INSTALL} ${STRIP_FLAG} -m 644 ${LIBSRCDIR}/libark*.so ${LIB_DIR}
+	${INSTALL} ${STRIP_FLAG} -m 644 ${LIBSRCDIR}/libcf*.so ${LIB_DIR}
  else
-	${INSTALL} -s -m ${LIB_PERMS} ${LIBSRCDIR}/lib*.so ${LIB_DIR}
+	${INSTALL} ${STRIP_FLAG} -m ${LIB_PERMS} ${LIBSRCDIR}/lib*.so ${LIB_DIR}
 endif
 endif
 
@@ -359,11 +365,11 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf_tool64 ${TEST_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} -s ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
 endif
 	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}
-	${INSTALL} -s ${TESTSRCDIR}/run_fvt_scripts ${TEST_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_fvt_scripts ${TEST_DIR}
 endif
 
 
@@ -402,7 +408,7 @@ ifneq ($(UNAME),AIX)
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGT.csv ${SHARE_DIR}
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGTplus.csv ${SHARE_DIR}
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} -s ${TESTSRCDIR}/flashgt_vpd_access ${AFU_BIN}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_vpd_access ${AFU_BIN}
 endif
 	${INSTALL} ${AFUDIR}/surelock_vpd2rbf ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${AFU_BIN}

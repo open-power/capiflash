@@ -13,3 +13,4 @@ obj/
 img/
 #Ignore pkg
 pkg
+lib

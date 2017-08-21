@@ -1,0 +1,81 @@
+#!/bin/bash
+# IBM_PROLOG_BEGIN_TAG
+# This is an automatically generated prolog.
+#
+# $Source: debian/cxlflash.prerm $
+#
+# IBM Data Engine for NoSQL - Power Systems Edition User Library Project
+#
+# Contributors Listed Below - COPYRIGHT 2014,2015
+# [+] International Business Machines Corp.
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License.
+#
+# IBM_PROLOG_END_TAG
+
+set -e
+
+BIN_DIR=/usr/bin
+CRON_FILE=/etc/cron.hourly/cflash_logs_cron
+
+if [[ -e /usr/lib64 ]]; then EXT_DIR=/usr/lib64/cxlflash/ext;
+else                         EXT_DIR=/usr/lib/cxlflash/ext;
+fi
+
+if [[ -e $CRON_FILE ]]; then rm -f $CRON_FILE; fi
+
+echo "INFO: stopping cxlfd service for LUN Management"
+if [ -d /run/systemd/system ]; then
+  deb-systemd-invoke stop cxlfd.service >/dev/null || echo "WARNING: Unable to stop the cxlfd service via systemctl"
+fi
+
+#cleanup ext
+FILES="\
+cxl_afu_fmt_unit
+cxl_flash_vm
+flashgt_nvme_nsq
+flashgt_nvme_override
+psl_trace_dump"
+for f in ${FILES}; do if [[ -f ${EXT_DIR}/$f ]]; then rm -f ${EXT_DIR}/$f; fi; done
+
+#cleanup migration links
+FILES="\
+/opt/ibm/capikv/version.txt \
+/opt/ibm/capikv/readme.txt \
+/opt/ibm/capikv/etc/cflash_configure \
+/opt/ibm/capikv/afu/cflash_perf.pl \
+/opt/ibm/capikv/afu/cflash_temp.pl \
+/opt/ibm/capikv/afu/cflash_mfg_init.pl \
+/opt/ibm/capikv/afu/cflash_capacity.pl \
+/opt/ibm/capikv/afu/capi_flash.pl \
+/opt/ibm/capikv/afu/cflash_stick.pl \
+/opt/ibm/capikv/afu/cflash_perst.pl \
+/opt/ibm/capikv/afu/cxlffdc \
+/opt/ibm/capikv/afu/cflash_wear.pl \
+/opt/ibm/capikv/afu/cflash_perfcheck.pl \
+/opt/ibm/capikv/afu/cflash_devices.pl \
+/opt/ibm/capikv/bin/provtool \
+/opt/ibm/capikv/bin/afucfg.sh \
+/opt/ibm/capikv/bin/cxlflashutil \
+/opt/ibm/capikv/bin/cflash_version \
+/opt/ibm/capikv/bin/cxlfsetlunmode \
+/opt/ibm/capikv/bin/cxlfrefreshluns \
+/opt/ibm/capikv/bin/cxlfstatus \
+/opt/ibm/capikv/bin/setup.sh"
+for f in ${FILES}; do if [[ -f $f ]]; then rm -f $f; fi; done
+
+#DEBHELPER#
+
+exit 0
+

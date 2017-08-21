@@ -24,11 +24,7 @@
 # IBM_PROLOG_END_TAG
 
 #######################################################################################
-# > make "default", buildall
-#  -if debian or rpm build, no rpath is set so the system lib path works
-#  -if sb build, then rpath is set to /opt/ATx.y, so LD_LIBRARY_PATH is required
-# > make install, prod[all], allpkgs
-#  -builds with rpath set to /opt/ATx.y and /usr/lib
+# env.bash sets USE_ADVANCED_TOOLCHAIN=no, so no rpath is set
 #######################################################################################
 
 SHELL=/bin/bash
@@ -39,10 +35,14 @@ default:
 	${MAKE} -j10 SKIP_TEST=1 dep
 	${MAKE} -j10 SKIP_TEST=1 code_pass
 	${MAKE} -j10 SKIP_TEST=1 bin
-	@if [[ dir_$(notdir $(PWD)) = dir_test ]]; then ${MAKE} -j10 test; fi
+ifeq ($(CXLFLASH_TEST),yes)
+	${MAKE} -j10 test_pass
+else
+	@if [[ dir_$(notdir $(PWD)) = dir_test ]]; then ${MAKE} -j10 test_pass; fi
+endif
 
 buildall: default
-	${MAKE} -j10 test
+	${MAKE} -j10 test_pass
 
 run_fvt:
 	${MAKE} fvt
@@ -55,7 +55,7 @@ prod:
 	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 SKIP_TEST=1 bin
 
 prodall: prod
-	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 test
+	${MAKE} LDFLAGS=${OPT_LDFLAGS} -j10 test_pass
 	${MAKE} docs
 
 prodpkgs: prod
@@ -66,14 +66,22 @@ allpkgs: prodall
 	${MAKE} pkg_test
 
 configure:
-	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_configsb
+	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_depends
 
-installsb:
+installsb: default install_code
+	${MAKE} -j10 test_pass
+	${MAKE} install_test
 	@echo ""
 	@echo "INSTALLing from $(SURELOCKROOT)"
 	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_installsb $(SURELOCKROOT)
 
-install: prodall install_code install_test installsb
+install:
+	${MAKE} install_code
+ifeq ($(CXLFLASH_TEST),yes)
+	${MAKE} install_test
+endif
+
+test:
 
 #this target queries the GITREVISION to be used
 setversion:
@@ -105,7 +113,7 @@ else
 endif
 
 #generate VPATH based on these dirs.
-VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img
+VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/lib
 #generate the VPATH, subbing :'s for spaces
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
@@ -115,11 +123,11 @@ VPATH += $(subst $(SPACE),:,$(VPATH_DIRS))
 UD_DIR = ${ROOTPATH}/obj/modules/userdetails
 UD_OBJS = ${UD_DIR}*.o ${UD_DIR}/*.so ${UD_DIR}/*.a
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/lib
 
 PGMDIR        = ${ROOTPATH}/obj/programs
 TESTDIR       = ${ROOTPATH}/obj/tests
-IMGDIR        = ${ROOTPATH}/img
+IMGDIR        = ${ROOTPATH}/lib
 PKGDIR        = ${ROOTPATH}/pkg
 GTESTS_DIR    = $(addprefix $(TESTDIR)/, $(GTESTS))
 GTESTS_NM_DIR = $(addprefix $(TESTDIR)/, $(GTESTS_NO_MAIN))
@@ -194,7 +202,7 @@ endif
 CFLAGS   += ${LCFLAGS}
 CFLAGS   += -DGITREVISION='"${GITREVISION}"'
 CFLAGS   += -Wno-unused-result -fstack-protector-strong -Wformat
-LIBPATHS  = -L${ROOTPATH}/img
+LIBPATHS  = -L${ROOTPATH}/lib
 LINKLIBS += -lpthread -ludev
 
 MODLIBS += -lpthread -ludev
@@ -328,13 +336,28 @@ ${BEAMDIR}/%.beam : %.S
 	echo Skipping ASM file.
 
 %.dep:
-	@if [[ A${SKIP_TEST} = A1 && ${@:.dep=} = test ]]; then echo "make: SKIP test"; else echo "make: dep"; cd ${basename $@} && ${MAKE} dep; fi
-%.d:
-	@if [[ A${SKIP_TEST} = A1 && ${@:.d=}   = test ]]; then echo "make: SKIP test"; else echo "make: code_pass"; cd ${basename $@} && ${MAKE} code_pass; fi
+	@if [[ A${SKIP_TEST} = A1 && ${@:.dep=} = test ]]; then\
+       echo "make: SKIP test";\
+     else\
+       echo "make: dep";\
+       cd ${basename $@} && ${MAKE} dep;\
+     fi
+%.code_pass:
+	@if [[ A${SKIP_TEST} = A1 && ${@:.code_pass=} = test ]]; then\
+       echo "make: SKIP test";\
+     else\
+       echo "make: code_pass";\
+       cd ${basename $@} && ${MAKE} code_pass;\
+     fi
 %.bin:
-	@if [[ A${SKIP_TEST} = A1 && ${@:.bin=} = test ]]; then echo "make: SKIP test"; else echo "make: bin"; cd ${basename $@} && ${MAKE} bin; fi
-%.test:
-	cd ${basename $@} && ${MAKE} test
+	@if [[ A${SKIP_TEST} = A1 && ${@:.bin=} = test ]]; then\
+       echo "make: SKIP test";\
+     else\
+       echo "make: bin";\
+       cd ${basename $@} && ${MAKE} bin;\
+     fi
+%.test_pass:
+	cd ${basename $@} && ${MAKE} test_pass
 %.fvt:
 	cd ${basename $@} && ${MAKE} fvt
 %.unit:
@@ -406,13 +429,13 @@ ${LIBRARIES}: ${OBJECTS}
 ${EXTRA_PARTS} ${PROGRAMS}: ${LIBRARIES}
 $(GTESTS_DIR) $(GTESTS_NM_DIR) $(BIN_TESTS): $(GTEST_TARGETS)
 
-dep:       ${SUBDIRS:.d=.dep} ${DEPS}
-code_pass: ${SUBDIRS} ${LIBRARIES} ${EXTRA_PARTS} ${PROGRAMS}
-bin:       ${SUBDIRS:.d=.bin} ${BIN_TESTS}
-test:      ${SUBDIRS:.d=.test} ${GTESTS_DIR} ${GTESTS_NM_DIR}
+dep:       ${SUBDIRS:.d=.dep}       ${DEPS}
+code_pass: ${SUBDIRS:.d=.code_pass} ${LIBRARIES} ${EXTRA_PARTS} ${PROGRAMS}
+bin:       ${SUBDIRS:.d=.bin}       ${BIN_TESTS}
+test_pass: ${SUBDIRS:.d=.test_pass} ${GTESTS_DIR} ${GTESTS_NM_DIR}
 fvt:       ${SUBDIRS:.d=.fvt}
 unit:      ${SUBDIRS:.d=.unit}
-beam:      ${SUBDIRS:.d=.beamdir} ${BEAMOBJS}
+beam:      ${SUBDIRS:.d=.beamdir}   ${BEAMOBJS}
 
 docs: ${ROOTPATH}/src/build/doxygen/doxygen.conf
 	@rm -rf ${ROOTPATH}/obj/doxygen/*
@@ -425,7 +448,7 @@ bins:
 	${MAKE} -j10 bin
 
 tests:
-	${MAKE} -j10 test
+	${MAKE} -j10 test_pass
 
 install_code:
 	cd ${ROOTPATH}/src/build/install && ${MAKE} codeinstall
@@ -476,7 +499,7 @@ endif
 cleanud :
 	rm -f ${UD_OBJS}
 
-clean: cleanud ${SUBDIRS:.d=.clean}
+cleandir: cleanud ${SUBDIRS:.d=.clean}
 	(rm -f ${OBJECTS} ${OBJECTS:.o=.dep} ${OBJECTS:.o=.list} \
 	       ${OBJECTS:.o=.o.hash} ${BEAMOBJS} ${LIBRARIES} \
 	       ${IMAGES} ${IMAGES:.bin=.list} ${IMAGES:.bin=.syms} \
@@ -487,13 +510,15 @@ clean: cleanud ${SUBDIRS:.d=.clean}
 	       ${PROGRAMS} ${ALL_OFILES} \
 	       *.a *.o *~* )
 
-cleanall:
+clean:
 	@if [[ -e ${ROOTPATH}/obj ]]; then rm -Rf ${ROOTPATH}/obj/*; fi
 	@if [[ -e ${ROOTPATH}/build ]]; then rm -Rf ${ROOTPATH}/build/*; fi
 	@if [[ -e $(IMGDIR) ]]; then rm -Rf $(IMGDIR)/*; fi
 	@if [[ -e $(PKGDIR) ]]; then rm -Rf $(PKGDIR)/*; fi
 	@if [[ -e ${ROOTPATH}/doxywarnings.log ]]; then rm -f *.log; fi
 	@echo "clean done"
+
+cleanall: clean
 
 ifdef IMAGES
 	${MAKE} ${IMAGES} ${IMAGE_EXTRAS}

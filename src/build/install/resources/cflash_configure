@@ -85,22 +85,8 @@ then
     exit 30
   fi
 
-  ##################################
-  # install dependencies
-  echo "------------------------------"
-  echo -e "INFO: Checking other dependencies\n"
-
-  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev1:|i  libudev-dev:|i  sg3-utils   |i  make   |i  cscope   |i  doxygen   |i  git   |i  gitk   ") -ne 11 ]]
-  then
-    if [[ $internet -ne 0 ]]
-    then
-      echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
-    else
-      apt-get -y install software-properties-common python3-software-properties python3 libudev1 libudev-dev sg3-utils make cscope ctags doxygen git
-    fi
-  fi
-
- if [[ -z $(dpkg -l|grep "i  libudev1:") ]]; then echo "ERROR: libudev1 is not installed."; fi
+ cflash_depends
+ if [[ $? -ne 0 ]]; then exit 44; fi
 
  ##################################
  # Check usr-mode software version
@@ -222,16 +208,8 @@ then
     exit 31
   fi
 
-  ##################################
-  # install dependencies
-  echo "------------------------------"
-  echo -e "INFO: Checking other depencencies\n"
-  if [[ $(rpm -qa | egrep -c -e "sg3_utils-1|systemd-devel|make|cscope|doxygen|git-" ) -ne 6 ]]
-  then
-    yum -y install sg3_utils systemd-devel make cscope ctags doxygen git
-  fi
-
-  if [[ -z $(rpm -qa|grep "systemd-devel") ]]; then echo "ERROR: systemd-devel is not installed."; exit 1 ;fi
+ cflash_depends
+ if [[ $? -ne 0 ]]; then exit 44; fi
 
   ##################################
   # Check usr-mode software version

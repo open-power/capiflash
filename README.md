@@ -23,23 +23,18 @@ As a developer, to get started:
 2. cd capiflash
 3. select a customrc file (see below)
 4. source env.bash
-5. make configure     #one-time only
-6. make cleanall
-7. make install
+5. src/build/install/resources/gtest_add  #insert the Google Test framework
+6. make configure
+7. make clean
+8. make installsb
 ```
-Build Targets that set rpath=/usr/lib
-```
-make prod        #build the code, excluding test code
-make prodall     #build all the code
-make install     #build all the code, and install a development setup
-```
-Build Targets that do not set rpath (use LD_LIBRARY_PATH=.../capiflash/img or LD_LIBRARY_PATH=/usr/lib)
+Build Targets
 ```
 make             #build the code, excluding test code
-make test        #build only the test code
+make tests       #build only the test code
 make buildall    #build all the code
+make installsb   #build all the code, install all the code into the root fs (requires sudo)
 ```
-*if all the code is built, then use "make installsb" to install your build objects
 
 #### Targeting a specific platform or tuning - the "customrc" file 
 
@@ -73,8 +68,8 @@ Example on a POWER8 Little-endian system:
 cd .../capiflash
 ln -s customrc.p8el customrc
 source env.bash
-make cleanall
-make install
+make clean
+make installsb
 #create a 4gb test file in /tmp
 fallocate -l 4g /tmp/testfile
 #run the FVT
@@ -91,8 +86,8 @@ Example on a POWER8 Little-endian system:
 cd .../capiflash
 ln -s customrc.p8elblkkermc customrc
 source env.bash
-make cleanall
-make install
+make clean
+make installsb
 #select a /dev/sgX device
 sudo cxlfrefreshluns
 sudo cxlfstatus

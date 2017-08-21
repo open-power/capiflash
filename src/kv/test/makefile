@@ -86,4 +86,4 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER) -larkdb$(SOVER) -larkalloc$(SOVER)
 
 unit:
-	@LD_LIBRARY_PATH=${ROOTPATH}/img $(TESTDIR)/run_fvt_kv$(BITS) --gtest_output=xml:$(TESTDIR)/kv_fvt_results.xml;
+	@LD_LIBRARY_PATH=${ROOTPATH}/lib $(TESTDIR)/run_fvt_kv$(BITS) --gtest_output=xml:$(TESTDIR)/kv_fvt_results.xml;

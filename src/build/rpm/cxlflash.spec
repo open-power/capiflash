@@ -7,7 +7,7 @@ Name:           cxlflash
 %define tversion %{getenv:TARGET_VERSION}
 
 %if "NULL%{tversion}" == "NULL"
-%define version 4.3.2509
+%define version 4.3.2507
 %else
 %define version %{tversion}
 %endif
@@ -121,5 +121,5 @@ Requires: cxlflash
 %endif
 
 %changelog
-* Wed Aug 2 2017 Mike Vageline <mpvagli@us.ibm.com> 4.3.2509-1
+* Wed Aug 2 2017 Mike Vageline <mpvagli@us.ibm.com> 4.3.2507-1
 - Initial RPM release

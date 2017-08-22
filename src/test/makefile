@@ -25,7 +25,7 @@
 
 UNAME    = $(shell uname)
 ROOTPATH = ../..
-SUBDIRS  = usfs.d
+SUBDIRS  = 
 EXPFLAGS = -bexpall
 ALLOW_WARNINGS = yes
 

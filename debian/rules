@@ -19,7 +19,7 @@ export OSRELEASE=$(shell /usr/bin/lsb_release -sr)
 
 export PWD=$(shell pwd)
 export SURELOCKROOT=$(shell pwd)
-unexport LD_PRELOAD
+export LD_PRELOAD=
 
 # Enables block layer to communicate with cxlflash driver built in to the Linux kernel.
 ifneq (1, $(BLOCK_FILEMODE_OVERRIDE))

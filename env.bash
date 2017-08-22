@@ -108,8 +108,8 @@ if [ ROOT$(id -u) = ROOT0 ]; then
   ulimit -n 5000      2>/dev/null
 fi
 
-if   [ ! -z "$(egrep -i "Red Hat|Fedora" /etc/os-release)" ]; then export TARGET_OS=redhat
-elif [ ! -z "$(egrep -i "Ubuntu" /etc/os-release)" ];         then export TARGET_OS=ubuntu; fi
+if   [ ! -z "$(egrep -i "Red Hat|Fedora" /etc/os-release 2>/dev/null)" ]; then export TARGET_OS=redhat
+elif [ ! -z "$(egrep -i "Ubuntu" /etc/os-release 2>/dev/null)" ];         then export TARGET_OS=ubuntu; fi
 
 else
   echo "ERROR: setup a customrc and retry"

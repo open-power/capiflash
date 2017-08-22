@@ -45,29 +45,13 @@ then
   BDIR=${SURELOCKROOT%/*}/build/deb
   if [[ -d ${BDIR} ]]; then rm -Rf ${BDIR}; fi
 
-  #make mods to support local builds
-  sed -i 's/debhelper (>=10)/debhelper (>=9)/' debian/control
-  if [[ $(id -u) != 0 ]]
-  then
-    #not root, so skip these steps
-    echo "
-override_dh_fixperms:
-override_dh_md5sums:
-override_dh_makeshlibs:
-override_dh_testroot:
-" >> debian/rules
-  fi
-
   ${SURELOCKROOT}/src/build/tools/create_tarball
-
-  #clear local mods
-  git checkout debian/rules
 
   cd ${BDIR}
   tar -xzf *.gz
   cd ${BDIR}/cxlflash_*
 
-  debuild -eBLOCK_FILEMODE_OVERRIDE -eCXLFLASH_TEST -uc -us
+  debuild -eBLOCK_FILEMODE_OVERRIDE -eCXLFLASH_TEST -uc -us -d
 
 else
 

@@ -39,7 +39,7 @@ rc=0
 LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 force=no
-LIC_DIR=/usr/share/cxlflash/license
+LIC_DIR=/usr/share/doc/cxlflash/license
 SHARE_DIR=/usr/share/cxlflash
 
 wget www.ibm.com >/dev/null 2>&1

@@ -51,7 +51,7 @@ then
   tar -xzf *.gz
   cd ${BDIR}/cxlflash_*
 
-  debuild -eBLOCK_FILEMODE_OVERRIDE -eCXLFLASH_TEST -uc -us -d
+  debuild -eBLOCK_FILEMODE_OVERRIDE -uc -us -d
 
 else
 

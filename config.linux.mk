@@ -35,6 +35,9 @@ default:
 	${MAKE} -j10 SKIP_TEST=1 dep
 	${MAKE} -j10 SKIP_TEST=1 code_pass
 	${MAKE} -j10 SKIP_TEST=1 bin
+ifneq ($(CXLFLASH_DOC),no)
+	${MAKE} docs
+endif
 ifeq ($(CXLFLASH_TEST),yes)
 	${MAKE} -j10 test_pass
 else

@@ -40,7 +40,8 @@ else                         LIB_DIR=/usr/lib;   EXT_DIR=${LIB_DIR}/cxlflash/ext
 if [[ -f /etc/redhat-release ]]; then redhat=1; fi
 
 #Creating empty SIO lun table and etc dir
-if [[ -z $(grep cxl /etc/passwd) ]]
+id -u ${GROUPNAME} >/dev/null 2>&1
+if [[ $? -ne 0 ]]
 then
   echo "INFO: Creating system cxl user / group..."
   useradd --system --user-group $USERNAME
@@ -93,7 +94,7 @@ if [[ -e ${CKV_DIR}/version.txt ]];          then rm -f ${CKV_DIR}/version.txt; 
 if [[ -e ${CKV_DIR}/readme.txt ]];           then rm -f ${CKV_DIR}/readme.txt; fi
 if [[ -e ${CKV_DIR}/etc/cflash_configure ]]; then rm -f ${CKV_DIR}/etc/cflash_configure; fi
 if [[ -e ${CKV_DIR}/bin/setup.sh ]];         then rm -f ${CKV_DIR}/bin/setup.sh; fi
-ln -s /usr/share/cxlflash/readme.txt  ${CKV_DIR}/readme.txt
+ln -s /usr/share/doc/cxlflash/readme.txt  ${CKV_DIR}/readme.txt
 ln -s /usr/share/cxlflash/version.txt ${CKV_DIR}/version.txt
 ln -s /usr/bin/cflash_configure       ${CKV_DIR}/etc/cflash_configure
 ln -s /usr/bin/cflash_setup           ${CKV_DIR}/bin/setup.sh

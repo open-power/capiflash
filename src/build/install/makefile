@@ -62,8 +62,9 @@ INSTALL_ROOT=${PREFIX}/usr
 AFU_BIN=${AFU_PREFIX}/usr/bin
 TEST_DIR=${TEST_PREFIX}/usr/bin
 ETC_DIR=${PREFIX}/etc/cxlflash
-LIC_DIR=${PREFIX}/usr/share/cxlflash/license
-EXAMPLES_DIR=${PREFIX}/usr/src/cxlflash/examples
+DOC_DIR=${PREFIX}/usr/share/doc/cxlflash
+LIC_DIR=${DOC_DIR}/license
+EXAMPLES_DIR=${DOC_DIR}/examples
 endif
 
 LIBSRCDIR=${IMGDIR}
@@ -309,7 +310,7 @@ endif
 	${INSTALL} -m 644 ${RESOURCEDIR}/cxlfd.service ${SYSTEMD_DIR}
 
 	@#Linux Readme
-	${INSTALL} -m 644 ${RESOURCEDIR}/readme.txt ${SHARE_DIR}
+	${INSTALL} -m 644 ${RESOURCEDIR}/readme.txt ${DOC_DIR}
 
 	${MAKE} install_root_man1
 endif

@@ -33,6 +33,7 @@ export BLOCK_MC_ENABLED=
 export TARGET_PLATFORM=
 export BLOCK_KERNEL_MC_ENABLED=
 export USE_ADVANCED_TOOLCHAIN=no
+export CXLFLASH_DOC=no
 
 #allow a user to specify a custom RC file if needed
 #e.g. disable the advanced toolchain with "export USE_ADVANCED_TOOLCHAIN=no"

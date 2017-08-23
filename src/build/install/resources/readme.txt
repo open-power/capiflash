@@ -1,6 +1,6 @@
 IBM Data Engine for NoSQL - Power System Edition
 
-Please review the licenses available in /usr/share/cxlflash/license
+Please review the licenses available in /usr/share/doc/cxlflash/license
 
 FlashSystem ssh key configuration no longer required for this solution. Mapping or unmapping LUNS may be performed via the FlashSystem GUI.
 
@@ -62,7 +62,7 @@ As shown in the example above, each volume may be in either "legacy" or "superpi
     sudo cxlfsetlunmode <LUN> <Mode>
 
 For example, LUN modes may be "0" for legacy, or "1" for superpipe. As an example:
-    ibm@power8:~$ cxlfsetlunmode 60050768218b0818200000000400006e 1
+    ibm@power8:~$ sudo cxlfsetlunmode 60050768218b0818200000000400006e 1
     INFO: Adding LUN 60050768218b0818200000000400006e to Super IO table.
     SUCCESS
 

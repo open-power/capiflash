@@ -7,7 +7,7 @@ Standards-Version: 4.0.1
 Build-Depends: debhelper (>=10), doxygen, linux-libc-dev, libudev-dev, lsb-release, libcxl-dev, help2man
 Homepage: https://github.com/open-power
 Vcs-Browser: https://github.com/open-power/capiflash.git
-Vcs-Git: git://github.com/open-power/capiflash.git
+Vcs-Git: https://github.com/open-power/capiflash.git
 
 Package: cxlflash
 Architecture: ppc64 ppc64el
@@ -30,7 +30,7 @@ Description: IBM Data Engine for NoSQL Software Libraries : cxlflash
 
 Package: cxlflashimage
 Architecture: ppc64 ppc64el
-Depends: cxlflash (= ${binary:Version})
+Depends: cxlflash (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
 Conflicts: afuimage
 Replaces: afuimage
 Description: IBM Data Engine for NoSQL Software Libraries : cxlflash afu library

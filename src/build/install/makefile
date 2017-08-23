@@ -393,7 +393,6 @@ else
      fi
 	@if [[ -e ${AFU_IMAGES_DIR}/$(subst .gz,,$(@)) ]]; then \
          cd ${AFU_IMAGES_DIR}; /usr/bin/md5sum $(subst .gz,,$(@)) >> afu_fw.md5sum; \
-         if [[ ! -e $@ ]]; then gzip -n $(subst .gz,,$(@)); fi; \
      fi
 endif
 endif

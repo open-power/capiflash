@@ -3,5 +3,4 @@
 cxlflash: package-name-doesnt-match-sonames
 
 # false-positives
-cxlflash binary: hardening-no-fortify-functions
 cxlflashimage binary: hardening-no-fortify-functions usr/bin/flashgt_vpd_access

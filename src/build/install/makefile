@@ -144,13 +144,13 @@ ${MAN3_FILES}:
 
 install_root_man1:
 	$(eval cflash_MAN1_FILES:=$(shell find ${PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
-	$(foreach f,$(cflash_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
+	$(foreach f,$(cflash_MAN1_FILES),$(shell LD_LIBRARY_PATH+=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 
 afu_root_man1:
 	$(eval cflashimage_MAN1_FILES:=$(shell find ${AFU_PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
-	$(foreach f,$(cflashimage_MAN1_FILES),$(shell LD_LIBRARY_PATH=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
+	$(foreach f,$(cflashimage_MAN1_FILES),$(shell LD_LIBRARY_PATH+=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 
@@ -238,8 +238,8 @@ endif
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_persist ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_benchmark ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/kv_perf ${BIN_DIR}
-	${INSTALL}    ${ROOTPATH}/src/test/ioppt ${BIN_DIR}
-	${INSTALL}    ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/ioppt ${BIN_DIR}
+	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 
 	${INSTALL} ${RESOURCEDIR}/cflash_plinks ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_getslot ${BIN_DIR}
@@ -414,7 +414,6 @@ endif
 	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/reload_all_adapters ${AFU_BIN}
 ifeq (yes,${RPMBUILD})
-	${INSTALL} ${RESOURCEDIR}/postafuinstall ${EXT_DIR}
 	${INSTALL} ${RESOURCEDIR}/preafuremove ${EXT_DIR}
 endif
 

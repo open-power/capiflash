@@ -74,7 +74,7 @@ make install_test
 %{_bindir}/provtool
 %{_bindir}/run_kv_*
 %{_prefix}/include/*
-%{_datadir}/cxlflash/*
+%{_prefix}/share/*
 %{_mandir}/man1/*
 
 %post
@@ -104,9 +104,6 @@ IBM Data Engine for NoSQL Software Libraries : firmware image support
 %{_mandir}/man1/reload_all_adapters.1.gz
 %{_mandir}/man1/flashgt_vpd_access.1.gz
 %{_mandir}/man1/surelock_vpd2rbf.1.gz
-
-%post -n cxlflashimage
-%{_libdir}/cxlflash/ext/postafuinstall
 
 %preun -n cxlflashimage
 %{_libdir}/cxlflash/ext/preafuremove

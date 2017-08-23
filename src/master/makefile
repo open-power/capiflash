@@ -38,7 +38,8 @@ endif
 
 EXPFLAGS = -bexpall
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/lib
+export LD_LIBRARY_PATH+=${ROOTPATH}/lib
+
 LIBPATHS = -L${ROOTPATH}/lib
 
 PGMDIR  = ${ROOTPATH}/obj/programs

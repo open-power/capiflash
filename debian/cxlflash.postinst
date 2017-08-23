@@ -58,12 +58,14 @@ udevadm trigger -s cxl
 udevadm trigger -s cxlflash
 
 echo "INFO: Ensuring SIO LUN Table exists..."
-if [[ ! -e $ETC_DIR ]]; then mkdir $ETC_DIR; fi
-chown $USERNAME:$GROUPNAME $ETC_DIR
-chmod 770 $ETC_DIR
+if [[ ! -e $ETC_DIR ]];  then mkdir $ETC_DIR; fi
 if [[ ! -e $SIO_FILE ]]; then touch $SIO_FILE; fi
-chown $USERNAME:$GROUPNAME $SIO_FILE
-chmod 660 $SIO_FILE
+if ! dpkg-statoverride --list $ETC_DIR >/dev/null 2>&1 ]; then
+    dpkg-statoverride --update --add $GROUPNAME $USERNAME 770 $ETC_DIR
+fi
+if ! dpkg-statoverride --list $SIO_FILE >/dev/null 2>&1 ]; then
+  dpkg-statoverride --update --add $GROUPNAME $USERNAME 660 $SIO_FILE
+fi
 
 if [[ -e $BIN_DIR/cflash_logs_cron ]]; then cp $BIN_DIR/cflash_logs_cron /etc/cron.hourly; fi
 
@@ -92,7 +94,6 @@ else
 fi
 
 tar -xzf ${EXT_DIR}/ext.tgz -C ${EXT_DIR}
-chmod +x ${EXT_DIR}/*
 
 #setup links for migration
 mkdir -p ${CKV_DIR}/bin

@@ -83,12 +83,10 @@ cxlflashimage:
 	cd ${PKGDIR}; \
 	fpm -f -s dir -t rpm -a all -n $@ -v ${VERSION} -C ./afu_root --iteration=${ITER} \
 		--depends 'cxlflash = ${VERSION}-${ITER}' \
-		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
 		--before-remove ${SURELOCKROOT}/src/build/install/resources/preafuremove \
 		--conflicts afuimage --replaces afuimage .; \
 	fpm -f -s dir -t deb -a all -n $@ -v ${VERSION}-${ITER} -C ./afu_root \
 		--depends 'cxlflash = ${VERSION}-${ITER}' \
-		--after-install ${SURELOCKROOT}/src/build/install/resources/postafuinstall \
 		--before-remove ${SURELOCKROOT}/src/build/install/resources/preafuremove \
 		--conflicts afuimage --replaces afuimage .; \
 

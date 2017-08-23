@@ -53,8 +53,6 @@ if [[ -d $1/pkg/test_root ]]; then
 cp -R $1/pkg/test_root/usr/*            /usr/
 fi
 
-$1/src/build/install/resources/postafuinstall
-
 touch /etc/cxlflash/sioluntable.ini
 
 exit 0

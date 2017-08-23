@@ -22,7 +22,6 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-/**
 #ifndef _CXLFLASH_IOCTL_H
 #define _CXLFLASH_IOCTL_H
 

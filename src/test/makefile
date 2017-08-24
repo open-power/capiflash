@@ -60,4 +60,4 @@ include $(ROOTPATH)/src/test/framework/gtest.objtests.mk
 LINKLIBS += -lcflshcom$(SOVER) -lcflsh_block$(SOVER) -larkdb$(SOVER) -larkalloc$(SOVER)
 
 fvt:
-	@LD_LIBRARY_PATH=${ROOTPATH}/lib $(TESTDIR)/run_fvt$(BITS)
+	@$(TESTDIR)/run_fvt$(BITS)

@@ -126,7 +126,9 @@ VPATH += $(subst $(SPACE),:,$(VPATH_DIRS))
 UD_DIR = ${ROOTPATH}/obj/modules/userdetails
 UD_OBJS = ${UD_DIR}*.o ${UD_DIR}/*.so ${UD_DIR}/*.a
 
-export LD_LIBRARY_PATH+=${ROOTPATH}/lib
+ifneq (${SURELOCKROOT}/lib,$(findstring ${SURELOCKROOT}/lib,${LD_LIBRARY_PATH}))
+export LD_LIBRARY_PATH+=:${SURELOCKROOT}/lib:$(strip $(wildcard /usr/lib/powerpc*gnu)):/usr/lib64
+endif
 
 PGMDIR        = ${ROOTPATH}/obj/programs
 TESTDIR       = ${ROOTPATH}/obj/tests

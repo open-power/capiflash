@@ -49,7 +49,7 @@ unit:
 	@#if cxl hw exist AND build env is not FILEMODE_ENABLED
 ifeq ($(BLOCK_FILEMODE_ENABLED),0)
 	-@if [[ -e /dev/cxl ]]; then \
-       LD_LIBRARY_PATH=${ROOTPATH}/lib $(TESTDIR)/run_cflash_fvt --gtest_output=xml:$(TESTDIR)/cflash_fvt_results.xml; \
+       $(TESTDIR)/run_cflash_fvt --gtest_output=xml:$(TESTDIR)/cflash_fvt_results.xml; \
     else \
       echo "SKIPPING run_cflash_fvt"; \
     fi

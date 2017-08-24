@@ -22,7 +22,7 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-UNAME=$(shell uname)
+UNAME    = $(shell uname)
 ROOTPATH = ../../..
 
 #check for rpm build env
@@ -144,13 +144,13 @@ ${MAN3_FILES}:
 
 install_root_man1:
 	$(eval cflash_MAN1_FILES:=$(shell find ${PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
-	$(foreach f,$(cflash_MAN1_FILES),$(shell LD_LIBRARY_PATH+=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
+	$(foreach f,$(cflash_MAN1_FILES),$(shell help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 
 afu_root_man1:
 	$(eval cflashimage_MAN1_FILES:=$(shell find ${AFU_PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
-	$(foreach f,$(cflashimage_MAN1_FILES),$(shell LD_LIBRARY_PATH+=${ROOTPATH}/lib:/usr/lib:/usr/lib/powerpc64le-linux-gnu help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
+	$(foreach f,$(cflashimage_MAN1_FILES),$(shell help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflashimage_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 

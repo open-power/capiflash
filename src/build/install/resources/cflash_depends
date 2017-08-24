@@ -83,21 +83,23 @@ then
   # install dependencies
   echo "------------------------------"
   echo -e "INFO: Checking other depencencies\n"
-  if [[ $(rpm -qa | egrep -c -e "libgudev1|sg3_utils-1|systemd-devel|make|cscope|doxygen|git-" ) -ne 7 ]]
+  if [[ $(rpm -qa | egrep -c -e "libgudev1-devel|libcxl|sg3_utils-1|systemd-devel|make|cscope|doxygen|git-|help2man|gcc-c\+\+") -ne 12 ]]
   then
     if [[ $internet -ne 0 ]]
     then
       echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
     else
-      yum -y install libgudev1 sg3_utils systemd-devel make cscope ctags doxygen git
+      yum -y install libgudev1 libgudev1-devel sg3_utils libcxl libcxl-devel systemd-devel make cscope ctags doxygen git gcc-c++
     fi
   fi
 
-  if [[ -z $(rpm -qa|grep "systemd-devel") ]]; then echo "ERROR: systemd-devel is not installed."; exit 1; fi
+  if [[ -z $(rpm -qa|grep "libcxl-devel") ]];    then echo "ERROR: libcxl-devel is not installed.";    fi
+  if [[ -z $(rpm -qa|grep "libgudev1-devel") ]]; then echo "ERROR: libgudev1-devel is not installed."; fi
+  if [[ -z $(rpm -qa|grep "help2man") ]];        then echo "ERROR: help2man is not installed.";        fi
 
   ##################################
   # Check OS version
-  echo "------------------------------"
+  echo -e "\n------------------------------"
   echo -e "INFO: Checking OS version\n"
   ver=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
   v1=$(echo $ver|awk -F. '{print $1}')

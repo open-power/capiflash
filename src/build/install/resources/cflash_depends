@@ -59,7 +59,11 @@ then
     fi
   fi
 
- if [[ -z $(dpkg -l|grep "i  libudev1:") ]]; then echo "ERROR: libudev1 is not installed."; exit 1; fi
+  if [[ -z $(dpkg -l|grep "libcxl1") ]];     then echo "ERROR: libcxl1 is not installed."; fi
+  if [[ -z $(dpkg -l|grep "libudev1") ]];    then echo "ERROR: libudev1 is not installed."; fi
+  if [[ -z $(dpkg -l|grep "libcxl-dev") ]];  then echo "INFO: libcxl-dev is not installed."; fi
+  if [[ -z $(dpkg -l|grep "libudev-dev") ]]; then echo "INFO: libudev-dev is not installed."; fi
+  if [[ -z $(dpkg -l|grep "help2man") ]];    then echo "INFO: help2man is not installed."; fi
 
  ##################################
  # Check OS version
@@ -83,19 +87,21 @@ then
   # install dependencies
   echo "------------------------------"
   echo -e "INFO: Checking other depencencies\n"
-  if [[ $(rpm -qa | egrep -c -e "libgudev1-devel|libcxl|sg3_utils-1|systemd-devel|make|cscope|doxygen|git-|help2man|gcc-c\+\+") -ne 12 ]]
+  if [[ $(rpm -qa | egrep -c -e "libgudev1-devel|libcxl|sg3_utils-1|systemd-devel|make|cscope|doxygen|git-|help2man|gcc-c\+\+|ksh|ctags") -ne 13 ]]
   then
     if [[ $internet -ne 0 ]]
     then
       echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
     else
-      yum -y install libgudev1 libgudev1-devel sg3_utils libcxl libcxl-devel systemd-devel make cscope ctags doxygen git gcc-c++
+      yum -y install libgudev1 libgudev1-devel sg3_utils libcxl libcxl-devel systemd-devel make cscope ctags doxygen git gcc-c++ ksh
     fi
   fi
 
-  if [[ -z $(rpm -qa|grep "libcxl-devel") ]];    then echo "ERROR: libcxl-devel is not installed.";    fi
-  if [[ -z $(rpm -qa|grep "libgudev1-devel") ]]; then echo "ERROR: libgudev1-devel is not installed."; fi
-  if [[ -z $(rpm -qa|grep "help2man") ]];        then echo "ERROR: help2man is not installed.";        fi
+  if [[ -z $(rpm -qa|grep "libcxl"|grep -v devel) ]];   then echo "ERROR: libcxl is not installed."; fi
+  if [[ -z $(rpm -qa|grep "libgudev"|grep -v devel) ]]; then echo "ERROR: libgudev1 is not installed."; fi
+  if [[ -z $(rpm -qa|grep "libcxl-devel") ]];           then echo "INFO: libcxl-devel is not installed."; fi
+  if [[ -z $(rpm -qa|grep "libgudev1-devel") ]];        then echo "INFO: libgudev1-devel is not installed."; fi
+  if [[ -z $(rpm -qa|grep "help2man") ]];               then echo "INFO: help2man is not installed."; fi
 
   ##################################
   # Check OS version

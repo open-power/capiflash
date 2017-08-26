@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
   long reported = 0;
 
   if (argc < 2 || (argc==2 && argv[1][0]=='-')) {
-    printf("usage: %s <path-to-afu>\n",argv[0]);
+    printf("usage: %s <path-to-afu> [-v]\n",argv[0]);
     exit(2);
   }
 

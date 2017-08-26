@@ -32,7 +32,7 @@ if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 if [[ ! -e /opt ]]; then mkdir /opt; fi
 if [[ ! -e /opt/.lic ]]; then mkdir /opt/.lic; fi
 
-export PATH=$PATH:/usr/bin
+export PATH=$PATH:/usr/bin:.
 export CFLASH_CONFIGURE=1
 
 rc=0
@@ -256,8 +256,8 @@ then
   if [[ ! $EXISTS_LVL =~ "cxlflash" || $force = yes || \
          ($EXISTS_LVL =~ "cxlflash" && ! $EXISTS_LVL =~ $CF_VER) ]]
   then
-    ls cxlflash-[0-9]*$CF_VER*.rpm >/dev/null 2>&1
-    if [[ $? -eq 0 ]]; then rpm -i -v cxlflash-*$CF_VER*.rpm; fi
+    ls cxlflash-$CF_VER*.rpm >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then rpm -i -v cxlflash-$CF_VER*.rpm; fi
   fi
 
   EXISTS_LVL=$(rpm -qa|egrep "cxlflash-test")
@@ -484,6 +484,8 @@ fi
   unset CFLSH_BLK_TRC_VERBOSITY
   unset KV_TRC_VERBOSITY
   rc=0
+
+  cxlfrefreshluns
 
   if [[ $1 =~ mfg ]]
   then

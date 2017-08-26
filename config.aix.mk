@@ -53,7 +53,9 @@ endif
 VERSIONMAJOR=4
 VERSIONMINOR=3
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ROOTPATH}/img
+ifneq (${SURELOCKROOT}/lib,$(findstring ${SURELOCKROOT}/lib,${LD_LIBRARY_PATH}))
+export LD_LIBRARY_PATH+=:${SURELOCKROOT}/lib
+endif
 
 
 CFLAGS          += ${LCFLAGS}
@@ -77,7 +79,7 @@ BTESTS64         = $(addsuffix 64, ${BTESTS})
 BIN_TESTS64      = $(addprefix ${TESTDIR}/, ${BTESTS64})
 
 #generate VPATH based on these dirs.
-VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/img /lib
+VPATH_DIRS=. ${ROOTPATH}/src/common ${ROOTPATH}/obj/lib/ ${ROOTPATH}/lib /lib
 #generate the VPATH, subbing :'s for spaces
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
@@ -88,14 +90,14 @@ UD_DIR = ${ROOTPATH}/obj/modules/userdetails
 UD_OBJS = ${UD_DIR}*.o ${UD_DIR}/*.so ${UD_DIR}/*.a
 
 ARFLAGS =-X32_64 rv
-LIBPATHS=-L${ROOTPATH}/img
+LIBPATHS=-L${ROOTPATH}/lib
 
 LDFLAGS_PROGRAMS = -L${LIBPATHS} -lc ${LINKLIBS}
 LDFLAGS64_PROGRAMS = -b64 ${LDFLAGS_PROGRAMS}
 
 PGMDIR  = ${ROOTPATH}/obj/programs
 TESTDIR = ${ROOTPATH}/obj/tests
-IMGDIR  = ${ROOTPATH}/img
+IMGDIR  = ${ROOTPATH}/lib
 PKGDIR  = ${ROOTPATH}/pkg
 
 ifdef MODULE
@@ -495,7 +497,7 @@ endif
 cleanud :
 	rm -f ${UD_OBJS}
 
-clean: cleanud ${SUBDIRS:.d=.clean}
+cleandir: cleanud ${SUBDIRS:.d=.clean}
 	(rm -f ${OBJECTS} ${OBJECTS:.o=.u} ${OBJECTS:.o=.list} \
 	       ${OBJECTS64} ${OBJECTS64:.o=.u} ${OBJECTS64:.o=.list}  \
 	       ${OBJECTS:.o=.o.hash} ${BEAMOBJS} ${LIBRARIES} ${LIBRARIES64} ${AR_LIBRARIES} \
@@ -507,10 +509,12 @@ clean: cleanud ${SUBDIRS:.d=.clean}
 	       ${PROGRAMS} ${PROGRAMS64} ${ALL_OFILES} \
 	       *.a *.o *~* )
 
-cleanall:
+clean:
 	rm -Rf ${ROOTPATH}/obj/*
 	rm -Rf $(IMGDIR)/*
 	rm -Rf $(PKGDIR)/*
+
+cleanall: clean
 
 ifdef IMAGES
 	${MAKE} ${IMAGES} ${IMAGE_EXTRAS}

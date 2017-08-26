@@ -413,9 +413,6 @@ endif
 	${INSTALL} ${AFUDIR}/surelock_vpd2rbf ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${AFU_BIN}
 	${INSTALL} ${RESOURCEDIR}/reload_all_adapters ${AFU_BIN}
-ifeq (yes,${RPMBUILD})
-	${INSTALL} ${RESOURCEDIR}/preafuremove ${EXT_DIR}
-endif
 
 	${MAKE} afu_root_man1
 

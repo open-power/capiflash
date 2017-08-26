@@ -105,16 +105,27 @@ IBM Data Engine for NoSQL Software Libraries : firmware image support
 %{_mandir}/man1/flashgt_vpd_access.1.gz
 %{_mandir}/man1/surelock_vpd2rbf.1.gz
 
-%preun -n cxlflashimage
-%{_libdir}/cxlflash/ext/preafuremove
-
 %if "%{cxlflash_test}" == "yes"
 %package -n cxlflash-test
 Summary: IBM Data Engine for NoSQL Software Libraries : test support
 Requires: cxlflash
 %description -n cxlflash-test
 %files -n cxlflash-test
-%{_bindir}/*
+%{_bindir}/*fvt*
+%{_bindir}/blk_test
+%{_bindir}/pvtestauto
+%{_bindir}/pblkread
+%{_bindir}/transport_test
+%{_bindir}/asyncstress
+%{_bindir}/_tst_ark
+%{_bindir}/run_ioppts
+%{_bindir}/multi_process_perf
+%{_bindir}/block_perf_check
+%{_bindir}/run_regression
+%{_bindir}/cflash_inject
+%{_bindir}/utils_scripts_tst
+%{_bindir}/flash_factory_image
+
 %endif
 
 %changelog

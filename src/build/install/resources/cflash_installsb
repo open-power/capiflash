@@ -24,13 +24,18 @@
 #
 # IBM_PROLOG_END_TAG
 
-if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]]; then redhat=1; fi
+if [[ EMPTY$(cat /etc/os-release 2>/dev/null) =~ Red ]];    then redhat=1; fi
+if [[ EMPTY$(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]]; then ubuntu=1; fi
 
 if [[ $redhat ]]
 then
   out=$(rpm -qa|grep cxlflash)
-else
+elif [[ $ubuntu ]]
+then
   out=$(dpkg -l|grep cxlflash)
+else
+  echo "not supported"
+  exit 0
 fi
 
 if [[ ${out} =~ cxlflash ]]

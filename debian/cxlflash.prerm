@@ -37,10 +37,6 @@ fi
 
 if [[ -e $CRON_FILE ]]; then rm -f $CRON_FILE; fi
 
-echo "INFO: stopping cxlfd service for LUN Management"
-if [ -d /run/systemd/system ]; then
-  deb-systemd-invoke stop cxlfd.service >/dev/null || echo "WARNING: Unable to stop the cxlfd service via systemctl"
-fi
 
 if dpkg-statoverride --list $ETC_DIR >/dev/null 2>&1 ]; then
   dpkg-statoverride --remove $ETC_DIR

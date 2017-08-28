@@ -49,13 +49,13 @@ then
   echo "------------------------------"
   echo -e "INFO: Checking other depencencies\n"
 
-  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev-dev:|i  libcxl-dev|i  sg3-utils   |i  make   |i  cscope   |i  doxygen   |i  git   |i  g\+\+ |i  help2man ") -ne 12 ]]
+  if [[ $(dpkg -l | egrep -c "i  software-properties-common|i  python3-software-properties|i  python3 |i  libudev-dev:|i  libcxl-dev|i  sg3-utils   |i  make   |i  cscope   |i  doxygen   |i  git   |i  g\+\+ |i  help2man |i  dh-systemd ") -ne 13 ]]
   then
     if [[ $internet -ne 0 ]]
     then
       echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
     else
-      apt-get -y install software-properties-common python3-software-properties python3 libudev-dev libcxl-dev help2man sg3-utils make cscope ctags doxygen git
+      apt-get -y install software-properties-common python3-software-properties python3 libudev-dev libcxl-dev dh-systemd help2man sg3-utils make cscope ctags doxygen git
     fi
   fi
 

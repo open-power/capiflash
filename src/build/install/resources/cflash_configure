@@ -389,7 +389,7 @@ fi
   then
     if [[ $imagepkg ]]
     then
-      systemctl stop cxlfd.service
+      systemctl stop cxlflash.service
       if [[ $(lsmod |grep cxlflash) =~ cxlflash ]]; then rmmod cxlflash; fi
       flash_all_adapters -reload
       systemctl daemon-reload

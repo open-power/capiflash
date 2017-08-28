@@ -5,7 +5,7 @@ Section: non-free/utils
 XS-Autobuild: yes
 Priority: optional
 Standards-Version: 4.0.1
-Build-Depends: debhelper (>=10), doxygen, linux-libc-dev, libudev-dev, lsb-release, libcxl-dev, help2man
+Build-Depends: debhelper (>=10), dh-systemd, doxygen, linux-libc-dev, libudev-dev, lsb-release, libcxl-dev, help2man
 Homepage: https://github.com/open-power
 Vcs-Browser: https://github.com/open-power/capiflash.git
 Vcs-Git: https://github.com/open-power/capiflash.git

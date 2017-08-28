@@ -34,4 +34,4 @@ export MAKECMD=make
 unexport CUSTOMFLAGS
 
 %:
-	dh $@
+	dh $@ --with=systemd

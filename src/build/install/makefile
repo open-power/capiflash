@@ -63,8 +63,8 @@ AFU_BIN=${AFU_PREFIX}/usr/bin
 TEST_DIR=${TEST_PREFIX}/usr/bin
 ETC_DIR=${PREFIX}/etc/cxlflash
 DOC_DIR=${PREFIX}/usr/share/doc/cxlflash
-LIC_DIR=${DOC_DIR}/license
 EXAMPLES_DIR=${DOC_DIR}/examples
+LIC_DIR=${PREFIX}/usr/share/cxlflash/license
 endif
 
 LIBSRCDIR=${IMGDIR}
@@ -307,7 +307,7 @@ ifneq (yes,${RPMBUILD})
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_persist.c ${EXAMPLES_DIR}
 endif
 	@#SystemD Daemons
-	${INSTALL} -m 644 ${RESOURCEDIR}/cxlfd.service ${SYSTEMD_DIR}
+	${INSTALL} -m 644 ${RESOURCEDIR}/cxlflash.service ${SYSTEMD_DIR}
 
 	@#Linux Readme
 	${INSTALL} -m 644 ${RESOURCEDIR}/readme.txt ${DOC_DIR}

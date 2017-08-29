@@ -106,16 +106,6 @@ then
    dpkg -r cxlflash-test
  fi
 
- EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  ibmcapikv |i  cxlflash ")
- if [[ $EXISTS_LVL =~ ibmcapikv ]]
- then
-   dpkg -r ibmcapikv
- fi
- if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
- then
-   dpkg -r cxlflash
- fi
-
  EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  afuimage |i  cxlflashimage ")
  if [[ $EXISTS_LVL =~ afuimage ]]
  then
@@ -124,6 +114,16 @@ then
  if [[ $EXISTS_LVL =~ cxlflashimage && ! $EXISTS_LVL =~ $CF_VER ]]
  then
    dpkg -r cxlflashimage
+ fi
+
+ EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  ibmcapikv |i  cxlflash ")
+ if [[ $EXISTS_LVL =~ ibmcapikv ]]
+ then
+   dpkg -r ibmcapikv
+ fi
+ if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
+ then
+   dpkg -r cxlflash
  fi
 
  #install new
@@ -145,15 +145,6 @@ then
    fi
  fi
 
- EXISTS_LVL=$(dpkg -l|grep 'i  cxlflashimage')
- if [[ ! $EXISTS_LVL =~ cxlflashimage || \
-        ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
- then
-   #pkg is not required, only install if it exists
-   ls cxlflashimage*$CF_VER*.deb >/dev/null 2>&1
-   if [[ $? -eq 0 ]]; then dpkg -i cxlflashimage*$CF_VER*.deb; fi
- fi
-
  ##################################
  # Check OS version
  echo "------------------------------"
@@ -173,7 +164,6 @@ then
    echo -e "\nERROR: cxlflash packages failed to install\n"
    exit 15
  fi
- if [[ ! -z $(dpkg -l|grep 'i  cxlflashimage') ]]; then imagepkg=1; fi
 fi
 
 
@@ -230,16 +220,6 @@ then
     rpm -e -v cxlflash-test
   fi
 
-  EXISTS_LVL=$(rpm -qa|grep -v test|egrep "ibmcapikv|cxlflash")
-  if [[ $EXISTS_LVL =~ ibmcapikv ]]
-  then
-    rpm -e -v  ibmcapikv
-  fi
-  if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
-  then
-    rpm -e -v cxlflash
-  fi
-
   EXISTS_LVL=$(rpm -qa|grep -v test|egrep "afuimage|cxlflashimage")
   if [[ $EXISTS_LVL =~ afuimage ]]
   then
@@ -248,6 +228,16 @@ then
   if [[ $EXISTS_LVL =~ cxlflashimage && ! $EXISTS_LVL =~ $CF_VER ]]
   then
     rpm -e cxlflashimage
+  fi
+
+  EXISTS_LVL=$(rpm -qa|grep -v test|egrep "ibmcapikv|cxlflash")
+  if [[ $EXISTS_LVL =~ ibmcapikv ]]
+  then
+    rpm -e -v  ibmcapikv
+  fi
+  if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
+  then
+    rpm -e -v cxlflash
   fi
 
   #################
@@ -267,15 +257,6 @@ then
     #pkg is not required, only install if it exists
     ls cxlflash-test*$CF_VER*.rpm >/dev/null 2>&1
     if [[ $? -eq 0 ]]; then rpm -i -v cxlflash-test*$CF_VER*.rpm; fi
-  fi
-
-  EXISTS_LVL=$(rpm -qa|grep 'cxlflashimage')
-  if [[ ! $EXISTS_LVL =~ cxlflashimage || \
-         ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
-  then
-    #pkg is not required, only install if it exists
-    ls cxlflashimage*$CF_VER*.rpm >/dev/null 2>&1
-    if [[ $? -eq 0 ]]; then rpm -i -v cxlflashimage*$CF_VER*.rpm; fi
   fi
 
   ##################################
@@ -301,7 +282,6 @@ then
     echo -e "\nERROR: cxlflash packages failed to install\n"
     exit 15
   fi
-  if [[ ! -z $(rpm -qa|grep "cxlflashimage") ]]; then imagepkg=1; fi
 fi
 
 
@@ -387,14 +367,14 @@ fi
 
   if [[ $do_flash ]]
   then
-    if [[ $imagepkg ]]
+    if [[ $images_available ]]
     then
       systemctl stop cxlflash.service
       if [[ $(lsmod |grep cxlflash) =~ cxlflash ]]; then rmmod cxlflash; fi
       flash_all_adapters -reload
       systemctl daemon-reload
     else
-      echo "INFO: unable to download firmware. The package cxlflashimage is not installed."
+      echo "INFO: unable to download firmware. The firmware is not installed."
     fi
   fi
 

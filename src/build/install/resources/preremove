@@ -28,29 +28,16 @@ set -e
 BIN_DIR=/usr/bin
 CRON_FILE=/etc/cron.hourly/cflash_logs_cron
 
-if [[ -e /usr/lib64 ]]; then EXT_DIR=/usr/lib64/cxlflash/ext;
-else                         EXT_DIR=/usr/lib/cxlflash/ext;
-fi
-
 if [[ -e $CRON_FILE ]]; then rm -f $CRON_FILE; fi
 if [[ -f /etc/redhat-release ]]; then redhat=1; fi
 
 if [[ ! ${redhat} ]]
 then
-  echo "INFO: stopping cxlfd service for LUN Management"
+  echo "INFO: stopping cxlflash service for LUN Management"
   if [ -d /run/systemd/system ]; then
-    deb-systemd-invoke stop cxlfd.service >/dev/null || echo "WARNING: Unable to stop the cxlfd service via systemctl"
+    deb-systemd-invoke stop cxlflash.service >/dev/null || echo "WARNING: Unable to stop the cxlflash service via systemctl"
   fi
 fi
-
-#cleanup ext
-FILES="\
-cxl_afu_fmt_unit
-cxl_flash_vm
-flashgt_nvme_nsq
-flashgt_nvme_override
-psl_trace_dump"
-for f in ${FILES}; do if [[ -f ${EXT_DIR}/$f ]]; then rm -f ${EXT_DIR}/$f; fi; done
 
 #cleanup migration links
 FILES="\

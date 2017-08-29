@@ -12,7 +12,7 @@ Vcs-Git: https://github.com/open-power/capiflash.git
 
 Package: cxlflash
 Architecture: ppc64 ppc64el
-Depends: ${shlibs:Depends}, libudev1, libcxl1, ${misc:Depends}, ${perl:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${perl:Depends}
 Conflicts: ibmcapikv
 Replaces: ibmcapikv
 Description: IBM Data Engine for NoSQL Software Libraries : cxlflash
@@ -28,23 +28,3 @@ Description: IBM Data Engine for NoSQL Software Libraries : cxlflash
  Exploiting hardware and software built-in to IBM's flagship POWER8 open
  architecture means that clients no longer much choose between "big" or
  "fast" for their solutions.
-
-Package: cxlflashimage
-Architecture: ppc64 ppc64el
-Depends: cxlflash (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}, ${perl:Depends}
-Conflicts: afuimage
-Replaces: afuimage
-Description: IBM Data Engine for NoSQL Software Libraries : cxlflash afu library
- Power Systems Edition creates a new tier of memory by attaching up to 57
- Terabytes of auxiliary flash memory to the processor without the latency
- issues of traditional I/O storage.
- While not as fast as DRAM, the latency is within the acceptable limit of
- most applications especially when data is accessed over the network.
- Flash is also dramatically less expensive than DRAM, and helps reduce the
- deployment and operational cost for delivering the customer solution.
- Customers, MSPs, and ISPs all benefit from application of this new
- technology in the NoSQL application space.
- Exploiting hardware and software built-in to IBM's flagship POWER8 open
- architecture means that clients no longer much choose between "big" or
- "fast" for their solutions.
- This package provides binaries for the cxlflash afu.

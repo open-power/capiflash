@@ -27,16 +27,16 @@ UNAME=$(shell uname)
 ROOTPATH = ../../..
 
 ifeq ($(UNAME),AIX)
-aixpkg: aixcxlflash aixcxlflash-test aixcxlflashimage
+aixpkg: aixcxlflash aixcxlflash-test
 else
 
 #only add tarpkgs if we are in the DISABLED dir path
 DISABLED=$(shell pwd|grep DISABLED)
 ifeq "$(DISABLED)" ""
-codepkg: cxlflash cxlflashimage
+codepkg: cxlflash
 testpkg: cxlflash-test
 else
-codepkg: cxlflash cxlflashimage tarpkgs
+codepkg: cxlflash tarpkgs
 testpkg: cxlflash-test tarpkgs
 endif
 
@@ -78,16 +78,6 @@ cxlflash-test:
 		--conflicts ibmcapikv-test --replaces ibmcapikv-test .; \
 	tar -cvzf $@-${GITREVISION}.tar.gz -C ./test_root .
 
-cxlflashimage:
-	mkdir -p ${PKGDIR}
-	cd ${PKGDIR}; \
-	fpm -f -s dir -t rpm -a all -n $@ -v ${VERSION} -C ./afu_root --iteration=${ITER} \
-		--depends 'cxlflash = ${VERSION}-${ITER}' \
-		--conflicts afuimage --replaces afuimage .; \
-	fpm -f -s dir -t deb -a all -n $@ -v ${VERSION}-${ITER} -C ./afu_root \
-		--depends 'cxlflash = ${VERSION}-${ITER}' \
-		--conflicts afuimage --replaces afuimage .; \
-
 tarpkgs:
 	cd ${PKGDIR}; \
 	echo ${VERSION} > ver.txt; \
@@ -105,11 +95,5 @@ aixcxlflash-test:
 	cd ${PKGDIR}; \
 	tar -cvf cxlflash-test_${VERSION}.ppc64be.tar -C ./test_root .; \
 	gzip -f cxlflash-test_${VERSION}.ppc64be.tar
-
-aixcxlflashimage:
-	mkdir -p ${PKGDIR}
-	cd ${PKGDIR}; \
-	tar -cvf cxlflashimage_${VERSION}.ppc64be.tar -C ./afu_root .; \
-	gzip -f cxlflashimage_${VERSION}.ppc64be.tar
 
 include ${ROOTPATH}/config.mk

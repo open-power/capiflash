@@ -34,8 +34,8 @@ LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 TDIR=tmp
 CKV_DIR=/opt/ibm/capikv
-if [[ -e /usr/lib64 ]]; then LIB_DIR=/usr/lib64; EXT_DIR=${LIB_DIR}/cxlflash/ext;
-else                         LIB_DIR=/usr/lib;   EXT_DIR=${LIB_DIR}/cxlflash/ext; fi
+if [[ -e /usr/lib64 ]]; then LIB_DIR=/usr/lib64;
+else                         LIB_DIR=/usr/lib; fi
 
 if [[ -f /etc/redhat-release ]]; then redhat=1; fi
 
@@ -83,9 +83,6 @@ else
   fi
 fi
 
-tar -xzf ${EXT_DIR}/ext.tgz -C ${EXT_DIR}
-chmod +x ${EXT_DIR}/*
-
 #setup links for migration
 mkdir -p ${CKV_DIR}/bin
 mkdir -p ${CKV_DIR}/afu
@@ -130,21 +127,21 @@ done
 
 if [[ ! ${redhat} ]]
 then
-  echo "INFO: enabling cxlfd service for LUN Management"
+  echo "INFO: enabling cxlflash service for LUN Management"
   # was-enabled defaults to true, so new installations run enable.
-  if deb-systemd-helper --quiet was-enabled cxlfd.service; then
+  if deb-systemd-helper --quiet was-enabled cxlflash.service; then
     # Enables the unit on first installation, creates new
     # symlinks on upgrades if the unit file has changed.
-    deb-systemd-helper enable cxlfd.service >/dev/null || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+    deb-systemd-helper enable cxlflash.service >/dev/null || echo "WARNING: Unable to enable the cxlflash service via systemctl. Please enable the cxlflash daemon for LUN management."
   else
     # Update the statefile to add new symlinks (if any), which need to be
     # cleaned up on purge. Also remove old symlinks.
-    deb-systemd-helper update-state cxlfd.service >/dev/null || true
+    deb-systemd-helper update-state cxlflash.service >/dev/null || true
   fi
 
   if [ -d /run/systemd/system ]; then
     systemctl --system daemon-reload >/dev/null || true
-    deb-systemd-invoke start cxlfd.service >/dev/null || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
+    deb-systemd-invoke start cxlflash.service >/dev/null || echo "WARNING: Unable to start the cxlflash service via systemctl. Please enable the cxlflash daemon for LUN management."
   fi
 fi
 

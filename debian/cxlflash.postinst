@@ -42,8 +42,8 @@ LD=.EaienF48ajfFgBMIhsalfc
 HD=.Jfa82FBMIhsalfc
 TDIR=tmp
 CKV_DIR=/opt/ibm/capikv
-if [[ -e /usr/lib64 ]]; then LIB_DIR=/usr/lib64; EXT_DIR=${LIB_DIR}/cxlflash/ext;
-else                         LIB_DIR=/usr/lib;   EXT_DIR=${LIB_DIR}/cxlflash/ext; fi
+if [[ -e /usr/lib64 ]]; then LIB_DIR=/usr/lib64;
+else                         LIB_DIR=/usr/lib; fi
 
 #Creating empty SIO lun table and etc dir
 id -u ${GROUPNAME} >/dev/null 2>&1
@@ -92,8 +92,6 @@ else
     fi
   fi
 fi
-
-tar -xzf ${EXT_DIR}/ext.tgz -C ${EXT_DIR}
 
 #setup links for migration
 mkdir -p ${CKV_DIR}/bin

@@ -107,6 +107,7 @@ do
     printf "\n ERROR:  psl_trace_dump on VM Not Supported! \n\n"
   else
     echo "Dumping PSL data for card$i"
+    chmod +x /usr/lib*/cxlflash/ext/psl_trace_dump
     /usr/lib*/cxlflash/ext/psl_trace_dump card$i $i >/dev/null
   fi
 done

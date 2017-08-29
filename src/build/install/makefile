@@ -36,12 +36,10 @@ endif
 ifeq (yes,${RPMBUILD})
 PREFIX=${RPM_BUILD_ROOT}
 TEST_PREFIX=${RPM_BUILD_ROOT}
-AFU_PREFIX=${RPM_BUILD_ROOT}
 LIB_PERMS="755"
 else
 PREFIX=${PKGDIR}/install_root
 TEST_PREFIX=${PKGDIR}/test_root
-AFU_PREFIX=${PKGDIR}/afu_root
 LIB_PERMS="644"
 endif
 
@@ -49,9 +47,6 @@ ifeq ($(UNAME),AIX)
 INSTALL=/usr/bin/cp
 INSTALL_ROOT=${PREFIX}/usr/local/cxlflash
 TEST_ROOT=${TEST_PREFIX}/usr/local/cxlflash
-AFU_ROOT=${AFU_PREFIX}/usr/local/cxlflash/afu
-AFU_BIN=${AFU_ROOT}
-AFU_IMAGES_DIR=${AFU_ROOT}/images
 TEST_DIR=${TEST_ROOT}/test
 LIC_DIR=${INSTALL_ROOT}/license
 ETC_DIR=${INSTALL_ROOT}/etc
@@ -59,7 +54,6 @@ EXAMPLES_DIR=${INSTALL_ROOT}/examples
 else
 INSTALL=install
 INSTALL_ROOT=${PREFIX}/usr
-AFU_BIN=${AFU_PREFIX}/usr/bin
 TEST_DIR=${TEST_PREFIX}/usr/bin
 ETC_DIR=${PREFIX}/etc/cxlflash
 DOC_DIR=${PREFIX}/usr/share/doc/cxlflash
@@ -86,18 +80,14 @@ endif
 ifeq (yes,${RPMBUILD})
 SYSTEMD_DIR=${PREFIX}/usr/lib/systemd/system
 UDEV_RULES_DIR=${PREFIX}/usr/lib/udev/rules.d
-AFU_IMAGES_DIR=${AFU_PREFIX}/usr/lib/firmware/cxlflash
 else
 SYSTEMD_DIR=${PREFIX}/lib/systemd/system
 UDEV_RULES_DIR=${PREFIX}/lib/udev/rules.d
-AFU_IMAGES_DIR=${AFU_PREFIX}/lib/firmware/cxlflash
 endif
 
 EXT_DIR=${LIB_DIR}/cxlflash/ext
 MAN3_DIR=${PREFIX}/usr/share/man/man3
 MAN1_DIR=${PREFIX}/usr/share/man/man1
-IMAGE="${RESOURCEDIR}/corsa*"
-IMAGEH="${RESOURCEDIR}/1410*"
 
 
 ifeq ($(UNAME),AIX)
@@ -105,14 +95,11 @@ ifeq ($(UNAME),AIX)
 aixinstall:
 	rm -rf ${PREFIX}
 	rm -rf ${TEST_PREFIX}
-	rm -rf ${AFU_PREFIX}
-	${MAKE} cflash cflash-test cflashimage
 else
 codeinstall:
 	rm -rf ${PREFIX}
 	rm -rf ${TEST_PREFIX}
-	rm -rf ${AFU_PREFIX}
-	${MAKE} cflash cflashimage
+	${MAKE} cflash
 
 testinstall:
 	${MAKE} cflash-test
@@ -147,12 +134,6 @@ install_root_man1:
 	$(foreach f,$(cflash_MAN1_FILES),$(shell help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 	$(foreach f,$(cflash_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
-
-afu_root_man1:
-	$(eval cflashimage_MAN1_FILES:=$(shell find ${AFU_PREFIX} -executable -type f | egrep -v "/pre|/post|\.so"))
-	$(foreach f,$(cflashimage_MAN1_FILES),$(shell help2man --help-option=-h -n $(notdir $(f)) -o $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1 $(f)))
-	$(foreach f,$(cflashimage_MAN1_FILES),$(shell chmod 644 $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
-	$(foreach f,$(cflashimage_MAN1_FILES),$(shell gzip -9fn  $(addprefix $(MAN1_DIR)/,$(notdir $(f))).1))
 
 endif
 
@@ -210,7 +191,6 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlfd ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlflashutil ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/provtool ${BIN_DIR}
-	${INSTALL} -m 644 ${RESOURCEDIR}/ext.tgz ${EXT_DIR}
 	${INSTALL} ${RESOURCEDIR}/capi_flash ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_reset ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_perst ${BIN_DIR}
@@ -252,6 +232,20 @@ endif
 	${INSTALL} ${RESOURCEDIR}/cflash_version ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/machine_info ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_logs_cron ${BIN_DIR}
+	${INSTALL} -m 644 ${RESOURCEDIR}/blacklist-cxlflash.conf ${SHARE_DIR}
+	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGT.csv ${SHARE_DIR}
+	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGTplus.csv ${SHARE_DIR}
+ifneq ($(TARGET_PLATFORM),x86_64)
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_vpd_access ${BIN_DIR}
+endif
+	${INSTALL} ${AFUDIR}/surelock_vpd2rbf ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/reload_all_adapters ${BIN_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_afu_fmt_unit      ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_flash_vm          ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_nsq      ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/psl_trace_dump        ${EXT_DIR}
 
 
 	@#TEMPORARY install - remove this after kernel driver can run workaround
@@ -342,9 +336,6 @@ endif
 	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/run_regression ${TEST_DIR}
-	@#Enable factory flash if the test image is installed
-	${INSTALL} ${RESOURCEDIR}/flash_factory_image ${TEST_DIR}
-
 
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${TESTSRCDIR}/asyncstress64 ${BIN_DIR}
@@ -371,51 +362,6 @@ endif
 	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_fvt_scripts ${TEST_DIR}
-endif
-
-
-FW_FILES := $(notdir $(shell ls ${RESOURCEDIR}/BTV*)) $(notdir $(shell ls ${RESOURCEDIR}/1410*))
-
-${FW_FILES}:
-ifneq ($(TARGET_PLATFORM),x86_64)
-	@mkdir -p ${AFU_IMAGES_DIR}
-ifeq ($(UNAME),AIX)
-	@if [[ -e ${RESOURCEDIR}/$@ ]]; then \
-         echo ${INSTALL} ${RESOURCEDIR}/$@ ${AFU_IMAGES_DIR}; \
-              ${INSTALL} ${RESOURCEDIR}/$@ ${AFU_IMAGES_DIR}; \
-         if [[ $@ =~ gz ]]; then gunzip ${AFU_IMAGES_DIR}/$@; fi; \
-     fi
-else
-	@if [[ -e ${RESOURCEDIR}/$@ ]]; then \
-         echo ${INSTALL} ${RESOURCEDIR}/$@ ${AFU_IMAGES_DIR}; \
-              ${INSTALL} -m 644 ${RESOURCEDIR}/$@ ${AFU_IMAGES_DIR}; \
-         if [[ $@ =~ gz ]]; then gunzip ${AFU_IMAGES_DIR}/$@; fi; \
-     fi
-	@if [[ -e ${AFU_IMAGES_DIR}/$(subst .gz,,$(@)) ]]; then \
-         cd ${AFU_IMAGES_DIR}; /usr/bin/md5sum $(subst .gz,,$(@)) >> afu_fw.md5sum; \
-     fi
-endif
-endif
-
-cflashimage: ${FW_FILES}
-	@mkdir -p ${AFU_BIN}
-	@mkdir -p ${SHARE_DIR}
-	@mkdir -p ${AFU_IMAGES_DIR}
-	@mkdir -p ${MAN1_DIR}
-ifneq ($(UNAME),AIX)
-	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${AFU_IMAGES_DIR}/remove_list
-	${INSTALL} -m 644 ${RESOURCEDIR}/blacklist-cxlflash.conf ${SHARE_DIR}
-	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGT.csv ${SHARE_DIR}
-	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGTplus.csv ${SHARE_DIR}
-ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_vpd_access ${AFU_BIN}
-endif
-	${INSTALL} ${AFUDIR}/surelock_vpd2rbf ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${AFU_BIN}
-	${INSTALL} ${RESOURCEDIR}/reload_all_adapters ${AFU_BIN}
-
-	${MAKE} afu_root_man1
-
 endif
 
 include ${ROOTPATH}/config.mk

@@ -134,6 +134,8 @@ if ($prthelp || (!$dev && ($afu==-1 || $port==-1))) {usage();}
 #check sudo permissions
 if (`id -u` != 0) {print "Run with sudo permissions\n"; exit 0;}
 
+`chmod +x /usr/lib*/cxlflash/ext/flashgt_nvme_override`;
+
 #-------------------------------------------------------------------------------
 # Make stdout autoflush
 #-------------------------------------------------------------------------------

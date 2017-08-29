@@ -103,16 +103,6 @@ then
     echo "INFO:      cxlflash:      $EXISTS_CF_VER"
   fi
 
-  EXISTS_CF_IMAGE_VER=$(dpkg -l cxlflashimage 2>/dev/null |grep cxlflashimage|awk '{print $3}'|awk -F- '{print $1}')
-  if   [[ -z $EXISTS_CF_IMAGE_VER ]]
-  then
-    echo "INFO:      cxlflashimage: missing"
-  elif [[ ! $EXISTS_CF_IMAGE_VER =~ $CF_VER ]]
-  then
-    err_rc=4
-    echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) Required($CF_VER)"
-  fi
-
   EXISTS_CF_TEST_VER=$(dpkg -l cxlflash-test 2>/dev/null |grep cxlflash-test|awk '{print $3}'|awk -F- '{print $1}')
   if [[ ! -z $EXISTS_CF_TEST_VER && ! $EXISTS_CF_TEST_VER =~ $CF_VER ]]
   then
@@ -236,16 +226,6 @@ then
     echo "ERROR:     cxlflash:      Installed($EXISTS_CF_VER) != Required($CF_VER)"
   else
     echo "INFO:      cxlflash:      $EXISTS_CF_VER"
-  fi
-
-  EXISTS_CF_IMAGE_VER=$(rpm -qi cxlflashimage|grep Version|awk -F": " '{print $2}')
-  if   [[ -z $EXISTS_CF_IMAGE_VER ]]
-  then
-    echo "INFO:      cxlflashimage: missing"
-  elif [[ ! $EXISTS_CF_IMAGE_VER =~ $CF_VER ]]
-  then
-    err_rc=4
-    echo "ERROR:     cxlflashimage: Installed($EXISTS_CF_IMAGE_VER) != Required($CF_VER)"
   fi
 
   EXISTS_CF_TEST_VER=$(rpm -qi cxlflash-test | grep Version | awk -F": " '{print $2}')

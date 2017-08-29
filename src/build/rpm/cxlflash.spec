@@ -7,7 +7,7 @@ Name:           cxlflash
 %define tversion %{getenv:TARGET_VERSION}
 
 %if "NULL%{tversion}" == "NULL"
-%define version 4.3.2507
+%define version 4.3.2534
 %else
 %define version %{tversion}
 %endif
@@ -73,37 +73,22 @@ make install_test
 %{_bindir}/machine_info
 %{_bindir}/provtool
 %{_bindir}/run_kv_*
-%{_prefix}/include/*
-%{_prefix}/share/*
-%{_mandir}/man1/*
-
-%post
-%{_libdir}/cxlflash/ext/postinstall
-echo "INFO: enabling cxlfd service for LUN Management"
-systemctl enable cxlfd || echo "WARNING: Unable to enable the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
-systemctl start cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
-
-%preun
-%{_libdir}/cxlflash/ext/preremove
-systemctl stop cxlfd || echo "WARNING: Unable to start the cxlfd service via systemctl. Please enable the cxlfd daemon for LUN management."
-
-%package -n cxlflashimage
-Summary: IBM Data Engine for NoSQL Software Libraries : firmware image support
-Requires: cxlflash
-
-%description -n cxlflashimage
-IBM Data Engine for NoSQL Software Libraries : firmware image support
-
-%files -n cxlflashimage
-%{_prefix}/lib/firmware/cxlflash/*
 %{_bindir}/flash_all_adapters
 %{_bindir}/reload_all_adapters
 %{_bindir}/flashgt_vpd_access
 %{_bindir}/surelock_vpd2rbf
-%{_mandir}/man1/flash_all_adapters.1.gz
-%{_mandir}/man1/reload_all_adapters.1.gz
-%{_mandir}/man1/flashgt_vpd_access.1.gz
-%{_mandir}/man1/surelock_vpd2rbf.1.gz
+%{_prefix}/include/*
+%{_prefix}/share/*
+
+%post
+%{_libdir}/cxlflash/ext/postinstall
+echo "INFO: enabling cxlflash service for LUN Management"
+systemctl enable cxlflash || echo "WARNING: Unable to enable the cxlflash service via systemctl. Please enable the cxlflash daemon for LUN management."
+systemctl start cxlflash || echo "WARNING: Unable to start the cxlflash service via systemctl. Please enable the cxlflash daemon for LUN management."
+
+%preun
+%{_libdir}/cxlflash/ext/preremove
+systemctl stop cxlflash || echo "WARNING: Unable to start the cxlflash service via systemctl. Please enable the cxlflash daemon for LUN management."
 
 %if "%{cxlflash_test}" == "yes"
 %package -n cxlflash-test
@@ -124,7 +109,6 @@ Requires: cxlflash
 %{_bindir}/run_regression
 %{_bindir}/cflash_inject
 %{_bindir}/utils_scripts_tst
-%{_bindir}/flash_factory_image
 
 %endif
 

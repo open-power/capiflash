@@ -94,11 +94,6 @@ if ($out =~ /0628/)
   $rbf="vpd_FlashGTplus.vpdrbf";
 }
 
-my $afu=`ls -d /sys/devices/pci*/*/$target/cxl/card*/afu* 2>/dev/null|awk -F/ '{print \$NF}'`;
-($afu =~ /afu/) || die "Invalid target $target\n";
-chomp $afu;
-$afu .= 'm';
-
 my $card=`ls -d /sys/devices/pci*/*/$target/cxl/card* 2>/dev/null|awk -F/ '{print \$NF}'`;
 ($card =~ /card/) || die "Invalid target $target\n";
 chomp $card;
@@ -115,13 +110,21 @@ if (defined $serial)
 
 if (defined $target)
 {
+  my @devs;
+  my $dev;
+
   for (my $i=0; $i<4; $i++)
   {
-    if ($out =~ /0601/ && $i>1) {last;}
-    `chmod +x /usr/lib*/cxlflash/ext/cxl_afu_fmt_unit`;
-    `/usr/lib*/cxlflash/ext/cxl_afu_fmt_unit -p$i /dev/cxl/$afu`;
-    if ($? != 0) {print "format lun $i failed\n";}
-    else         {print "lun $i cleaned\n";}
+    $dev=`ls /sys/devices/*/*/$target/*/*/host*/target*:*:*/*:$i:*:*/scsi_generic 2>/dev/null|grep ^sg`;
+    $dev && push(@devs,$dev);
+  }
+
+  foreach my $dev (@devs)
+  {
+    chomp $dev;
+    `sg_format --format --early /dev/$dev >/dev/null&`;
+    if ($? != 0) {print "format $dev failed\n";}
+    else         {print "$dev format started\n";}
   }
 }
 

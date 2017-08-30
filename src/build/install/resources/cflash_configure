@@ -99,7 +99,7 @@ then
  EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
  if [[ $EXISTS_LVL =~ ibmcapikv-test ]]
  then
-   dpkg -r ibmcapikv-test
+   dpkg -P ibmcapikv-test
  fi
  if [[ $EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER ]]
  then
@@ -109,17 +109,17 @@ then
  EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  afuimage |i  cxlflashimage ")
  if [[ $EXISTS_LVL =~ afuimage ]]
  then
-   dpkg -r afuimage
+   dpkg -P afuimage
  fi
  if [[ $EXISTS_LVL =~ cxlflashimage && ! $EXISTS_LVL =~ $CF_VER ]]
  then
-   dpkg -r cxlflashimage
+   dpkg -P cxlflashimage
  fi
 
  EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  ibmcapikv |i  cxlflash ")
  if [[ $EXISTS_LVL =~ ibmcapikv ]]
  then
-   dpkg -r ibmcapikv
+   dpkg -P ibmcapikv
  fi
  if [[ $EXISTS_LVL =~ cxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
  then

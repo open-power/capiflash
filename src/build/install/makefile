@@ -185,11 +185,8 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_afu_fmt_unit      ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_flash_vm          ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_nsq      ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/psl_trace_dump        ${EXT_DIR}
+	${INSTALL} -m 644 ${RESOURCEDIR}/cap.gz ${EXT_DIR}
+	${INSTALL} -m 644 ${RESOURCEDIR}/ptd.gz ${EXT_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_dump ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_status ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_temp ${BIN_DIR}
@@ -356,6 +353,7 @@ ifeq ($(UNAME),AIX)
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
+	${INSTALL} ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}
 endif
 	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}

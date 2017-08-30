@@ -66,7 +66,6 @@ make install_test
 %{_bindir}/cflash_*
 %{_bindir}/cflashutils
 %{_bindir}/cxl*
-%{_bindir}/flashgt_temp
 %{_bindir}/ioppt
 %{_bindir}/ioppts.qd
 %{_bindir}/kv_perf
@@ -75,7 +74,7 @@ make install_test
 %{_bindir}/run_kv_*
 %{_bindir}/flash_all_adapters
 %{_bindir}/reload_all_adapters
-%{_bindir}/flashgt_vpd_access
+%{_bindir}/flashgt_*
 %{_bindir}/surelock_vpd2rbf
 %{_prefix}/include/*
 %{_prefix}/share/*

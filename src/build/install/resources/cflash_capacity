@@ -43,7 +43,7 @@ my $verbose;
 sub usage()
 {
   print "\n";
-  print "Usage: cflash_capacity [-t type]                         \n";
+  print "Usage: cflash_capacity [-t type] [-S] [-v]                  \n";
   print "    -t or --type      : Type to list                        \n";
   print "    -S or --superpipe : use only devs in superpipe mode     \n";
   print "    -v                : verbose output                      \n";
@@ -94,7 +94,7 @@ if (`id -u` != 0)
 my @cards = `lspci |grep $type`;
 my $cmd="";
 my $sym;
-my $nsq;
+my $cap;
 
 for my $cardN (@cards)
 {
@@ -138,10 +138,13 @@ for my $cardN (@cards)
         printf("/dev/%s: %d    ",$pdev, $size);
         if ($type =~ /0601/ || $type =~ /0628/)
         {
-          `chmod +x /usr/lib*/cxlflash/ext/flashgt_nvme_nsq`;
-          $nsq=`/usr/lib*/cxlflash/ext/flashgt_nvme_nsq --port $i /dev/cxl/$afu`;
-          chomp $nsq;
-          printf("    $nsq");
+          my @gz=glob('/usr/lib*/cxlflash/ext/c*gz');
+          @gz && -e $gz[0] && `gunzip -f $gz[0]`;
+          @gz=glob('/usr/lib*/cxlflash/ext/c*');
+          -e $gz[0] && `chmod +x $gz[0]`;
+          $cap=`$gz[0] --port $i /dev/cxl/$afu`;
+          chomp $cap;
+          printf("    $cap");
         }
         printf("\n");
       }

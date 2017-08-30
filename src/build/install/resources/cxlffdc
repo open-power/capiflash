@@ -33,6 +33,8 @@ PREVDIR=/var/log/cflash/prev
 MISCDIR=/var/log/cflash/misc
 TARBALL=/var/log/cflash/cxlffdc."$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)".tgz
 AFUDIR=/usr/bin
+pgz=$(ls /usr/lib/cxlflash/ext/p*gz 2>/dev/null)
+ptd=/usr/lib/cxlflash/ext/ptd
 
 ##################
 #Determine distro to differentiate dpkg | rpm
@@ -104,11 +106,12 @@ do
   mkdir card$i;
   if [[ $VM ]]
   then
-    printf "\n ERROR:  psl_trace_dump on VM Not Supported! \n\n"
+    printf "\n INFO:  psl trace on VM Not Supported! \n\n"
   else
     echo "Dumping PSL data for card$i"
-    chmod +x /usr/lib*/cxlflash/ext/psl_trace_dump
-    /usr/lib*/cxlflash/ext/psl_trace_dump card$i $i >/dev/null
+    if [[ -f ${pgz} ]]; then gunzip -f ${pgz}; fi
+    chmod +x ${ptd} 2>/dev/null;
+    ${ptd} card$i $i >/dev/null
   fi
 done
 

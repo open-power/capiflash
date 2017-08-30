@@ -1,6 +1,6 @@
 IBM Data Engine for NoSQL - Power System Edition
 
-Please review the licenses available in /usr/share/doc/cxlflash/license
+Please review the licenses available in /usr/share/cxlflash/license
 
 FlashSystem ssh key configuration no longer required for this solution. Mapping or unmapping LUNS may be performed via the FlashSystem GUI.
 

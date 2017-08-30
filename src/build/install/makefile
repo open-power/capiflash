@@ -185,9 +185,15 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_afu_fmt_unit      ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_flash_vm          ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_nsq      ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${EXT_DIR}
+	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/psl_trace_dump        ${EXT_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_dump ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_status ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_temp ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_vpd_access ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlfd ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlflashutil ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/provtool ${BIN_DIR}
@@ -235,17 +241,9 @@ endif
 	${INSTALL} -m 644 ${RESOURCEDIR}/blacklist-cxlflash.conf ${SHARE_DIR}
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGT.csv ${SHARE_DIR}
 	${INSTALL} -m 644 ${AFUDIR}/vpd_FlashGTplus.csv ${SHARE_DIR}
-ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_vpd_access ${BIN_DIR}
-endif
 	${INSTALL} ${AFUDIR}/surelock_vpd2rbf ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/flash_all_adapters ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/reload_all_adapters ${BIN_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_afu_fmt_unit      ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/cxl_flash_vm          ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_nsq      ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${EXT_DIR}
-	${INSTALL} -m 644 ${STRIP_FLAG} ${RESOURCEDIR}/psl_trace_dump        ${EXT_DIR}
 
 
 	@#TEMPORARY install - remove this after kernel driver can run workaround

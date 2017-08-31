@@ -44,11 +44,9 @@ then
   exit 0
 fi
 
-mkdir -p /etc/cxlflash
 mkdir -p /usr/src/cxlflash
 mkdir -p /usr/share/cxlflash
 
-cp -R $1/pkg/install_root/etc/*         /etc/
 cp -R $1/pkg/install_root/lib/*         /lib/
 cp -R $1/pkg/install_root/usr/*         /usr/
 if [[ -d $1/pkg/test_root ]]; then

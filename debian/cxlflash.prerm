@@ -31,10 +31,6 @@ CRON_FILE=/etc/cron.hourly/cflash_logs_cron
 ETC_DIR=/etc/cxlflash
 SIO_FILE=$ETC_DIR/sioluntable.ini
 
-if [[ -e /usr/lib64 ]]; then EXT_DIR=/usr/lib64/cxlflash/ext;
-else                         EXT_DIR=/usr/lib/cxlflash/ext;
-fi
-
 if [[ -e $CRON_FILE ]]; then rm -f $CRON_FILE; fi
 
 
@@ -44,15 +40,6 @@ fi
 if dpkg-statoverride --list $SIO_FILE >/dev/null 2>&1 ]; then
   dpkg-statoverride --remove $SIO_FILE
 fi
-
-#cleanup ext
-FILES="\
-cxl_afu_fmt_unit
-cxl_flash_vm
-flashgt_nvme_nsq
-flashgt_nvme_override
-psl_trace_dump"
-for f in ${FILES}; do if [[ -f ${EXT_DIR}/$f ]]; then rm -f ${EXT_DIR}/$f; fi; done
 
 #cleanup migration links
 FILES="\

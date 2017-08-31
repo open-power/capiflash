@@ -49,13 +49,11 @@ INSTALL_ROOT=${PREFIX}/usr/local/cxlflash
 TEST_ROOT=${TEST_PREFIX}/usr/local/cxlflash
 TEST_DIR=${TEST_ROOT}/test
 LIC_DIR=${INSTALL_ROOT}/license
-ETC_DIR=${INSTALL_ROOT}/etc
 EXAMPLES_DIR=${INSTALL_ROOT}/examples
 else
 INSTALL=install
 INSTALL_ROOT=${PREFIX}/usr
 TEST_DIR=${TEST_PREFIX}/usr/bin
-ETC_DIR=${PREFIX}/etc/cxlflash
 DOC_DIR=${PREFIX}/usr/share/doc/cxlflash
 EXAMPLES_DIR=${DOC_DIR}/examples
 LIC_DIR=${PREFIX}/usr/share/cxlflash/license
@@ -139,7 +137,6 @@ endif
 
 cflash: ${LIC_FILES} ${MAN3_FILES}
 	@mkdir -p ${BIN_DIR}
-	@mkdir -p ${ETC_DIR}
 	@mkdir -p ${LIB_DIR}
 	@mkdir -p ${EXT_DIR}
 	@mkdir -p ${LIC_DIR}
@@ -353,7 +350,6 @@ ifeq ($(UNAME),AIX)
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
-	${INSTALL} ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}
 endif
 	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}

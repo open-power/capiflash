@@ -41,9 +41,10 @@ opt=""
 AFUVER_DIR=/usr/share/cxlflash
 
 #determine distro
-if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
-if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
-if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];          then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
 
 #if [[ $redhat ]]; then
 RESET_PL=cflash_perst
@@ -88,7 +89,7 @@ findloc()
         printf "       ERROR, Unable to find device tree special file path for PCI device %s: %s\n\n" $1 $loccodepath
         return 4
     fi
-    loccode=$(cat $loccodepath)
+    loccode=$(tr '\000' '\012' <$loccodepath)
     if [[ -z "$loccode" ]]
     then
         printf "       ERROR, Location code is invalid for PCI device %s\n\n" $1

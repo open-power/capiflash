@@ -24,6 +24,8 @@
 #
 # IBM_PROLOG_END_TAG
 
+if [[ $1 = "-h" || TEST$1 = TEST ]]; then echo "Usage: <sb_root_dir>"; exit 0; fi
+
 if [[ EMPTY$(cat /etc/os-release 2>/dev/null) =~ Red ]];    then redhat=1; fi
 if [[ EMPTY$(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]]; then ubuntu=1; fi
 
@@ -46,8 +48,14 @@ fi
 
 mkdir -p /usr/src/cxlflash
 mkdir -p /usr/share/cxlflash
+mkdir -p /etc/cxlflash
 
+if [[ -e $1/pkg/install_root/lib ]]; then
 cp -R $1/pkg/install_root/lib/*         /lib/
+fi
+if [[ -e $1/pkg/install_root/lib64 ]]; then
+cp -R $1/pkg/install_root/lib64/*       /lib64/
+fi
 cp -R $1/pkg/install_root/usr/*         /usr/
 if [[ -d $1/pkg/test_root ]]; then
 cp -R $1/pkg/test_root/usr/*            /usr/

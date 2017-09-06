@@ -138,13 +138,13 @@ for my $cardN (@cards)
         printf("/dev/%s: %d    ",$pdev, $size);
         if ($type =~ /0601/ || $type =~ /0628/)
         {
-          my @gz=glob('/usr/lib*/cxlflash/ext/c*gz');
-          @gz && -e $gz[0] && `gunzip -f $gz[0]`;
-          @gz=glob('/usr/lib*/cxlflash/ext/c*');
-          -e $gz[0] && `chmod +x $gz[0]`;
-          $cap=`$gz[0] --port $i /dev/cxl/$afu`;
-          chomp $cap;
-          printf("    $cap");
+          my $cap="/usr/bin/flashgt_nvme_nsq";
+          if (-e $cap)
+          {
+            my $out=`$cap --port $i /dev/cxl/$afu`;
+            chomp $out;
+            printf("    $out");
+          }
         }
         printf("\n");
       }

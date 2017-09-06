@@ -1,7 +1,7 @@
 Source: cxlflash
 Maintainer: IBM Corp. <mpvageli@us.ibm.com>
 Uploaders: Rodrigo R. Galvao <rosattig@br.ibm.com>
-Section: non-free/utils
+Section: utils
 XS-Autobuild: yes
 Priority: optional
 Standards-Version: 4.0.1

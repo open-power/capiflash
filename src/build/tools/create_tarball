@@ -71,7 +71,7 @@ then
   if [[ -e debian/changelog ]]; then rm -f debian/changelog; fi
   dch --create --distribution xenial --package cxlflash -v $ver-${ITER} "latest update"
   if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
-  if [[ $CXLFLASH_TEST = yes ]]; then cat debian/cxlflash-test.control >> debian/control; fi
+  if [[ $CXLFLASH_ALL = yes ]]; then cat debian/control.add >> debian/control; fi
 elif [[ $rpm ]]
 then
   #remove deb

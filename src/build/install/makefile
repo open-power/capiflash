@@ -36,10 +36,19 @@ endif
 ifeq (yes,${RPMBUILD})
 PREFIX=${RPM_BUILD_ROOT}
 TEST_PREFIX=${RPM_BUILD_ROOT}
+AFU_PREFIX=${RPM_BUILD_ROOT}
 LIB_PERMS="755"
 else
 PREFIX=${PKGDIR}/install_root
 TEST_PREFIX=${PKGDIR}/test_root
+AFU_PREFIX=${PKGDIR}/afu_root
+endif
+
+ifeq (redhat,${TARGET_OS})
+LIB_DIR=${INSTALL_ROOT}/lib64
+LIB_PERMS="755"
+else
+LIB_DIR=${INSTALL_ROOT}/lib
 LIB_PERMS="644"
 endif
 
@@ -47,6 +56,9 @@ ifeq ($(UNAME),AIX)
 INSTALL=/usr/bin/cp
 INSTALL_ROOT=${PREFIX}/usr/local/cxlflash
 TEST_ROOT=${TEST_PREFIX}/usr/local/cxlflash
+AFU_ROOT=${AFU_PREFIX}/usr/local/cxlflash/afu
+AFU_BIN=${AFU_ROOT}
+AFU_IMAGES_DIR=${AFU_ROOT}/images
 TEST_DIR=${TEST_ROOT}/test
 LIC_DIR=${INSTALL_ROOT}/license
 EXAMPLES_DIR=${INSTALL_ROOT}/examples
@@ -57,6 +69,7 @@ TEST_DIR=${TEST_PREFIX}/usr/bin
 DOC_DIR=${PREFIX}/usr/share/doc/cxlflash
 EXAMPLES_DIR=${DOC_DIR}/examples
 LIC_DIR=${PREFIX}/usr/share/cxlflash/license
+AFU_BIN=${AFU_PREFIX}/usr/bin
 endif
 
 LIBSRCDIR=${IMGDIR}
@@ -69,39 +82,19 @@ BIN_DIR=${INSTALL_ROOT}/bin
 INC_DIR=${INSTALL_ROOT}/include
 SHARE_DIR=${INSTALL_ROOT}/share/cxlflash
 
-ifeq (yes,${RPMBUILD64})
-LIB_DIR=${INSTALL_ROOT}/lib64
-else
-LIB_DIR=${INSTALL_ROOT}/lib
-endif
-
 ifeq (yes,${RPMBUILD})
 SYSTEMD_DIR=${PREFIX}/usr/lib/systemd/system
 UDEV_RULES_DIR=${PREFIX}/usr/lib/udev/rules.d
+AFU_IMAGES_DIR=${AFU_PREFIX}/usr/lib/firmware/cxlflash
 else
 SYSTEMD_DIR=${PREFIX}/lib/systemd/system
 UDEV_RULES_DIR=${PREFIX}/lib/udev/rules.d
+AFU_IMAGES_DIR=${AFU_PREFIX}/lib/firmware/cxlflash
 endif
 
 EXT_DIR=${LIB_DIR}/cxlflash/ext
 MAN3_DIR=${PREFIX}/usr/share/man/man3
 MAN1_DIR=${PREFIX}/usr/share/man/man1
-
-
-ifeq ($(UNAME),AIX)
-.PHONY: aixinstall
-aixinstall:
-	rm -rf ${PREFIX}
-	rm -rf ${TEST_PREFIX}
-else
-codeinstall:
-	rm -rf ${PREFIX}
-	rm -rf ${TEST_PREFIX}
-	${MAKE} cflash
-
-testinstall:
-	${MAKE} cflash-test
-endif
 
 #dont strip symbols if DBG is set
 ifeq (T${DBG},T)
@@ -135,10 +128,9 @@ install_root_man1:
 
 endif
 
-cflash: ${LIC_FILES} ${MAN3_FILES}
+cxlflash: ${LIC_FILES} ${MAN3_FILES}
 	@mkdir -p ${BIN_DIR}
 	@mkdir -p ${LIB_DIR}
-	@mkdir -p ${EXT_DIR}
 	@mkdir -p ${LIC_DIR}
 	@mkdir -p ${SHARE_DIR}
 	@mkdir -p ${EXAMPLES_DIR}
@@ -182,8 +174,6 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} -m 644 ${RESOURCEDIR}/cap.gz ${EXT_DIR}
-	${INSTALL} -m 644 ${RESOURCEDIR}/ptd.gz ${EXT_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_dump ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_status ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_temp ${BIN_DIR}
@@ -203,6 +193,7 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${RESOURCEDIR}/cflash_perfcheck ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_mfg_init ${BIN_DIR}
 ifeq (yes,${RPMBUILD})
+	@mkdir -p ${EXT_DIR}
 	${INSTALL} ${RESOURCEDIR}/postinstall ${EXT_DIR}
 	${INSTALL} ${RESOURCEDIR}/preremove ${EXT_DIR}
 endif
@@ -257,6 +248,7 @@ endif
      fi
 	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${SHARE_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_configure ${PKGDIR}
+	${INSTALL} ${RESOURCEDIR}/cflash_depends ${PKGDIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_configure ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_depends ${BIN_DIR}
 	${INSTALL} ${RESOURCEDIR}/cxlffdc.debug ${BIN_DIR}
@@ -298,10 +290,12 @@ endif
 	@#Linux Readme
 	${INSTALL} -m 644 ${RESOURCEDIR}/readme.txt ${DOC_DIR}
 
+ifneq ($(CXLFLASH_ALL),no)
 	${MAKE} install_root_man1
 endif
+endif
 
-cflash-test:
+cxlflash-test:
 	@#TEST ONLY CONTENT - DO NOT SHIP
 	@mkdir -p ${TEST_DIR}
 ifneq ($(TARGET_PLATFORM),x86_64)
@@ -351,9 +345,43 @@ else
 ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
 endif
+	@if [[ -e ${RESOURCEDIR}/flashgt_nvme_override ]]; then \
+       echo ${INSTALL} ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}; \
+       ${INSTALL} ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}; \
+     fi
 	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_fvt_scripts ${TEST_DIR}
+endif
+
+ifneq ($(UNAME),AIX)
+ifeq ($(TARGET_PLATFORM),x86_64)
+cxlflashimage:
+	@mkdir -p ${AFU_IMAGES_DIR}
+else
+FW_FILES := $(notdir $(wildcard ${RESOURCEDIR}/BTV*)) $(notdir $(wildcard ${RESOURCEDIR}/1410*))
+${FW_FILES}:
+	@mkdir -p ${AFU_IMAGES_DIR}
+	@if [[ -e ${RESOURCEDIR}/$@ ]]; then \
+         echo ${INSTALL} ${RESOURCEDIR}/$@ ${AFU_IMAGES_DIR}; \
+              ${INSTALL} -m 644 ${RESOURCEDIR}/$@ ${AFU_IMAGES_DIR}; \
+         if [[ $@ =~ gz ]]; then gunzip -f ${AFU_IMAGES_DIR}/$@; fi; \
+     fi
+	@if [[ -e ${AFU_IMAGES_DIR}/$(subst .gz,,$(@)) ]]; then \
+         cd ${AFU_IMAGES_DIR}; /usr/bin/md5sum $(subst .gz,,$(@)) >> afu_fw.md5sum; \
+     fi
+
+cxlflashimage: ${FW_FILES}
+	@mkdir -p ${AFU_BIN}
+	@if [[ -e ${RESOURCEDIR}/flashgt_nvme_nsq ]]; then \
+       echo ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_nsq ${AFU_BIN}; \
+       ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_nsq ${AFU_BIN}; \
+     fi
+	@if [[ -e ${RESOURCEDIR}/psl_trace_dump ]]; then \
+       echo ${INSTALL} ${RESOURCEDIR}/psl_trace_dump ${AFU_BIN}; \
+       ${INSTALL} ${RESOURCEDIR}/psl_trace_dump ${AFU_BIN}; \
+     fi
+endif
 endif
 
 include ${ROOTPATH}/config.mk

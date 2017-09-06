@@ -50,9 +50,10 @@ ls ${LIB_DIR}/libcflsh_block* >/dev/null 2>&1; if [[ $? -eq 0 ]]; then liclib=ye
 
 ##################################
 # Determine distro
-if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];               then ubuntu=1; fi
-if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];         then redhat=1; fi
-if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];          then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
 
 ################################################################################
 ################################################################################
@@ -150,7 +151,7 @@ then
  echo "------------------------------"
  echo -e "INFO: Checking OS version\n"
 
- if [[ $(lsb_release -a 2>/dev/null|grep Description|awk '{print $3}'|awk -F. '{print $1}') -lt 16 ]]
+ if [[ $(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}' | awk -F. '{print $1}') -lt 16 ]]
  then
    echo "The linux OS must be updated to at least 16.04.1"
    echo -e "Update the OS and retry, aborting...\n"

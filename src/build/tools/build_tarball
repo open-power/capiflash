@@ -25,11 +25,11 @@
 # IBM_PROLOG_END_TAG
 
 if [[ $1 =~ -h || $1 =~ help ]]; then
-  echo "Usage: [-rpm] [-test]"
+  echo "Usage: [-rpm] [-all]"
   echo "   $0             *build debian"
-  echo "   $0 -test       *build debian + test pkg"
+  echo "   $0 -all        *build debian + image + test pkg"
   echo "   $0 -rpm        *build rpm"
-  echo "   $0 -rpm -test  *build rpm + test pkg"
+  echo "   $0 -rpm -all   *build rpm + image + test pkg"
   exit 0
 fi
 
@@ -38,7 +38,7 @@ source env.bash >/dev/null 2>&1
 cd $SURELOCKROOT
 
 if [[ $1 =~ rpm  || $2 =~ rpm ]];  then rpm=1; else deb=1; fi
-if [[ $1 =~ test || $2 =~ test ]]; then export CXLFLASH_TEST=yes; fi
+if [[ $1 =~ all || $2 =~ all ]];   then export CXLFLASH_ALL=yes; fi
 
 if [[ $deb ]]
 then
@@ -51,7 +51,7 @@ then
   tar -xzf *.gz
   cd ${BDIR}/cxlflash_*
 
-  debuild -eBLOCK_FILEMODE_OVERRIDE -eCXLFLASH_TEST -uc -us -d
+  debuild -eBLOCK_FILEMODE_OVERRIDE -eCXLFLASH_ALL -uc -us -d
 
 else
 

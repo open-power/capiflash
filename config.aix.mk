@@ -38,6 +38,9 @@ buildall: default
 allpkgs: buildall
 	${MAKE} packaging
 
+configure:
+	@$(SURELOCKROOT)/src/build/install/resources/gtest_add
+
 run_fvt:
 	${MAKE} fvt
 
@@ -460,10 +463,10 @@ tests:
 	${MAKE} -j10 test
 
 install:
-	cd ${ROOTPATH}/src/build/install && ${MAKE} aixinstall
+	cd ${ROOTPATH}/src/build/install && ${MAKE} cxlflash && ${MAKE} cxlflash-test
 
 packaging: install
-	cd ${ROOTPATH}/src/build/packaging && ${MAKE} aixpkg
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} aixcxlflash && ${MAKE} aixcxlflash-test
 
 cscope:
 	@mkdir -p ${ROOTPATH}/obj/cscope

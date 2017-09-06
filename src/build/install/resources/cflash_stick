@@ -134,8 +134,8 @@ my $ubuntu=0;
 my $redhat=0;
 
 #determine distro
-if ( `cat /etc/redhat-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}
-if ( `lsb_release -a 2>/dev/null` =~ "Ubuntu" ) {$ubuntu=1;}
+if ( `cat /etc/os-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}
+if ( `cat /etc/os-release 2>/dev/null` =~ "Ubuntu" )  {$ubuntu=1;}
 
 #ensure sg_write_buffer is available
 if ( $redhat ) {$cmd="rpm -qa | grep -v udev|grep -v libs | grep sg3_utils >/dev/null "; }

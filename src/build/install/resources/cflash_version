@@ -33,9 +33,10 @@ if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 export PATH=$PATH:/usr/bin
 
 #determine distro
-if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
-if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
-if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];          then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
 
 unset CF_VER
 if [[ -e ver.txt ]]
@@ -57,8 +58,7 @@ then
   K_VER_GRUB=4.4.0-36-generic
 elif [[ $redhat ]]
 then
-  #TODO: Check the Red Hat Versions correct to targetted release
-  OS_VER=7.3; #VERSION_ID from /etc/os-release
+  OS_VER=7.3
   K_VER=3.10.0
   K_VER_GRUB=3.10.0
 fi
@@ -72,20 +72,15 @@ then
     CF_VER=$(dpkg -l cxlflash 2>/dev/null |grep "cxlflash"|awk '{print $3}'|awk -F- '{print $1}')
   fi
 
-  EXISTS_OS_VER=$(lsb_release -a 2>&1|grep -v LSB|grep Description|awk '{print $3}')
+  EXISTS_OS_VER=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
   n1=$(echo $EXISTS_OS_VER|awk -F. '{print $1}')
   n2=$(echo $EXISTS_OS_VER|awk -F. '{print $2}')
-  if [[ ! $EXISTS_OS_VER =~ $OS_VER && ! $EXISTS_OS_VER =~ 17.04 ]]
+  if [[ $n1 -lt 16 || ($n1 -eq 16 && $n2 -lt 4) ]]
   then
-    if [[ $n1 -lt 16 || ($n1 -eq 16 && $n2 -lt 4) ]]
-    then
-      err_rc=1
-      echo "ERROR:     OS:            Installed($EXISTS_OS_VER) => Required($OS_VER)"
-    else
-      echo "INFO:      OS:            Installed($EXISTS_OS_VER) => Recommended($OS_VER)"
-    fi
+    err_rc=1
+    echo   "ERROR:     OS:            Installed($EXISTS_OS_VER) => Required(>=$OS_VER)"
   else
-    echo   "INFO:      OS:            $EXISTS_OS_VER"
+    echo   "INFO:      OS:            $(grep ^VERSION= /etc/os-release|awk -F'"' '{print $2}')"
   fi
 
   if [[ ! -z $1 ]]; then K_VER=$1; fi
@@ -141,11 +136,8 @@ then
         ($n1 -eq 4 && $n2 -lt 4) ||
         ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -lt 36) ]]
   then
-    if [[ ! ($n1 -eq 4 && $n2 -eq 4 && $n3 -eq 0 && $n4 -gt 36) ]]
-    then
-      err_rc=6
-      echo "ERROR:     Grub:          grub.cfg($EXISTS_GRUB_VER) => Required($K_VER_GRUB) or newer"
-    fi
+    err_rc=6
+    echo "ERROR:     Grub:          grub.cfg($EXISTS_GRUB_VER) => Required($K_VER_GRUB) or newer"
   fi
 
  if [[ -e /usr/bin/capi_flash ]]
@@ -206,11 +198,13 @@ then
   fi
 
   EXISTS_OS_VER=$(grep "VERSION_ID" /etc/os-release | awk -F'"' '{print $2}')
-  if [[ ! $EXISTS_OS_VER =~ $OS_VER ]]
+  n1=$(echo $EXISTS_OS_VER|awk -F. '{print $1}')
+  n2=$(echo $EXISTS_OS_VER|awk -F. '{print $2}')
+  if [[ $n1 -lt 7 || ($n1 -eq 7 && $n2 -lt 3) ]]
   then
     echo "WARNING:   OS:            Installed($EXISTS_OS_VER) must be >= $OS_VER"
   else
-    echo "INFO:      OS:            $EXISTS_OS_VER"
+    echo "INFO:      OS:            $(grep ^VERSION= /etc/os-release|awk -F'"' '{print $2}')"
   fi
 
   if [[ ! -z $1 ]]; then K_VER=$1; fi
@@ -245,13 +239,15 @@ then
   fi
 
   EXISTS_GRUB_VER=$(grep initrd /boot/grub2/grub.cfg  | head -1 | awk -Finitramfs- '{print $2}')
-  if [[ ! $EXISTS_GRUB_VER =~ $K_VER_GRUB ]]
+  n1=$(echo $EXISTS_GRUB_VER|awk -F. '{print $1}')
+  n2=$(echo $EXISTS_GRUB_VER|awk -F. '{print $2}')
+  if [[ ($n1 -lt 3) || ($n1 -eq 3 && $n2 -lt 10) ]]
   then
     err_rc=6
     echo "WARNING:   Grub:          grub.cfg($EXISTS_GRUB_VER) != Required($K_VER_GRUB)"
   fi
 
- if [[ -e /usr/bin/capi_flash ]]
+  if [[ -e /usr/bin/capi_flash ]]
   then
     IFS=$'\n'
     adaps=($(capi_flash -l 2>/dev/null))

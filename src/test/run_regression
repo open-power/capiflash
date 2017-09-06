@@ -43,9 +43,10 @@ success=1
 #######################################################################################
 #determine distro
 #######################################################################################
-if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
-if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
-if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];          then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
 
 #######################################################################################
 # setup output dir/filename

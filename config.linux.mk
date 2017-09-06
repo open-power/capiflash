@@ -38,7 +38,7 @@ default:
 ifneq ($(CXLFLASH_DOC),no)
 	${MAKE} docs
 endif
-ifeq ($(CXLFLASH_TEST),yes)
+ifeq ($(CXLFLASH_ALL),yes)
 	${MAKE} -j10 test_pass
 else
 	@if [[ dir_$(notdir $(PWD)) = dir_test ]]; then ${MAKE} -j10 test_pass; fi
@@ -63,24 +63,32 @@ prodall: prod
 
 prodpkgs: prod
 	${MAKE} pkg_code
+	${MAKE} pkg_image
 
 allpkgs: prodall
 	${MAKE} pkg_code
+	${MAKE} pkg_image
 	${MAKE} pkg_test
 
 configure:
 	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_depends
+	@$(SURELOCKROOT)/src/build/install/resources/gtest_add
 
-installsb: default install_code
+installsb: default
+ifneq ($(CXLFLASH_ALL),no)
 	${MAKE} -j10 test_pass
+	${MAKE} install_code
+	${MAKE} install_image
 	${MAKE} install_test
+endif
 	@echo ""
 	@echo "INSTALLing from $(SURELOCKROOT)"
 	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_installsb $(SURELOCKROOT)
 
 install:
 	${MAKE} install_code
-ifeq ($(CXLFLASH_TEST),yes)
+ifeq ($(CXLFLASH_ALL),yes)
+	${MAKE} install_image
 	${MAKE} install_test
 endif
 
@@ -126,13 +134,8 @@ VPATH += $(subst $(SPACE),:,$(VPATH_DIRS))
 UD_DIR = ${ROOTPATH}/obj/modules/userdetails
 UD_OBJS = ${UD_DIR}*.o ${UD_DIR}/*.so ${UD_DIR}/*.a
 
-ifneq (${SURELOCKROOT}/lib,$(findstring ${SURELOCKROOT}/lib,${LD_LIBRARY_PATH}))
-export LD_LIBRARY_PATH+=:${SURELOCKROOT}/lib:$(strip $(wildcard /usr/lib/powerpc*gnu)):/usr/lib64
-endif
-
 PGMDIR        = ${ROOTPATH}/obj/programs
 TESTDIR       = ${ROOTPATH}/obj/tests
-IMGDIR        = ${ROOTPATH}/lib
 PKGDIR        = ${ROOTPATH}/pkg
 GTESTS_DIR    = $(addprefix $(TESTDIR)/, $(GTESTS))
 GTESTS_NM_DIR = $(addprefix $(TESTDIR)/, $(GTESTS_NO_MAIN))
@@ -141,6 +144,20 @@ PROGRAMS      = $(addprefix ${PGMDIR}/, ${PGMS})
 BITS          =
 CFLAGS        =
 LDFLAGS       = -Wl,-Bsymbolic-functions -Wl,-z,relro,-z,now
+
+ifeq (redhat,${TARGET_OS})
+IMGDIR        = ${ROOTPATH}/lib64
+LIBPATHS      = -L${ROOTPATH}/lib64
+SLIB          = ${SURELOCKROOT}/lib64
+else
+IMGDIR        = ${ROOTPATH}/lib
+LIBPATHS      = -L${ROOTPATH}/lib
+SLIB          = ${SURELOCKROOT}/lib
+endif
+
+ifneq (${SURELOCKROOT}/lib,$(findstring ${SURELOCKROOT}/lib,${LD_LIBRARY_PATH}))
+export LD_LIBRARY_PATH+=:${SLIB}:$(strip $(wildcard /usr/lib/powerpc*gnu)):/usr/lib64
+endif
 
 ifdef MODULE
 OBJDIR            = ${ROOTPATH}/obj/modules/${MODULE}
@@ -207,10 +224,8 @@ endif
 CFLAGS   += ${LCFLAGS}
 CFLAGS   += -DGITREVISION='"${GITREVISION}"'
 CFLAGS   += -Wno-unused-result -fstack-protector-strong -Wformat
-LIBPATHS  = -L${ROOTPATH}/lib
 LINKLIBS += -lpthread -ludev
-
-MODLIBS += -lpthread -ludev
+MODLIBS  += -lpthread -ludev
 
 #if ALLOW_WARNINGS is NOT defined, we assume we are compiling production code
 #as such, we adhere to strict compile flags. If this is defined then we warn
@@ -456,16 +471,22 @@ tests:
 	${MAKE} -j10 test_pass
 
 install_code:
-	cd ${ROOTPATH}/src/build/install && ${MAKE} codeinstall
+	cd ${ROOTPATH}/src/build/install && ${MAKE} cxlflash
+
+install_image:
+	cd ${ROOTPATH}/src/build/install && ${MAKE} cxlflashimage
 
 install_test:
-	cd ${ROOTPATH}/src/build/install && ${MAKE} testinstall
+	cd ${ROOTPATH}/src/build/install && ${MAKE} cxlflash-test
 
 pkg_code: install_code
-	cd ${ROOTPATH}/src/build/packaging && ${MAKE} codepkg
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} cxlflash
+
+pkg_image: install_image
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} cxlflashimage
 
 pkg_test: install_test
-	cd ${ROOTPATH}/src/build/packaging && ${MAKE} testpkg
+	cd ${ROOTPATH}/src/build/packaging && ${MAKE} cxlflash-test
 
 pkg_tar:
 	cd ${ROOTPATH}/src/build/packaging && ${MAKE} tarpkgs

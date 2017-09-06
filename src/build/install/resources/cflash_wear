@@ -74,8 +74,8 @@ if ($ARGV[0])
 if ($prthelp) {usage();}
 
 #determine distro
-if ( `cat /etc/redhat-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}
-if ( `lsb_release -a 2>/dev/null` =~ "Ubuntu" ) {$ubuntu=1;}
+if ( `cat /etc/os-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}
+if ( `cat /etc/os-release 2>/dev/null` =~ "Ubuntu" )  {$ubuntu=1;}
 
 #check sudo permissions
 (`id -u` == 0) || die "Run with sudo permissions";

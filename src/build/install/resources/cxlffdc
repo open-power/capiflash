@@ -32,17 +32,17 @@ DATADIR=/var/log/cflash/cxlffdc
 PREVDIR=/var/log/cflash/prev
 MISCDIR=/var/log/cflash/misc
 TARBALL=/var/log/cflash/cxlffdc."$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)".tgz
-AFUDIR=/usr/bin
+BINDIR=/usr/bin
 pgz=$(ls /usr/lib/cxlflash/ext/p*gz 2>/dev/null)
 ptd=/usr/lib/cxlflash/ext/ptd
 
 ##################
 #Determine distro to differentiate dpkg | rpm
 ##################
-if [[ $(lsb_release -a 2>/dev/null) =~ Ubuntu ]];                   then ubuntu=1; fi
-if [[ $(cat /etc/redhat-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
-if [[ $(cat /proc/cpuinfo|grep platform 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
-
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];          then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
 
 ##################
 # wait 5 seconds for the pid to finish, then kill it if still running
@@ -108,17 +108,18 @@ do
   then
     printf "\n INFO:  psl trace on VM Not Supported! \n\n"
   else
-    echo "Dumping PSL data for card$i"
-    if [[ -f ${pgz} ]]; then gunzip -f ${pgz}; fi
-    chmod +x ${ptd} 2>/dev/null;
-    ${ptd} card$i $i >/dev/null
+    if [[ -f ${BINDIR}/psl_dump_data ]]
+    then
+      echo "Dumping PSL data for card$i"
+      ${BINDIR}/psl_dump_data card$i $i >/dev/null
+    fi
   fi
 done
 
 AFUs=`ls /dev/cxl/afu*m`
 for afu_m in $AFUs
 do
-  $AFUDIR/cxl_afu_dump $afu_m > $(basename $afu_m)
+  ${BINDIR}/cxl_afu_dump $afu_m > $(basename $afu_m)
 done
 
 for gt in $(lspci|egrep "0601|0628"|awk '{print $1}')
@@ -129,7 +130,7 @@ do
   card=$(ls -d /sys/devices/*/*/$gt/cxl/card* 2>/dev/null)
   cardN=${card: -1}
   echo "afu$cardN:"                             >> cxl_afu_status
-  $AFUDIR/cxl_afu_status -d afu$cardN.0m        >> cxl_afu_status
+  ${BINDIR}/cxl_afu_status -d afu$cardN.0m        >> cxl_afu_status
   printf "\n"                                   >> cxl_afu_status
 done
 
@@ -144,13 +145,7 @@ env                                  >  $DATADIR/env
 uptime                               >  $DATADIR/uptime
 date                                 >> $DATADIR/uptime
 lspci -vvv                           >  $DATADIR/lspci_vvv
-if [[ $ubuntu ]]
-then
-  lsb_release -a                       >  $DATADIR/codelevels 2>/dev/null
-elif [[ $redhat ]]
-then
-  cat /etc/*-release | egrep "PRETTY_NAME|^NAME|VERSION_ID|^VERSION=" >  $DATADIR/codelevels 2>/dev/null
-fi
+cat /etc/*-release | egrep "PRETTY_NAME|^NAME|VERSION_ID|^VERSION=" >  $DATADIR/codelevels 2>/dev/null
 uname -a                             >> $DATADIR/codelevels
 if [[ $ubuntu ]]
 then
@@ -174,7 +169,7 @@ check_pid $!
 cflash_capacity -t 04cf >> $DATADIR/cflash_capacity&
 check_pid $!
 
-if [[ ! -z $(ls -A $MISCDIR) ]]
+if [[ -d $MISCDIR ]]
 then
   mkdir $DATADIR/misc
   cp $MISCDIR/* $DATADIR/misc

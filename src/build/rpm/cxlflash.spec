@@ -1,7 +1,7 @@
 Name:           cxlflash
 
-#set CXLFLASH_TEST=yes to build the cxlflash-test package
-%define cxlflash_test %{getenv:CXLFLASH_TEST}
+#set CXLFLASH_ALL=yes to build the cxlflash-test package
+%define cxlflash_all %{getenv:CXLFLASH_ALL}
 
 #set TARGET_VERSION=x.y.rev to use a specific tarball
 %define tversion %{getenv:TARGET_VERSION}
@@ -37,7 +37,7 @@ echo "NO CLEAN"
 export USE_ADVANCED_TOOLCHAIN=no
 source env.bash
 make cleanall
-%if "%{cxlflash_test}" == "yes"
+%if "%{cxlflash_all}" == "yes"
 make buildall %{?_smp_mflags}
 %else
 make %{?_smp_mflags}
@@ -47,7 +47,8 @@ make %{?_smp_mflags}
 export QA_RPATHS=$[ 0x0001|0x0010 ]
 source env.bash
 make install_code
-%if "%{cxlflash_test}" == "yes"
+%if "%{cxlflash_all}" == "yes"
+make install_image
 make install_test
 %endif
 
@@ -89,7 +90,19 @@ systemctl start cxlflash || echo "WARNING: Unable to start the cxlflash service 
 %{_libdir}/cxlflash/ext/preremove
 systemctl stop cxlflash || echo "WARNING: Unable to start the cxlflash service via systemctl. Please enable the cxlflash daemon for LUN management."
 
-%if "%{cxlflash_test}" == "yes"
+%if "%{cxlflash_all}" == "yes"
+%package -n cxlflashimage
+Summary: IBM Data Engine for NoSQL Software Libraries : firmware image support
+Requires: cxlflash
+
+%description -n cxlflashimage
+IBM Data Engine for NoSQL Software Libraries : firmware image support
+
+%files -n cxlflashimage
+%{_prefix}/lib/firmware/cxlflash/*
+%{_bindir}/flashgt_nvme_nsq
+%{_bindir}/psl_trace_dump
+
 %package -n cxlflash-test
 Summary: IBM Data Engine for NoSQL Software Libraries : test support
 Requires: cxlflash
@@ -108,7 +121,6 @@ Requires: cxlflash
 %{_bindir}/run_regression
 %{_bindir}/cflash_inject
 %{_bindir}/utils_scripts_tst
-
 %endif
 
 %changelog

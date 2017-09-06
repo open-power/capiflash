@@ -220,7 +220,7 @@ printstatus()
         devid=$(lspci|grep $grep_id |awk -F" " '{print $7}')
       fi
       local devspec=$(cat /sys/bus/pci/devices/$capi/devspec)
-      local loccode=$(cat /proc/device-tree$devspec/ibm,loc-code 2>/dev/null)
+      local loccode=$(tr '\000' '\012' </proc/device-tree$devspec/ibm,loc-code)
 
       printf "\nFound $devid $capi $loccode\n"
 

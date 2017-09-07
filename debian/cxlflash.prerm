@@ -61,6 +61,7 @@ FILES="\
 /opt/ibm/capikv/bin/afucfg.sh \
 /opt/ibm/capikv/bin/cxlflashutil \
 /opt/ibm/capikv/bin/cflash_version \
+/opt/ibm/capikv/bin/cflash_getslot \
 /opt/ibm/capikv/bin/cxlfsetlunmode \
 /opt/ibm/capikv/bin/cxlfrefreshluns \
 /opt/ibm/capikv/bin/cxlfstatus \

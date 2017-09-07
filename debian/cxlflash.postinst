@@ -126,6 +126,7 @@ ${CKV_DIR}/bin/provtool \
 ${CKV_DIR}/bin/afucfg.sh \
 ${CKV_DIR}/bin/cxlflashutil \
 ${CKV_DIR}/bin/cflash_version \
+${CKV_DIR}/bin/cflash_getslot \
 ${CKV_DIR}/bin/cxlfsetlunmode \
 ${CKV_DIR}/bin/cxlfrefreshluns \
 ${CKV_DIR}/bin/cxlfstatus"

@@ -33,17 +33,11 @@ ITER=1
 cxlflash:
 	mkdir -p ${PKGDIR}
 	cd ${PKGDIR}; \
-	fpm -f -s dir -t rpm -n $@ -v ${VERSION} --iteration=${ITER} \
-		--depends 'advance-toolchain-at10.0-runtime' \
-		--depends 'systemd-devel' \
-		-C ./install_root \
+	fpm -f -s dir -t rpm -n $@ -v ${VERSION} --iteration=${ITER} -C ./install_root \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall \
 		--before-remove ${SURELOCKROOT}/src/build/install/resources/preremove \
 		--conflicts ibmcapikv --replaces ibmcapikv .; \
-	fpm -f -s dir -t deb -n $@ -v ${VERSION}-${ITER} \
-		--depends 'advance-toolchain-at10.0-runtime' \
-		--depends 'libudev1' \
-		-C ./install_root \
+	fpm -f -s dir -t deb -n $@ -v ${VERSION}-${ITER} -C ./install_root \
 		--after-install ${SURELOCKROOT}/src/build/install/resources/postinstall \
 		--before-remove ${SURELOCKROOT}/src/build/install/resources/preremove \
 		--conflicts ibmcapikv --replaces ibmcapikv .; \
@@ -54,11 +48,9 @@ cxlflash-test:
 	cd ${PKGDIR}; \
 	fpm -f -s dir -t rpm -n $@ -v ${VERSION} -C ./test_root --iteration=${ITER} \
 		--depends 'cxlflash = ${VERSION}-${ITER}' \
-		--depends 'systemd-devel' \
 		--conflicts ibmcapikv-test --replaces ibmcapikv-test .; \
 	fpm -f -s dir -t deb -n $@ -v ${VERSION}-${ITER} -C ./test_root \
 		--depends 'cxlflash = ${VERSION}-${ITER}' \
-		--depends 'libudev-dev' \
 		--conflicts ibmcapikv-test --replaces ibmcapikv-test .; \
 	tar -cvzf $@-${GITREVISION}.tar.gz -C ./test_root .
 

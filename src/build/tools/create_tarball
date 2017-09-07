@@ -24,6 +24,13 @@
 #
 # IBM_PROLOG_END_TAG
 
+if [[ $1 =~ -h || $1 =~ help ]]; then
+  echo "Usage: [-rpm]"
+  echo "   $0             *create debian tarball"
+  echo "   $0 -rpm        *create rpm tarball"
+  exit 0
+fi
+
 if [[ ! $PWD =~ surelock-sw &&-z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
 source env.bash >/dev/null 2>&1
 cd $SURELOCKROOT
@@ -71,7 +78,11 @@ then
   if [[ -e debian/changelog ]]; then rm -f debian/changelog; fi
   dch --create --distribution xenial --package cxlflash -v $ver-${ITER} "latest update"
   if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
-  if [[ $CXLFLASH_ALL = yes ]]; then cat debian/control.add >> debian/control; fi
+  if [[ $CXLFLASH_ALL = yes ]]
+  then
+    cat debian/control.add >> debian/control
+    sed -i '/SURELOCKROOT/a export CXLFLASH_ALL=yes' debian/rules
+  fi
 elif [[ $rpm ]]
 then
   #remove deb

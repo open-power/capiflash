@@ -346,8 +346,8 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
 endif
 	@if [[ -e ${RESOURCEDIR}/flashgt_nvme_override ]]; then \
-       echo ${INSTALL} ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}; \
-       ${INSTALL} ${STRIP_FLAG} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}; \
+       echo ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}; \
+       ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}; \
      fi
 	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}

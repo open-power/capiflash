@@ -136,6 +136,15 @@ then
     if [[ $? -eq 0 ]]; then dpkg -i cxlflash_*$CF_VER*.deb; fi
  fi
 
+ EXISTS_LVL=$(dpkg -l|grep 'i  cxlflashimage')
+ if [[ ! $EXISTS_LVL =~ cxlflashimage || \
+        ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
+ then
+   #pkg is not required, only install if it exists
+   ls cxlflashimage*$CF_VER*.deb >/dev/null 2>&1
+   if [[ $? -eq 0 ]]; then dpkg -i cxlflashimage*$CF_VER*.deb; fi
+ fi
+
  EXISTS_LVL=$(dpkg -l|egrep "i  cxlflash-test")
  if [[ ! $EXISTS_LVL =~ "i  cxlflash-test" || \
         ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
@@ -165,6 +174,7 @@ then
    echo -e "\nERROR: cxlflash packages failed to install\n"
    exit 15
  fi
+ if [[ ! -z $(dpkg -l|grep 'i  cxlflashimage') ]]; then images_available=1; fi
 fi
 
 
@@ -251,6 +261,15 @@ then
     if [[ $? -eq 0 ]]; then rpm -i -v cxlflash-$CF_VER*.rpm; fi
   fi
 
+  EXISTS_LVL=$(rpm -qa|grep 'cxlflashimage')
+  if [[ ! $EXISTS_LVL =~ cxlflashimage || \
+         ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
+  then
+    #pkg is not required, only install if it exists
+    ls cxlflashimage*$CF_VER*.rpm >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then rpm -i -v cxlflashimage*$CF_VER*.rpm; fi
+  fi
+
   EXISTS_LVL=$(rpm -qa|egrep "cxlflash-test")
   if [[ ! $EXISTS_LVL =~ "cxlflash-test" || \
          ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
@@ -283,6 +302,7 @@ then
     echo -e "\nERROR: cxlflash packages failed to install\n"
     exit 15
   fi
+  if [[ ! -z $(rpm -qa|grep "cxlflashimage") ]]; then images_available=1; fi
 fi
 
 

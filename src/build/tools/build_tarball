@@ -25,20 +25,21 @@
 # IBM_PROLOG_END_TAG
 
 if [[ $1 =~ -h || $1 =~ help ]]; then
-  echo "Usage: [-rpm] [-all]"
-  echo "   $0             *build debian"
-  echo "   $0 -all        *build debian + image + test pkg"
-  echo "   $0 -rpm        *build rpm"
-  echo "   $0 -rpm -all   *build rpm + image + test pkg"
+  echo "Usage: [-all]"
+  echo "   $0 -all        *build cxlflash + image + test pkg"
   exit 0
 fi
+
+#determine distro
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]]; then deb=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];    then rpm=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]]; then rpm=1; fi
 
 if [[ ! $PWD =~ surelock-sw && -z $SURELOCKROOT ]]; then echo "source env.bash"; exit 0; fi
 source env.bash >/dev/null 2>&1
 cd $SURELOCKROOT
 
-if [[ $1 =~ rpm  || $2 =~ rpm ]];  then rpm=1; else deb=1; fi
-if [[ $1 =~ all || $2 =~ all ]];   then export CXLFLASH_ALL=yes; fi
+if [[ $1 =~ all || $2 =~ all ]]; then export CXLFLASH_ALL=yes; fi
 
 if [[ $deb ]]
 then
@@ -49,9 +50,25 @@ then
 
   cd ${BDIR}
   tar -xzf *.gz
-  cd ${BDIR}/cxlflash_*
+  VER=$(cat cxlflash_*/src/build/version.txt)
+  cd ${BDIR}/cxlflash_${VER}
 
   debuild -eBLOCK_FILEMODE_OVERRIDE -eCXLFLASH_ALL -uc -us -d
+
+  if ! ls ${BDIR}/*.deb >/dev/null 2>&1; then exit 0; fi
+
+  #create the release tarball
+  cd ${BDIR}
+  mkdir pkg
+  cp *.deb pkg
+  cp ${BDIR}/cxlflash_${VER}/src/build/install/resources/cflash_configure pkg
+  cp ${BDIR}/cxlflash_${VER}/src/build/install/resources/cflash_depends pkg
+  cp ${BDIR}/cxlflash_${VER}/src/build/version.txt pkg/ver.txt
+  cd pkg
+  tar -cvzf pkg.deb.tar.gz *${VER}*.deb cflash_configure cflash_depends ver.txt
+  cd ${BDIR}
+  mv ${BDIR}/pkg/pkg.deb.tar.gz .
+  rm -R pkg
 
 else
 
@@ -61,9 +78,28 @@ else
 
   ${SURELOCKROOT}/src/build/tools/create_tarball -rpm
   cp src/build/rpm/cxlflash.spec ${BDIR}/SPECS
-  if [[ -e obj/tests/version.txt ]]; then export TARGET_VERSION=$(cat obj/tests/version.txt); fi
-  if [[ -e src/build/version.txt ]]; then export TARGET_VERSION=$(cat src/build/version.txt); fi
+  if [[ -e obj/tests/version.txt ]]; then VER=$(cat obj/tests/version.txt); fi
+  if [[ -e src/build/version.txt ]]; then VER=$(cat src/build/version.txt); fi
+  export TARGET_VERSION=${VER}
+
   rpmbuild -ba --define "_topdir ${BDIR}" ${BDIR}/SPECS/cxlflash.spec
+
+  if ! ls ${BDIR}/RPMS/*/*.rpm >/dev/null 2>&1; then exit 0; fi
+
+  #create the release tarball
+  cd ${BDIR}/RPMS/ppc*
+  mkdir pkg
+  if ls *debuginfo* >/dev/null 2>&1; then rm *debuginfo*; fi
+  cp *.rpm pkg
+  cp ${BDIR}/BUILD/cxlflash-${VER}/src/build/install/resources/cflash_configure pkg
+  cp ${BDIR}/BUILD/cxlflash-${VER}/src/build/install/resources/cflash_depends pkg
+  cp ${BDIR}/BUILD/cxlflash-${VER}/src/build/version.txt pkg/ver.txt
+  cd pkg
+  tar -cvzf pkg.rpm.tar.gz *${VER}*.rpm cflash_configure cflash_depends ver.txt
+  cd ..
+  mv pkg/pkg.rpm.tar.gz .
+  rm -R pkg
+
 fi
 
 exit 0

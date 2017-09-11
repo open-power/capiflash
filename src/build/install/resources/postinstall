@@ -40,11 +40,13 @@ else                         LIB_DIR=/usr/lib; fi
 if [[ -f /etc/redhat-release ]]; then redhat=1; fi
 
 #Creating empty SIO lun table and etc dir
-id -u ${GROUPNAME} >/dev/null 2>&1
-if [[ $? -ne 0 ]]
+if [[ ! $(useradd --system --user-group $USERNAME 2>&1) =~ exists ]]
 then
-  echo "INFO: Creating system cxl user / group..."
-  useradd --system --user-group $USERNAME
+  echo "INFO: Created system $USERNAME user"
+fi
+if [[ ! $(useradd -g $USERNAME $GROUPNAME 2>&1) =~ exists ]]
+then
+  echo "INFO: Created group cxl"
 fi
 
 echo "INFO: setting permissions on cxl and cxlflash device nodes."

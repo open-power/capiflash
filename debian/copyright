@@ -8,8 +8,8 @@ Copyright: Copyright IBM Corp. 2014-2017
 License: Apache-2.0
 
 Files: debian/*
-Author: Mike Vageline <mpvageli@us.ibm.com>
-Copyright: 2017 Mike Vageline <mpvageli@us.ibm.com>
+Author: International Business Machines Corp.
+Copyright: Copyright IBM Corp. 2014-2017
 License: GPL-2+
  This package is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by

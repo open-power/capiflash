@@ -191,9 +191,9 @@ typedef uint64_t dev64_t;
 
 #define CBLK_DCBZ_CACHE_LINE_SZ       128   /* Size of cacheline assumed by dcbz */
 
-#define CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES 5000 /* Number of times to check for   */
+#define CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES 50000 /* Number of times to check for */
 					      /* command room before giving up   */
-#define CFLASH_BLOCK_DELAY_ROOM   1000        /* Number of microseconds to delay */
+#define CFLASH_BLOCK_DELAY_ROOM   100         /* Number of microseconds to delay */
 					      /* while waiting for command room  */
 
 #define CFLASH_BLOCK_MAX_WAIT_RRQ_RETRIES 10  /* Number of times to check for    */

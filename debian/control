@@ -16,5 +16,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, ${perl:Depends}
 Conflicts: ibmcapikv
 Replaces: ibmcapikv
 Description: IBM Capiflash IO Data Engine
- This package provides IO support for IBM Capiflash adapters,
- and includes a NoSQL Software Interface.
+ This provides IO and utility support for IBM Capiflash adapters,
+ and includes a NoSQL Software Interface. The latest
+ adapter firmware updates are provided separately
+ in cxlflashimage.

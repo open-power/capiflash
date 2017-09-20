@@ -190,7 +190,7 @@ ctrlblockdevmap()
     fi
     echo "INFO: sgdev:$dev mode:$tgmode action:${scsiaction} sddev:$blockdev" >> $LOGFILE;
     #if there's something to do, call either bind or unbind appropriately
-    if [[ "$scsiaction" != "noop" && $blockdev ]]; then
+    if [[ "$scsiaction" != "noop" && $blockdev && $(id -u ${USER}) -eq 0 ]]; then
         out=$(echo -n "$scsitopo" > /sys/bus/scsi/drivers/sd/$scsiaction 2>&1)
         echo "INFO: action:${scsiaction} sgdev:$dev sddev:$blockdev scsitopo:$scsitopo rc:$?" >> $LOGFILE;
     fi
@@ -305,16 +305,20 @@ getluntablestate()
 #@returns rc to 0 on success, OR sets return code to non-zero value on error
 dotableupdate()
 {
-    #check sudo permissions
-    SUDO=$(id -u)
-    if [[ $SUDO != 0 ]]; then echo "run with sudo permissions to refresh"; return; fi
+    #check permissions
+    if [[ ! ($(groups ${USER}) =~ cxl || $(id -u ${USER}) -eq 0) ]]; then echo "You do not have enough permissions"; return; fi
 
     #attempt to rescan for cxl scsi devices
     local host;
-    for host in $(ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/ 2>/dev/null| grep host)
-    do
-       echo "- - -" > /sys/class/scsi_host/$host/scan
-    done
+    if [[ $(id -u ${USER}) -eq 0 ]]
+    then
+      for host in $(ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/ 2>/dev/null| grep host)
+      do
+         echo "- - -" > /sys/class/scsi_host/$host/scan
+      done
+    else
+      echo "unable to scan for new luns, not enough permissions"
+    fi
 
     #list of all known SG devices - local to prevent this from causing side effects / problems in udev handler
     local _SGDEVS=`ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/host*/target*:*:*/*:*:*:*/scsi_generic 2>/dev/null| grep sg`

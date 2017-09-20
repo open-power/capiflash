@@ -76,8 +76,8 @@ if ($prthelp) {usage();}
 if ( `cat /etc/os-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}
 if ( `cat /etc/os-release 2>/dev/null` =~ "Ubuntu" )  {$ubuntu=1;}
 
-#check sudo permissions
-(`id -u` == 0) || die "Run with sudo permissions";
+#check permissions
+(! (`groups $ENV{'USER'}` =~ / cxl/ || `id -u $ENV{'USER'}` == 0)) && die "You do not have enough permissions\n";
 
 #ensure sg_write_buffer is available
 if ( $redhat ) {$cmd="rpm -qa | grep -v udev|grep -v libs | grep sg3_utils >/dev/null "; }

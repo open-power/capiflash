@@ -28,10 +28,22 @@ if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
 
 export PATH=$PATH:/usr/bin
 
-DATADIR=/var/log/cflash/cxlffdc
-PREVDIR=/var/log/cflash/prev
-MISCDIR=/var/log/cflash/misc
-TARBALL=/var/log/cflash/cxlffdc."$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)".tgz
+DIR=cxlffdc."$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)"
+
+#check permissions
+if [[ $(id -u ${USER}) -eq 0 ]]
+then
+  DATAPATH=/var/log/cflash
+  perms=1
+else
+  echo "****************************************"
+  echo "*** run with sudo for better results ***"
+  echo "****************************************"
+  DATAPATH=/tmp
+fi
+
+DATADIR=${DATAPATH}/${DIR}
+MISCDIR=${DATAPATH}/misc
 BINDIR=/usr/bin
 pgz=$(ls /usr/lib/cxlflash/ext/p*gz 2>/dev/null)
 ptd=/usr/lib/cxlflash/ext/ptd
@@ -89,15 +101,10 @@ fi
 ##################
 # main
 ##################
-if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run with sudo" 1>&2
-   exit 1
-fi
 
 ret=$(pwd)
-if [[ -e $DATADIR ]]; then rm -rf $DATADIR; fi
-if [[ -e $PREVDIR ]]; then rm -rf $PREVDIR; fi
-mkdir $DATADIR
+if [[ -e $DATADIR ]]; then rm -rf $DATADIR 2>/dev/null; fi
+mkdir -p $DATADIR
 cd $DATADIR
 
 cardnums=`ls -d /sys/class/cxl/card* | awk -F"/sys/class/cxl/card" '{ print $2 }'`
@@ -108,10 +115,10 @@ do
   then
     printf "\n INFO:  psl trace on VM Not Supported! \n\n"
   else
-    if [[ -f ${BINDIR}/psl_dump_data ]]
+    if [[ -f ${BINDIR}/psl_trace_dump && $perms -eq 1 ]]
     then
       echo "Dumping PSL data for card$i"
-      ${BINDIR}/psl_dump_data card$i $i >/dev/null
+      ${BINDIR}/psl_trace_dump ${DATADIR}/card$i $i >/dev/null
     fi
   fi
 done
@@ -231,10 +238,10 @@ do
 done
 
 cd ..
-tar -cvzf $TARBALL cxlffdc
-mv $DATADIR $PREVDIR
+tar -czf $DIR.tgz $DIR
+rm -Rf $DIR
 
 echo "INFO: FFDC Collected below."
-ls -l $TARBALL
+ls -l $DATADIR.tgz
 
 cd $ret

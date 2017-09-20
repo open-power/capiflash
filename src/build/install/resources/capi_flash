@@ -547,8 +547,6 @@ if ($ARGV[0])
 }
 if ($prthelp) {usage();}
 
-#check sudo permissions
-(`id -u` == 0) || die "Run with sudo permissions\n";
 
 #-------------------------------------------------------------------------------
 # Make stdout autoflush
@@ -629,6 +627,9 @@ else
 # exit if (-l) list option specified
 #-------------------------------------------------------------------------------
 $list && exit;
+
+#check permissions
+(! (`groups $ENV{'USER'}` =~ / cxl/ || `id -u $ENV{'USER'}` == 0)) && die "You do not have enough permissions\n";
 
 #-------------------------------------------------------------------------------
 # VM - validate target

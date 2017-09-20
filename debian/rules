@@ -15,8 +15,6 @@ else
   endif
 endif
 
-export OSRELEASE=$(shell /usr/bin/lsb_release -sr)
-
 export PWD=$(shell pwd)
 export SURELOCKROOT=$(shell pwd)
 

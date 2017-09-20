@@ -81,12 +81,8 @@ if ($prthelp) {usage();}
 select(STDOUT);
 $| = 1;
 
-#check sudo permissions
-if (`id -u` != 0)
-{
-  print "Run with sudo permissions\n";
-  exit -2;
-}
+#check permissions
+(! (`groups $ENV{'USER'}` =~ / cxl/ || `id -u $ENV{'USER'}` == 0)) && die "You do not have enough permissions\n";
 
 #-------------------------------------------------------------------------------
 # list Devices

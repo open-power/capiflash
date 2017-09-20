@@ -95,12 +95,8 @@ if ( `cat /etc/redhat-release 2>/dev/null` =~ "Red Hat" ) {$redhat=1;}
 
 if (! $force) {print "sorry, not supported yet\n"; exit 0;}
 
-#check sudo permissions
-if (`id -u` != 0)
-{
-  print "Run with sudo permissions\n";
-  exit -2;
-}
+#check permissions
+(! (`groups $ENV{'USER'}` =~ / cxl/ || `id -u $ENV{'USER'}` == 0)) && die "You do not have enough permissions\n";
 
 #-------------------------------------------------------------------------------
 # Make stdout autoflush

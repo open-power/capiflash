@@ -24,6 +24,7 @@
 /* IBM_PROLOG_END_TAG                                                     */
 #ifndef _TICKS_H__
 #define _TICKS_H__
+#include <stdlib.h>
 #include <stdint.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -146,8 +147,8 @@ static __inline__ double time_diff(struct timeval x , struct timeval y)
  ******************************************************************************/
 static __inline__ double time_per_tick(int n, int del)
 {
-  double        *td = malloc(n * sizeof(double));
-  double        *tv = malloc(n * sizeof(double));
+  double        *td = (double*)malloc(n * sizeof(double));
+  double        *tv = (double*)malloc(n * sizeof(double));
   struct timeval tvs;
   struct timeval tve;
   ticks          ts;

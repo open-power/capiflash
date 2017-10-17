@@ -1087,6 +1087,12 @@ TEST(Cflash_FVT_Suite, G_7_1_203)
     ASSERT_EQ(0,mc_test_engine(G_ioctl_7_1_203));
 }
 
+#ifndef AIX
+TEST(Cflash_FVT_Suite, E_port_offonline_GT_plun)
+{
+    ASSERT_EQ(0,mc_test_engine(E_TEST_PORT_OFF_ON_GT_PLUN));
+}
+#endif
 
 #ifdef AIX_MANUAL
 

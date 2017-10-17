@@ -27,8 +27,13 @@
 
 #include <stdint.h>
 #include <pthread.h>
-#include "iv.h"
+#include <iv.h>
+
+#ifdef _OS_INTERNAL
+#include <sys/capiblock.h>
+#else
 #include <capiblock.h>
+#endif
 
 #define BL_INITN 10000
 
@@ -70,6 +75,12 @@ void bl_check_take(BL *bl, int64_t n);
 
 // put a chain back, return the length of returned chain, negative is error
 int64_t bl_drop(BL *bl, int64_t b);
+
+// add single block
+int64_t bls_add(BL *bl, int64_t b);
+
+// remove single block
+int64_t bls_rem(BL *bl);
 
 // number of items left
 int64_t bl_left(BL *bl);

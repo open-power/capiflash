@@ -22,18 +22,7 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <inttypes.h>
-
-#include <arkdb_trace.h>
 #include <ark.h>
-#include <am.h>
-#include <vi.h>
-#include <bt.h>
-#include <errno.h>
 
 /**
  *******************************************************************************

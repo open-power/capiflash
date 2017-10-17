@@ -798,6 +798,9 @@ int mc_test_engine(mc_test_t test_name)
             case TEST_VLUN_MAX_TRANSFER:
                 rc = test_vlun_max_transfer();
                 break;
+            case E_TEST_PORT_OFF_ON_GT_PLUN:
+                rc = test_port_offline_online_GTplus();
+                break;
 
             default:
                 rc = -1;

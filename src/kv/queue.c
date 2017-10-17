@@ -24,9 +24,8 @@
 /* IBM_PROLOG_END_TAG                                                     */
 
 #include <inttypes.h>
-
-#include "am.h"
-#include "queue.h"
+#include <am.h>
+#include <queue.h>
 #include <errno.h>
 
 queue_t *queue_new(uint32_t n) {

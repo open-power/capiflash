@@ -584,6 +584,7 @@ enum
     TEST_DETACH_DIFF_PROC,
     TEST_FC_PR_RESET_VLUN,
     TEST_FC_PR_RESET_PLUN,
+    E_TEST_PORT_OFF_ON_GT_PLUN,
     /*********** EXCP CASE *************/
     EXCP_VLUN_DISABLE,
     EXCP_PLUN_DISABLE,
@@ -832,6 +833,7 @@ int diskSizeCheck( char * , float );
 void identifyHostType( void );
 int diskToWWID ( char * WWID);
 int WWIDtoDisk ( char * WWID);
+int diskToPortnAFU( char * diskName , char * afuName, char * portName);
 #endif
 int test_spio_vlun(int);
 int test_spio_plun();
@@ -906,4 +908,5 @@ int get_max_res_hndl_by_capacity(char *dev);
 int max_ctx_cross_limit();
 int cflash_query_ue(void *buf, size_t len);
 int test_vlun_max_transfer();
+int test_port_offline_online_GTplus();
 #endif /*__CFLASH_TEST_H__ */

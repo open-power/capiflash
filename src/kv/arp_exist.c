@@ -23,21 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-
-#include <ut.h>
-#include <vi.h>
-#include <arkdb.h>
 #include <ark.h>
-#include <arp.h>
-#include <am.h>
-#include <kv_inject.h>
-#include <arkdb_trace.h>
-
-#include <errno.h>
 
 /**
  *******************************************************************************
@@ -48,7 +34,6 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t         *scbp     = &(_arkp->poolthreads[tid]);
   rcb_t         *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
-  tcb_t         *iotcbp   = &(_arkp->tcbs[rcbp->ttag]);
   iocb_t        *iocbp    = &(_arkp->iocbs[rcbp->ttag]);
   int32_t        rc       = 0;
 
@@ -71,11 +56,11 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // Set the error
   if (tcbp->hblk == 0)
   {
-    KV_TRC(pAT, "ENOENT tid:%d ttag:%3d key:%p klen:%ld pos:%ld",
+    KV_TRC(pAT, "ENOENT  tid:%d ttag:%3d key:%p klen:%ld pos:%ld",
            tid, tcbp->ttag, rcbp->key, rcbp->klen, rcbp->pos);
     rcbp->res   = -1;
     rcbp->rc    = ENOENT;
-    tcbp->state = ARK_CMD_DONE;
+    iocbp->state = ARK_CMD_DONE;
     goto ark_exist_start_err;
   }
 
@@ -93,7 +78,7 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
           KV_TRC_FFDC(pAT, "bt_realloc failed tcbp:%p ttag:%d", tcbp, tcbp->ttag);
           rcbp->res   = -1;
           rcbp->rc    = rc;
-          tcbp->state = ARK_CMD_DONE;
+          iocbp->state = ARK_CMD_DONE;
           goto ark_exist_start_err;
       }
       tcbp->inb_size = tcbp->blen*_arkp->bsize;
@@ -117,21 +102,21 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   {
     rcbp->res   = -1;
     rcbp->rc    = ENOMEM;
-    tcbp->state = ARK_CMD_DONE;
+    iocbp->state = ARK_CMD_DONE;
     KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
     goto ark_exist_start_err;
   }
   tcbp->aiolN = tcbp->blen;
 
   KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d", tid, tcbp->ttag);
-  ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
+  ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
                    tcbp->blen, 0, tcbp->ttag, ARK_EXIST_FINISH);
 
   if (MEM_FASTPATH)
   {
-      ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
-      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
-      if (iotcbp->state == ARK_EXIST_FINISH) {ark_exist_finish(_arkp,tid,tcbp);}
+      ea_async_io_schedule(_arkp, tid, iocbp);
+      ea_async_io_harvest (_arkp, tid, iocbp);
+      if (iocbp->state == ARK_EXIST_FINISH) {ark_exist_finish(_arkp,tid,tcbp);}
   }
 
 ark_exist_start_err:
@@ -145,7 +130,8 @@ ark_exist_start_err:
  ******************************************************************************/
 void ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  rcb_t *rcbp = &(_arkp->rcbs[tcbp->rtag]);
+  rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
+  iocb_t *iocbp = &(_arkp->iocbs[rcbp->ttag]);
 
   KV_TRC(pAT, "INB_GET tid:%d ttag:%3d tot:%ld used:%ld",
                tid, tcbp->ttag, tcbp->inb_size, tcbp->inb->len);
@@ -158,10 +144,10 @@ void ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
            tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen);
     rcbp->rc    = ENOENT;
     rcbp->res   = -1;
-    tcbp->state = ARK_CMD_DONE;
+    iocbp->state = ARK_CMD_DONE;
   }
 
-  tcbp->state = ARK_CMD_DONE;
+  iocbp->state = ARK_CMD_DONE;
   return;
 }
 

@@ -23,10 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include <strings.h>
-#include "am.h"
-#include "hash.h"
-#include <arkdb_trace.h>
+#include <ark.h>
 
 hash_t *hash_new(uint64_t n) {
   hash_t *hash = am_malloc(sizeof(hash_t) + n * sizeof(uint64_t));

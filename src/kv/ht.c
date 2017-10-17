@@ -23,18 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-
-#include "am.h"
-#include "bv.h"
-#include "iv.h"
-
-#include "ht.h"
-
-#include <arkdb_trace.h>
-#include <errno.h>
+#include <ark.h>
 
 uint64_t ht_hash(uint8_t *buf, uint64_t n) {
   uint64_t sum = 0;

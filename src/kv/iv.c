@@ -22,16 +22,7 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <inttypes.h>
-#include "am.h"
-
-#include "ut.h"
-#include "iv.h"
-#include <arkdb_trace.h>
-#include <errno.h>
+#include <ark.h>
 
 #define IVINLINE // inline
 #define IVSAFE   // if (i<0 & i>=bv->n) exit(987);

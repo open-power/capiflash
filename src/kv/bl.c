@@ -22,16 +22,7 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-#include <stdio.h>
-#include <stdlib.h>
-#include <inttypes.h>
-
-#include <am.h>
-#include <ea.h>
-#include <bl.h>
-#include <arkdb_trace.h>
-
-#include <errno.h>
+#include <ark.h>
 
 /**
  *******************************************************************************
@@ -83,9 +74,9 @@ int bl_init_chain_link(BL *bl)
 
     rc = (bl->top == bl->n);
 
-    KV_TRC_DBG(pAT, "CHN_NEW n:%ld top:%ld count:%ld hd:%ld availN:%ld "
+    KV_TRC_DBG(pAT, "CHN_NEW bl:%p n:%ld top:%ld count:%ld hd:%ld availN:%ld "
                     "chainN:%ld chain_exception:%ld rc:%d",
-                    bl->n, bl->top, bl->count, bl->head, availN, chainN,
+                    bl, bl->n, bl->top, bl->count, bl->head, availN, chainN,
                     chain_end, rc);
 exception:
     pthread_rwlock_unlock(&(bl->iv_rwlock));
@@ -261,7 +252,7 @@ int64_t bl_end(BL *bl, int64_t b)
   }
   if (b <= 0 || b >= bl->n)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "bad blk:%ld n:%ld", b,bl->n);
       return -1;
   }
 
@@ -299,7 +290,7 @@ void bl_check_take(BL *bl, int64_t n)
     avail = bl->n - bl->top -1;
 
     // if we need blocks and we have uninitialized blocks, init them
-    if (n > bl->count && avail)
+    if (n > bl->count && avail > 0)
     {
         KV_TRC_DBG(pAT, "CHN_ADD bl:%p n:%ld bl->n:%ld top:%ld count:%ld "
                         "hd:%ld avail:%ld",
@@ -433,6 +424,90 @@ int64_t bl_drop(BL *bl, int64_t b)
 exception:
   pthread_rwlock_unlock(&(bl->iv_rwlock));
   return n;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   add a single block into a bls
+ ******************************************************************************/
+int64_t bls_add(BL *bl, int64_t b)
+{
+  if (!bl || b<=0 || b>=bl->n)
+  {
+      KV_TRC_FFDC(pAT, "invalid parm bl:%p b:%ld ", bl, b);
+      return -1;
+  }
+
+  pthread_rwlock_rdlock(&(bl->iv_rwlock));
+
+  if (iv_set(bl->list,b,bl->head) < 0)
+  {
+      KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld hd:%ld",
+                  bl, b, bl->head);
+      return 0;
+  }
+  bl->head   = b;
+  bl->count += 1;
+
+  KV_TRC_DBG(pAT, "BLS_ADD bl:%p b:%ld cnt:%ld hold:%ld top:%ld hd:%ld",
+                  bl, b, bl->count, bl->hold, bl->top, bl->head);
+
+  pthread_rwlock_unlock(&(bl->iv_rwlock));
+  return 1;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   remove a block from a bls
+ ******************************************************************************/
+int64_t bls_rem(BL *bl)
+{
+    int64_t ret    = 0;
+    int64_t new_hd = 0;
+
+    if (!bl)
+    {
+        KV_TRC_FFDC(pAT, "NULL bl");
+        return -1;
+    }
+
+    if (bl->count <= 0)
+    {
+        KV_TRC_FFDC(pAT, "No free blocks bl:%p bl->count %ld",
+                    bl, bl->count);
+        return -1;
+    }
+
+    pthread_rwlock_rdlock(&(bl->iv_rwlock));
+
+    KV_TRC_DBG(pAT, "BLS_REM bl:%p count:%ld top:%ld hd:%ld",
+                     bl, bl->count, bl->top, bl->head);
+
+    ret = bl->head;
+
+    if ((new_hd=iv_get(bl->list,ret)) < 0)
+    {
+        KV_TRC_FFDC(pAT, "invalid index bl:%p ret:%ld", bl, ret);
+        ret = -1;
+        goto exception;
+    }
+    if (iv_set(bl->list,ret,0) < 0)
+    {
+        KV_TRC_FFDC(pAT, "invalid index bl:%p ret:%ld", bl, ret);
+        ret = -1;
+        goto exception;
+    }
+    bl->head   = new_hd;
+    bl->count -= 1;
+
+    KV_TRC_DBG(pAT, "BLS_REM bl:%p ret_hd:%ld count:%ld top:%ld "
+                     "hd:%ld",
+                     bl, ret, bl->count, bl->top, bl->head);
+exception:
+    pthread_rwlock_unlock(&(bl->iv_rwlock));
+    return ret;
 }
 
 /**

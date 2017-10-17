@@ -23,18 +23,10 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #ifndef _AIX
 #include "zmalloc.h"
 #endif
 
-#include <am.h>
-#include <kv_inject.h>
-#include <arkdb_trace.h>
-#include <errno.h>
 #include <ark.h>
 
 int x = 1;

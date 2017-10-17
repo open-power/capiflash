@@ -3965,6 +3965,22 @@ int ioctl_dk_capi_attach_reuse(struct ctx *p_ctx,struct ctx *p_ctx_1, __u16 lun_
     p_ctx->block_size = capi_attach.block_size;
 #endif
 
+#ifdef DK_CXLFLASH_APP_CLOSE_ADAP_FD
+    // if context attach returns DK_CXLFLASH_APP_CLOSE_ADAP_FD flag
+    if (p_ctx->return_flags & DK_CXLFLASH_APP_CLOSE_ADAP_FD)
+    {
+        p_ctx->close_adap_fd_flag = TRUE;
+    }
+
+#endif
+
+#ifdef DK_CXLFLASH_CONTEXT_SQ_CMD_MODE
+     if ( p_ctx->return_flags & DK_CXLFLASH_CONTEXT_SQ_CMD_MODE )
+     {
+          p_ctx->sq_mode_flag = TRUE ;
+     }
+#endif
+
     //default rwbuff handling 4K, Lorge trasnfer handled exclusive
     p_ctx->blk_len = BLOCK_SIZE/p_ctx->block_size;
     p_ctx->adap_fd = capi_attach.adap_fd;
@@ -4053,6 +4069,10 @@ int ioctl_dk_capi_attach_reuse(struct ctx *p_ctx,struct ctx *p_ctx_1, __u16 lun_
     p_ctx_1->context_id=p_ctx->context_id;
     capi_attach.context_id=p_ctx->context_id;
     capi_attach.hdr.flags = DK_CXLFLASH_ATTACH_REUSE_CONTEXT;
+#if defined(DK_CXLFLASH_APP_CLOSE_ADAP_FD) || defined(DK_CXLFLASH_CONTEXT_SQ_CMD_MODE)
+    capi_attach.hdr.return_flags = 0;
+#endif
+
     rc = ioctl(p_ctx_1->fd, DK_CXLFLASH_ATTACH, &capi_attach);
 #endif
     debug("%d:... DK_CAPI_ATTACH called with REUSE flag...\n", pid);
@@ -4091,12 +4111,25 @@ int ioctl_dk_capi_attach_reuse(struct ctx *p_ctx,struct ctx *p_ctx_1, __u16 lun_
     p_ctx_1->return_flags = capi_attach.return_flags;
     p_ctx_1->block_size = capi_attach.block_size;
 #else
+#ifdef DK_CXLFLASH_APP_CLOSE_ADAP_FD
+    /* After Al-Viro changes cxlflash driver will not cache the adap fd;
+       So application needs to re-use the adap fd returned in first context attach */
+    if ( capi_attach.adap_fd == -1 )
+    {
+        capi_attach.adap_fd = p_ctx->adap_fd; 
+    }
+    else
+    {
+        CHECK_RC(1,"adap fd not returned -1");
+    }
+#endif
     p_ctx_1->p_host_map = mmap(NULL,p_ctx_1->mmio_size,PROT_READ|PROT_WRITE, MAP_SHARED, //p_ctx->adap_fd,0);
                                capi_attach.adap_fd,0);
     if (p_ctx_1->p_host_map == MAP_FAILED)
     {
-        fprintf(stderr,"map failed for 0x%lx mmio_size %d errno\n",
-                p_ctx_1->mmio_size, errno);
+        p_ctx_1->adap_fd = capi_attach.adap_fd;
+        fprintf(stderr,"map failed for mmio_size 0x%lx  errno %d adap_fd %d\n",
+                p_ctx_1->mmio_size, errno,p_ctx_1->adap_fd);
         CHECK_RC(1,"mmap failed");
     }
     p_ctx_1->context_id = capi_attach.context_id;
@@ -4105,6 +4138,7 @@ int ioctl_dk_capi_attach_reuse(struct ctx *p_ctx,struct ctx *p_ctx_1, __u16 lun_
     p_ctx_1->chunk_size = NUM_BLOCKS;
     p_ctx_1->return_flags = capi_attach.hdr.return_flags;
     p_ctx_1->block_size = capi_attach.block_size;
+
 #endif
 
     //default rwbuff handling 4K, Lorge trasnfer handled exclusive
@@ -4326,25 +4360,34 @@ int ioctl_dk_capi_attach_reuse_all_disk( )
             rc = ioctl(new_ctx[i]->fd, DK_CAPI_ATTACH, &capi_attach);
 #else
             rc = ioctl(new_ctx[i]->fd, DK_CXLFLASH_ATTACH, &capi_attach);
+            new_ctx[i]->context_id = capi_attach.context_id;
 #endif
             debug("%d:...First  DK_CAPI_ATTACH called ...\n", pid);
             if (rc)
             {
                 CHECK_RC(errno, "FIRST DK_CAPI_ATTACH failed");
             }
+
         }
+
         else
         {
 #ifdef _AIX
             new_ctx[i]->context_id=new_ctx[0]->context_id;
             new_ctx[i]->flags = capi_attach.flags =  DK_AF_REUSE_CTX;
+            
             debug("%d:----------- Start DK_CAPI_ATTACH with REUSE flag ----------\n", pid);
             debug("%d:dev=%s fd=%d Ver=%u flags=0X%"PRIX64"\n",
                   pid,new_ctx[i]->dev,new_ctx[i]->fd,new_ctx[i]->version,new_ctx[i]->flags);
             rc = ioctl(new_ctx[i]->fd, DK_CAPI_ATTACH, &capi_attach);
 #else
             new_ctx[i]->context_id=new_ctx[0]->context_id;
+            capi_attach.context_id = new_ctx[0]->context_id; 
             capi_attach.hdr.flags = DK_CXLFLASH_ATTACH_REUSE_CONTEXT;
+
+#if defined(DK_CXLFLASH_APP_CLOSE_ADAP_FD) || defined(DK_CXLFLASH_CONTEXT_SQ_CMD_MODE)
+            capi_attach.hdr.return_flags = 0;
+#endif
             rc = ioctl(new_ctx[i]->fd, DK_CXLFLASH_ATTACH, &capi_attach);
 #endif
             debug("%d:... DK_CAPI_ATTACH called with REUSE flag...\n", pid);
@@ -4352,13 +4395,22 @@ int ioctl_dk_capi_attach_reuse_all_disk( )
             {
                 CHECK_RC(errno, "DK_CAPI_ATTACH with REUSE flag failed");
             }
+#ifdef DK_CXLFLASH_APP_CLOSE_ADAP_FD
+           /* After Al-Viro changes cxlflash driver will not cache the adap fd;
+           So application needs to re-use the adap fd returned in first context attach */
+           if ( capi_attach.adap_fd == -1 )
+           {
+              capi_attach.adap_fd = new_ctx[0]->adap_fd;
+           }
+           else
+           {
+              new_ctx[i]->adap_fd = capi_attach.adap_fd;
+              debug("%d:adap fd returned in using reuse flag-> %d \n",pid,new_ctx[i]->adap_fd);
+              CHECK_RC(1,"adap fd not returned -1");
+           }
+#endif
+
         }
-
-        debug("%d:mmio=%p mmio_size=0X%"PRIX64" ctx_id=0X%"PRIX64" last_lba=0X%"PRIX64" block_size=0X%"PRIX64" chunk_size=0X%"PRIX64" max_xfer=0X%"PRIX64"\n",
-              pid,new_ctx[i]->p_host_map,new_ctx[i]->mmio_size,new_ctx[i]->context_id,
-              new_ctx[i]->last_phys_lba,new_ctx[i]->block_size,new_ctx[i]->chunk_size,new_ctx[i]->max_xfer);
-
-        debug("%d:------------- End DK_CAPI_ATTACH with REUSE flag -------------\n", pid);
 
 
         new_ctx[i]->mmio_size = capi_attach.mmio_size;
@@ -4383,6 +4435,7 @@ int ioctl_dk_capi_attach_reuse_all_disk( )
         new_ctx[i]->return_flags = capi_attach.return_flags;
         new_ctx[i]->block_size = capi_attach.block_size;
 #else
+
         new_ctx[i]->p_host_map = mmap(NULL,new_ctx[i]->mmio_size,PROT_READ|PROT_WRITE, MAP_SHARED,
                                       capi_attach.adap_fd,0);
         if (new_ctx[i]->p_host_map == MAP_FAILED)
@@ -4401,7 +4454,7 @@ int ioctl_dk_capi_attach_reuse_all_disk( )
 
         //default rwbuff handling 4K, Lorge trasnfer handled exclusive
         new_ctx[i]->blk_len = BLOCK_SIZE/new_ctx[i]->block_size;
-        new_ctx[i]->adap_fd = new_ctx[i]->adap_fd;//capi_attach.adap_fd;
+        new_ctx[i]->adap_fd = capi_attach.adap_fd;
 
         new_ctx[i]->ctx_hndl = CTX_HNDLR_MASK & new_ctx[i]->context_id;
         new_ctx[i]->unused_lba = new_ctx[i]->last_phys_lba +1;
@@ -4588,6 +4641,9 @@ int ioctl_dk_capi_attach_reuse_loop(struct ctx *p_ctx,struct ctx *p_ctx_1 )
 #else
         p_ctx_1->context_id=p_ctx->context_id;
         capi_attach.hdr.flags = DK_CXLFLASH_ATTACH_REUSE_CONTEXT;
+#if defined(DK_CXLFLASH_APP_CLOSE_ADAP_FD) || defined(DK_CXLFLASH_CONTEXT_SQ_CMD_MODE)
+        capi_attach.hdr.return_flags = 0;
+#endif
         rc = ioctl(p_ctx_1->fd, DK_CXLFLASH_ATTACH, &capi_attach);
 #endif
         debug("%d:... DK_CAPI_ATTACH called with REUSE flag...\n", pid);
@@ -4626,6 +4682,18 @@ int ioctl_dk_capi_attach_reuse_loop(struct ctx *p_ctx,struct ctx *p_ctx_1 )
         p_ctx_1->return_flags = capi_attach.return_flags;
         p_ctx_1->block_size = capi_attach.block_size;
 #else
+#ifdef DK_CXLFLASH_APP_CLOSE_ADAP_FD
+       /* After Al-Viro changes cxlflash driver will not cache the adap fd;
+          So application needs to re-use the adap fd returned in first context attach */
+       if ( capi_attach.adap_fd == -1 )
+       {
+            capi_attach.adap_fd = p_ctx->adap_fd;
+       }
+       else
+       {
+          CHECK_RC(1,"adap fd not returned -1");
+       }
+#endif
         p_ctx_1->p_host_map = mmap(NULL,p_ctx_1->mmio_size,PROT_READ|PROT_WRITE, MAP_SHARED, //p_ctx->adap_fd,0);
                                    capi_attach.adap_fd,0);
         if (p_ctx_1->p_host_map == MAP_FAILED)
@@ -5294,7 +5362,7 @@ int is_UA_device( char * diskName )
         }
         // only supporting for scsi_generic device
 
-        iKey = strlen(diskName)-4 ;
+        iKey = strlen("/dev/");
         sprintf(blockCheckP,"ls -d /sys/devices/*/*/"
         "%s/*/*/host*/target*/*:*:*:*/scsi_generic/* | grep -w %s >/dev/null 2>&1",tmpBuff,&diskName[iKey]);
         rc = system(blockCheckP);
@@ -5447,3 +5515,177 @@ int cflash_query_ue(void *buf, size_t len)
     return ue_found;
 
 }
+
+#ifndef _AIX
+/*
+ * NAME:        diskToPortnAFU 
+ *
+ * FUNCTION:    function takes disk name as input 
+ *              It returns the AFU and port name 
+ *              for GT and GT+ card 
+ *
+ * RETURNS:
+ *
+ *             return non-zero if failed 
+ *
+ */
+
+int diskToPortnAFU( char * diskName , char * afuName, char * portName)
+{
+
+    int iCount =0;
+    int rc     =0;
+    int iTer   =0;
+    int iKey   =0;
+
+    FILE *fileP;
+    char tmpBuff[MAXBUFF];
+    char npBuff[MAXNP][MAXBUFF];
+
+    const char *initCmdP = "lspci |egrep \"0601|0628\" | awk '{ print $1}' > /tmp/trashFile";
+
+    rc = system(initCmdP);
+    if ( rc != 0)
+    {
+        fprintf(stderr,"%d: Failed in lspci \n",pid);
+        goto xerror ;
+    }
+
+    fileP = fopen("/tmp/trashFile", "r");
+
+    if (NULL == fileP)
+    {
+        fprintf(stderr,"%d: Error opening file /tmp/trashFile \n", pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    while (fgets(tmpBuff,MAXBUFF, fileP) != NULL)
+    {
+        while (iTer < MAXBUFF)
+        {
+            if (tmpBuff[iTer] =='\n')
+            {
+                tmpBuff[iTer]='\0';
+                break;
+            }
+
+            iTer++;
+        }
+
+        iKey = strlen("/dev/");
+
+        sprintf(npBuff[iCount],"ls -l /sys/bus/pci/devices/"
+                "%s/pci***:**/***:**:**.*/host*/"
+                "target*:*:*/*:*:*:*/scsi_generic | grep %s >/dev/null 2>&1",tmpBuff,&diskName[iKey]);
+
+        rc = system(npBuff[iCount]);
+        if ( rc == 0 )
+         {
+             fclose(fileP);
+             break;
+         }
+
+         iCount++;
+     }
+
+    /* Now get the AFU name */
+
+     sprintf(npBuff[iCount],"ls -d /sys/devices/*/*/"
+             "%s/cxl/card*/afu*.0/afu*m | awk -F '/' '{ print $10 }' > /tmp/trashFile", tmpBuff);
+
+    rc = system(npBuff[iCount]);
+    if ( rc != 0)
+    {
+        fprintf(stderr,"%d: failed to find AFU name\n",pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    fileP = fopen("/tmp/trashFile", "r");
+    if (NULL == fileP)
+    {
+        fprintf(stderr,"%d: Error opening file /tmp/trashFile \n", pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    if ( NULL == fgets(afuName,MAXBUFF, fileP) )
+    {
+        fprintf(stderr,"%d: Error in file /tmp/trashFile \n", pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    if ( fclose(fileP) == EOF )
+    {
+        fprintf(stderr,"%d: Error closin the file /tmp/trashFile \n", pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    iTer = 0 ;
+
+    while (iTer < MAXBUFF)
+    {
+        if (afuName[iTer] =='\n')
+        {
+            afuName[iTer]='\0';
+            break;
+         }
+            iTer++;
+    }
+
+    sprintf(npBuff[iCount],"ls -d /sys/devices/*/*/"
+            "%s/*/*/host*/target*:*:*/*:*:*:*/"
+            "scsi_generic/%s | awk -F ':' '{print $10}' > /tmp/trashFile" ,tmpBuff,&diskName[iKey]);
+
+    rc = system(npBuff[iCount]);
+    if ( rc != 0)
+    {
+        fprintf(stderr,"%d: failed to find AFU name\n",pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    fileP = fopen("/tmp/trashFile", "r");
+    if (NULL == fileP)
+    {
+        fprintf(stderr,"%d: Error opening file /tmp/trashFile \n", pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    if ( NULL == fgets(portName,MAXBUFF, fileP) )
+    {
+        fprintf(stderr,"%d: Error in file /tmp/trashFile \n", pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    if ( fclose(fileP) == EOF )
+    {
+        fprintf(stderr,"%d: Error closin the file /tmp/trashFile \n", pid);
+        rc = EINVAL ;
+        goto xerror ;
+    }
+
+    iTer = 0 ;
+
+    while (iTer < MAXBUFF)
+    {
+        if (portName[iTer] =='\n')
+        {
+            portName[iTer]='\0';
+            break;
+         }
+            iTer++;
+    }
+
+
+
+xerror:
+    return rc;
+}
+
+#endif

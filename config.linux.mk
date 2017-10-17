@@ -244,7 +244,7 @@ endif
 ASMFLAGS = ${COMMONFLAGS}
 CXXFLAGS += ${CFLAGS} -fno-rtti -fno-exceptions -Wall
 
-INCDIR =  ${ROOTPATH}/src/include . /usr/include /usr/include/misc
+INCDIR = . ${ROOTPATH}/src/include /usr/include /usr/include/misc
 _INCDIRS = ${INCDIR} ${EXTRAINCDIR}
 INCFLAGS = $(addprefix -I, ${_INCDIRS} )
 ASMINCFLAGS = $(addprefix $(lastword -Wa,-I), ${_INCDIRS})

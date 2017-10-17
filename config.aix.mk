@@ -218,7 +218,7 @@ else
     TESTGEN = ${ROOTPATH}/src/usr/cxxtest/cxxtestgen.pl
 endif
 
-INCDIR = ${ROOTPATH}/src/include /usr/include /usr/include/sys .
+INCDIR = . ${ROOTPATH}/src/include /usr/include /usr/include/sys
 _INCDIRS = ${INCDIR} ${EXTRAINCDIR}
 INCFLAGS = $(addprefix -I, ${_INCDIRS} )
 ASMINCFLAGS = $(addprefix $(lastword -Wa,-I), ${_INCDIRS})

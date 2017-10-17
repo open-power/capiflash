@@ -102,6 +102,7 @@ then
   fi
 
   EXISTS_K_VER=$(dpkg -l |grep $(uname -a|awk '{print $3}')|grep linux-image|grep -v extra|awk '{print $3}')
+  if [[ -z ${EXISTS_K_VER} ]]; then EXISTS_K_VER=$(uname -a|awk '{print $3}'); fi
   n1=$(echo $EXISTS_K_VER|awk -F. '{print $1}')
   n2=$(echo $EXISTS_K_VER|awk -F. '{print $2}')
   n3=$(echo $EXISTS_K_VER|awk -F. '{print $3}'|awk -F- '{print $1}')
@@ -147,10 +148,7 @@ then
 
  if [[ -e /usr/bin/capi_flash ]]
  then
-    IFS=$'\n'
-    adaps=($(capi_flash -l 2>/dev/null))
-    unset IFS
-    for line in "${adaps[@]}"
+    capi_flash -l | while read -r line
     do
       if [[ $VM ]]
       then

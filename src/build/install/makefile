@@ -297,6 +297,7 @@ endif
 
 cxlflash-test:
 	@#TEST ONLY CONTENT - DO NOT SHIP
+	@mkdir -p ${BIN_DIR}
 	@mkdir -p ${TEST_DIR}
 ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${TESTSRCDIR}/blk_test ${TEST_DIR}
@@ -372,7 +373,9 @@ ${FW_FILES}:
      fi
 
 cxlflashimage: ${FW_FILES}
+	@mkdir -p ${SHARE_DIR}
 	@mkdir -p ${AFU_BIN}
+	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${SHARE_DIR}
 	@if [[ -e ${RESOURCEDIR}/flashgt_nvme_nsq ]]; then \
        echo ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_nsq ${AFU_BIN}; \
        ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_nsq ${AFU_BIN}; \

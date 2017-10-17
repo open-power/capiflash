@@ -23,21 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-
-#include <ut.h>
-#include <vi.h>
-#include <arkdb.h>
 #include <ark.h>
-#include <arp.h>
-#include <am.h>
-#include <kv_inject.h>
-#include <arkdb_trace.h>
-
-#include <errno.h>
 
 /**
  *******************************************************************************
@@ -48,7 +34,6 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t         *scbp       = &(_arkp->poolthreads[tid]);
   rcb_t         *rcbp       = &(_arkp->rcbs[tcbp->rtag]);
-  tcb_t         *iotcbp     = &(_arkp->tcbs[rcbp->ttag]);
   iocb_t        *iocbp      = &(_arkp->iocbs[rcbp->ttag]);
   int32_t        rc         = 0;
 
@@ -75,7 +60,7 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
            tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen, rcbp->pos);
     rcbp->res   = -1;
     rcbp->rc    = ENOENT;
-    tcbp->state = ARK_CMD_DONE;
+    iocbp->state = ARK_CMD_DONE;
     goto ark_del_start_err;
   }
 
@@ -88,7 +73,7 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
            tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen, rcbp->pos);
     rcbp->res   = -1;
     rcbp->rc    = ENOENT;
-    tcbp->state = ARK_CMD_DONE;
+    iocbp->state = ARK_CMD_DONE;
     goto ark_del_start_err;
   }
 
@@ -103,7 +88,7 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
           KV_TRC_FFDC(pAT, "bt_realloc failed ttag:%d", tcbp->ttag);
           rcbp->res = -1;
           rcbp->rc = rc;
-          tcbp->state = ARK_CMD_DONE;
+          iocbp->state = ARK_CMD_DONE;
           goto ark_del_start_err;
       }
       tcbp->inb_size = tcbp->blen*_arkp->bsize;
@@ -127,7 +112,7 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   {
     rcbp->res   = -1;
     rcbp->rc    = ENOMEM;
-    tcbp->state = ARK_CMD_DONE;
+    iocbp->state = ARK_CMD_DONE;
     KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
     goto ark_del_start_err;
   }
@@ -136,14 +121,14 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d pos:%6ld", tid, tcbp->ttag, rcbp->pos);
 
   // Schedule the IO to read the hash entry from storage
-  ea_async_io_init(_arkp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
+  ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
                    tcbp->blen, 0, tcbp->ttag, ARK_DEL_PROCESS);
 
   if (MEM_FASTPATH)
   {
-      ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
-      ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
-      if (iotcbp->state == ARK_DEL_PROCESS) {ark_del_process(_arkp, tid, tcbp);}
+      ea_async_io_schedule(_arkp, tid, iocbp);
+      ea_async_io_harvest (_arkp, tid, iocbp);
+      if (iocbp->state == ARK_DEL_PROCESS) {ark_del_process(_arkp, tid, tcbp);}
   }
 
 ark_del_start_err:
@@ -159,7 +144,6 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t         *scbp       = &(_arkp->poolthreads[tid]);
   rcb_t         *rcbp       = &(_arkp->rcbs[tcbp->rtag]);
-  tcb_t         *iotcbp     = &(_arkp->tcbs[rcbp->ttag]);
   iocb_t        *iocbp      = &(_arkp->iocbs[rcbp->ttag]);
   uint64_t       blkcnt     = 0;
   uint64_t       exivlen    = 0;
@@ -190,7 +174,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
               KV_TRC_FFDC(pAT, "bt_reallocif rc != 0, ttag:%3d", tcbp->ttag);
               rcbp->res   = -1;
               rcbp->rc    = rc;
-              tcbp->state = ARK_CMD_DONE;
+              iocbp->state = ARK_CMD_DONE;
               goto ark_del_process_err;
           }
           tcbp->oub_size = new_btsize;
@@ -200,6 +184,8 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
     // and save off the length of the value
     rcbp->res = bt_del_def(tcbp->oub, tcbp->inb, rcbp->klen,
                            rcbp->key, (uint8_t*)&dblk, &oldvlen);
+
+    KV_TRC(pAT,"EXISTS  hblk:%ld dblk:%ld", tcbp->hblk, dblk);
 
     // Return the blocks of the hash entry back to
     // the free list
@@ -226,7 +212,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
                     blkcnt, tcbp->ttag);
         rcbp->rc    = ENOSPC;
         rcbp->res   = -1;
-        tcbp->state = ARK_CMD_DONE;
+        iocbp->state = ARK_CMD_DONE;
         goto ark_del_process_err;
       }
 
@@ -235,7 +221,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       {
         rcbp->res   = -1;
         rcbp->rc    = ENOMEM;
-        tcbp->state = ARK_CMD_DONE;
+        iocbp->state = ARK_CMD_DONE;
         KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
         goto ark_del_process_err;
       }
@@ -249,14 +235,14 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
                   tid, tcbp->ttag, rcbp->pos, tcbp->bytes);
 
       // Schedule the WRITE IO of the updated hash entry.
-      ea_async_io_init(_arkp, ARK_EA_WRITE, (void *)tcbp->oub,
+      ea_async_io_init(_arkp, iocbp, ARK_EA_WRITE, (void *)tcbp->oub,
                        tcbp->aiol, blkcnt, 0, tcbp->ttag, ARK_DEL_FINISH);
 
       if (MEM_FASTPATH)
       {
-          ea_async_io_schedule(_arkp, tid, iotcbp, iocbp);
-          ea_async_io_harvest (_arkp, tid, iotcbp, iocbp, rcbp);
-          if (iotcbp->state == ARK_DEL_FINISH) {ark_del_finish(_arkp,tid,tcbp);}
+          ea_async_io_schedule(_arkp, tid, iocbp);
+          ea_async_io_harvest (_arkp, tid, iocbp);
+          if (iocbp->state == ARK_DEL_FINISH) {ark_del_finish(_arkp,tid,tcbp);}
       }
     }
     else
@@ -277,7 +263,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
            tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen, rcbp->pos);
     rcbp->rc    = ENOENT;
     rcbp->res   = -1;
-    tcbp->state = ARK_CMD_DONE;
+    iocbp->state = ARK_CMD_DONE;
   }
 
 ark_del_process_err:
@@ -293,6 +279,7 @@ void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
 {
   rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
   scb_t  *scbp  = &(_arkp->poolthreads[tid]);
+  iocb_t *iocbp = &(_arkp->iocbs[rcbp->ttag]);
 
   scbp->poolstats.kv_cnt   -= 1;
   scbp->poolstats.byte_cnt -= tcbp->bytes;
@@ -325,7 +312,7 @@ void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
       }
   }
 
-  tcbp->state = ARK_CMD_DONE;
+  iocbp->state = ARK_CMD_DONE;
   return;
 }
 

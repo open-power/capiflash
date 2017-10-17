@@ -26,36 +26,7 @@
 #include <revtags.h>
 REVISION_TAGS(arkdb);
 #endif
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include "am.h"
-#include "ut.h"
-#include "tag.h"
-#include "vi.h"
-#include "ea.h"
-#include "bl.h"
-#include "arkdb.h"
-#include "ark.h"
-#include "arp.h"
-#include <ticks.h>
-
-#ifdef _OS_INTERNAL
-#include <sys/capiblock.h>
-#else
-#include "capiblock.h"
-#endif
-
-#include <sys/stat.h>
-
-#include <kv_trace.h>
-#include <kv_inject.h>
-#include <errno.h>
+#include <ark.h>
 
 KV_Trace_t  arkdb_kv_trace;
 KV_Trace_t *pAT             = &arkdb_kv_trace;
@@ -393,6 +364,15 @@ int ark_check_persistence(_ARK *_arkp, uint64_t flags)
                     blp->n, blp->w, rc);
         goto error_exit;
     }
+    _arkp->blu = bl_new(blp->n, blp->w);
+    if (_arkp->blu == NULL)
+    {
+        if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
+        rc = errno;
+        KV_TRC_FFDC(pAT, "bl_new failed: n:%ld w:%ld rc:%d",
+                    blp->n, blp->w, rc);
+        goto error_exit;
+    }
     _arkp->bl->count = blp->count;
     _arkp->bl->head  = blp->head;
     _arkp->bl->hold  = blp->hold;
@@ -586,6 +566,15 @@ int ark_create_verbose(char *path, ARK **arkret,
       if (bl_reserve(ark->bl, ark->pers_max_blocks))
           {goto ark_create_bl_err;}
     }
+    // Create the unmap block list
+    ark->blu = bl_new(ark->bcount, ark->blkbits);
+    if (ark->blu == NULL)
+    {
+      if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
+      rc = errno;
+      KV_TRC_FFDC(pAT, "Block list initialization failed: %d", rc);
+      goto ark_create_blu_err;
+    }
   }
   else
   {
@@ -640,12 +629,20 @@ int ark_create_verbose(char *path, ARK **arkret,
     goto ark_create_ttag_err;
   }
 
+  ark->utags = tag_new(ARK_UQ_SIZE);
+  if ( NULL == ark->utags )
+  {
+    rc = ENOMEM;
+    KV_TRC_FFDC(pAT, "Tag initialization for utags failed: %d", rc);
+    goto ark_create_utag_err;
+  }
+
   am_sz     = ark->nasyncs * sizeof(rcb_t);
   ark->rcbs = am_malloc(am_sz);
   if ( NULL == ark->rcbs )
   {
     rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocation of %"PRIu64" bytes for request control blocks", (ark->nasyncs * sizeof(rcb_t)));
+    KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for request control blocks", (ark->nasyncs * sizeof(rcb_t)));
     goto ark_create_rcbs_err;
   }
   memset(ark->rcbs,0,am_sz);
@@ -655,7 +652,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   if ( NULL == ark->tcbs )
   {
     rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocation of %"PRIu64" bytes for task control blocks", (ark->ntasks * sizeof(rcb_t)));
+    KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for tcbs", am_sz);
     goto ark_create_tcbs_err;
   }
   memset(ark->tcbs,0,am_sz);
@@ -665,17 +662,27 @@ int ark_create_verbose(char *path, ARK **arkret,
   if ( NULL == ark->iocbs )
   {
     rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocation of %"PRIu64" bytes for io control blocks", (ark->ntasks * sizeof(iocb_t)));
+    KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for iocbs", am_sz);
     goto ark_create_iocbs_err;
   }
   memset(ark->iocbs,0,am_sz);
+
+  am_sz      = ARK_UQ_SIZE * sizeof(iocb_t);
+  ark->ucbs = am_malloc(am_sz);
+  if ( NULL == ark->ucbs )
+  {
+    rc = ENOMEM;
+    KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for ucbs", am_sz);
+    goto ark_create_ucbs_err;
+  }
+  memset(ark->ucbs,0,am_sz);
 
   am_sz            = ark->nthrds * sizeof(scb_t);
   ark->poolthreads = am_malloc(am_sz);
   if ( NULL == ark->poolthreads )
   {
     rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocation of %"PRIu64" bytes for server thread control blocks", (ark->nthrds * sizeof(scb_t)));
+    KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for scbs", am_sz);
     goto ark_create_poolthreads_err;
   }
   memset(ark->poolthreads,0,am_sz);
@@ -732,7 +739,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   if ( ark->pts == NULL )
   {
     rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocation for %"PRIu64" bytes for server thread data", (sizeof(PT) * ark->nthrds));
+    KV_TRC_FFDC(pAT, "Out of memory allocation for %ld bytes for server thread data", (sizeof(PT) * ark->nthrds));
     goto ark_create_taskloop_err;
   }
   memset(ark->pts,0,am_sz);
@@ -758,11 +765,13 @@ int ark_create_verbose(char *path, ARK **arkret,
     pthread_mutex_init(&(scbp->poolmutex), NULL);
     pthread_cond_init(&(scbp->poolcond), NULL);
 
-    scbp->reqQ      = queue_new(ark->nasyncs);
-    scbp->cmpQ      = queue_new(ark->ntasks);
-    scbp->taskQ     = queue_new(ark->ntasks);
-    scbp->scheduleQ = queue_new(ark->ntasks);
-    scbp->harvestQ  = queue_new(ark->ntasks);
+    scbp->reqQ       = queue_new(ark->nasyncs);
+    scbp->cmpQ       = queue_new(ark->ntasks);
+    scbp->taskQ      = queue_new(ark->ntasks);
+    scbp->scheduleQ  = queue_new(ark->ntasks);
+    scbp->harvestQ   = queue_new(ark->ntasks);
+    scbp->uscheduleQ = queue_new(ARK_UQ_SIZE);
+    scbp->uharvestQ  = queue_new(ARK_UQ_SIZE);
 
     pt->id = i;
     pt->ark = ark;
@@ -776,8 +785,12 @@ int ark_create_verbose(char *path, ARK **arkret,
 
   ark->pcmd = PT_RUN;
 
+  /* sucess, goto end */
   goto ark_create_return;
 
+/*-------------------------------------------------------------------------------------
+ * process ark create errors
+ * ----------------------------------------------------------------------------------*/
 ark_create_poolloop_err:
 
   for (; i >= 0; i--)
@@ -795,11 +808,13 @@ ark_create_poolloop_err:
       pthread_mutex_destroy(&(scbp->poolmutex));
       pthread_cond_destroy(&(scbp->poolcond));
 
-      if (scbp->reqQ)      {queue_free(scbp->reqQ);}
-      if (scbp->cmpQ)      {queue_free(scbp->cmpQ);}
-      if (scbp->taskQ)     {queue_free(scbp->taskQ);}
-      if (scbp->scheduleQ) {queue_free(scbp->scheduleQ);}
-      if (scbp->harvestQ)  {queue_free(scbp->harvestQ);}
+      if (scbp->reqQ)       {queue_free(scbp->reqQ);}
+      if (scbp->cmpQ)       {queue_free(scbp->cmpQ);}
+      if (scbp->taskQ)      {queue_free(scbp->taskQ);}
+      if (scbp->scheduleQ)  {queue_free(scbp->scheduleQ);}
+      if (scbp->harvestQ)   {queue_free(scbp->harvestQ);}
+      if (scbp->uscheduleQ) {queue_free(scbp->uscheduleQ);}
+      if (scbp->uharvestQ)  {queue_free(scbp->uharvestQ);}
     }
   }
 
@@ -831,6 +846,13 @@ ark_create_taskloop_err:
   }
 
 ark_create_poolthreads_err:
+  KV_TRC_DBG(pAT, "free ucbs");
+  if (ark->ucbs)
+  {
+    am_free(ark->ucbs);
+  }
+
+ark_create_ucbs_err:
   KV_TRC_DBG(pAT, "free iocbs");
   if (ark->iocbs)
   {
@@ -852,6 +874,14 @@ ark_create_tcbs_err:
   }
 
 ark_create_rcbs_err:
+    KV_TRC_DBG(pAT, "free utags");
+    if (ark->utags)
+    {
+      tag_free(ark->utags);
+    }
+
+ark_create_utag_err:
+
   KV_TRC_DBG(pAT, "free ttags");
   if (ark->ttags)
   {
@@ -874,6 +904,10 @@ ark_create_pth_mutex_err:
   am_free(ark->htc_orig);
 
 ark_create_htc_err:
+  KV_TRC_DBG(pAT, "blu_delete");
+  bl_delete(ark->blu);
+
+ark_create_blu_err:
   KV_TRC_DBG(pAT, "bl_delete");
   bl_delete(ark->bl);
 
@@ -951,6 +985,8 @@ int ark_delete(ARK *ark)
       queue_free(scbp->taskQ);
       queue_free(scbp->scheduleQ);
       queue_free(scbp->harvestQ);
+      queue_free(scbp->uscheduleQ);
+      queue_free(scbp->uharvestQ);
 
       pthread_mutex_destroy(&(scbp->poolmutex));
       pthread_cond_destroy(&(scbp->poolcond));
@@ -979,6 +1015,9 @@ int ark_delete(ARK *ark)
     am_free  (_arkp->tcbs[i].aiol);
   }
 
+  KV_TRC_DBG(pAT, "free ucbs");
+  am_free(_arkp->ucbs);
+
   KV_TRC_DBG(pAT, "free iocbs");
   am_free(_arkp->iocbs);
 
@@ -987,6 +1026,9 @@ int ark_delete(ARK *ark)
 
   KV_TRC_DBG(pAT, "free rcbs");
   am_free(_arkp->rcbs);
+
+  KV_TRC_DBG(pAT, "free utags");
+  if (_arkp->utags) {tag_free(_arkp->utags);}
 
   KV_TRC_DBG(pAT, "free ttags");
   if (_arkp->ttags) {tag_free(_arkp->ttags);}
@@ -1018,6 +1060,9 @@ int ark_delete(ARK *ark)
 
   KV_TRC_DBG(pAT, "bl_delete");
   bl_delete(_arkp->bl);
+
+  KV_TRC_DBG(pAT, "blu_delete");
+  bl_delete(_arkp->blu);
 
   KV_TRC(pAT, "done, free arkp %p", _arkp);
   am_free(_arkp);
@@ -1741,11 +1786,12 @@ int ark_count(ARK *ark, int64_t *count)
  ******************************************************************************/
 int ark_flush(ARK *ark)
 {
-  int rc = 0;
-  int i = 0;
-  _ARK *_arkp = (_ARK *)ark;
-  hash_t *ht = NULL;
-  BL *bl = NULL;
+  _ARK   *_arkp = (_ARK *)ark;
+  hash_t *ht    = NULL;
+  BL     *bl    = NULL;
+  BL     *blu   = NULL;
+  int     rc    = 0;
+  int     i     = 0;
 
   if (ark == NULL)
   {
@@ -1772,20 +1818,31 @@ int ark_flush(ARK *ark)
     KV_TRC_FFDC(pAT, "rc = %d", rc);
     goto ark_flush_err;
   }
+  // Create the unmap block list
+  blu = bl_new(_arkp->bcount, _arkp->blkbits);
+  if (blu == NULL)
+  {
+    if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
+    rc = errno;
+    KV_TRC_FFDC(pAT, "rc = %d", rc);
+    goto ark_flush_err;
+  }
 
   // If we've made it here then we delete the old
   // hash and block list structures and set the new ones
   hash_free(_arkp->ht);
   bl_delete(_arkp->bl);
+  bl_delete(_arkp->blu);
 
-  _arkp->ht = ht;
-  _arkp->bl = bl;
+  _arkp->ht  = ht;
+  _arkp->bl  = bl;
+  _arkp->blu = blu;
 
   // We need to reset the counts for each pool thread
-  for (i = 0; i < _arkp->nthrds; i++)
+  for (i=0; i<_arkp->nthrds; i++)
   {
-    _arkp->poolthreads[i].poolstats.blk_cnt = 0;
-    _arkp->poolthreads[i].poolstats.kv_cnt = 0;
+    _arkp->poolthreads[i].poolstats.blk_cnt  = 0;
+    _arkp->poolthreads[i].poolstats.kv_cnt   = 0;
     _arkp->poolthreads[i].poolstats.byte_cnt = 0;
   }
 
@@ -1794,15 +1851,9 @@ ark_flush_err:
   {
     // If we ran into an error, delete the newly
     // created hash and block lists structures
-    if (ht)
-    {
-      hash_free(ht);
-    }
-
-    if (bl)
-    {
-      bl_delete(bl);
-    }
+    if (ht)  {hash_free(ht);}
+    if (bl)  {bl_delete(bl);}
+    if (blu) {bl_delete(blu);}
   }
 
   return rc;

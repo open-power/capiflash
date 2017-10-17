@@ -92,8 +92,12 @@ if ($ARGV[0])
 }
 if ($prthelp) {usage();}
 
-#check permissions
-(! (`groups $ENV{'USER'}` =~ / cxl/ || `id -u $ENV{'USER'}` == 0)) && die "You do not have enough permissions\n";
+#check sudo permissions
+if (`id -u` != 0)
+{
+  print "Run with sudo permissions\n";
+  exit -2;
+}
 
 #check cxlflash is not loaded
 system("lsmod | grep cxlflash >/dev/null");

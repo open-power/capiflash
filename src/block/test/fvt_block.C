@@ -6053,6 +6053,195 @@ TEST(Block_FVT_Suite, BLK_API_FVT_plun_polling_unmap_rw_tst)
     }
 }
 
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+TEST(Block_FVT_Suite, BLK_API_FVT_plun_unmap_BIG_BLOCKS)
+{
+    int         open_flags=0;
+    chunk_id_t  id       = 0;
+    int         flags    = 0;
+    int         max_reqs = 64;
+    int         er_no    = 0;
+    int         open_cnt = 1;
+    int         ret      = 0;
+    size_t      temp_sz  = 64*1024;  // 16 unmap cmds, 256mb
+    int         blks     = 4096;
+    chunk_attrs_t attrs;
+
+    ASSERT_EQ(0,blk_fvt_setup(1));
+
+    blk_open_tst(&id, max_reqs, &er_no, open_cnt, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID, id);
+
+    bzero(&attrs, sizeof(attrs));
+    ret = cblk_get_attrs(id, &attrs, 0);
+    ASSERT_EQ(ret,0);
+
+    if (attrs.flags1 & CFLSH_ATTR_UNMAP)
+    {
+        char    *buf       = NULL;
+        int      rc        = 0;
+        int      tag       = -1;
+        uint64_t status    = 0;
+
+        if ((rc=posix_memalign((void**)&buf, 128, 4096*temp_sz)))
+        {
+            EXPECT_EQ(rc,0);
+            goto exit;
+        }
+
+        rc = cblk_write(id, buf, 0, blks, 0);
+        ASSERT_EQ(blks, rc);
+        rc = cblk_unmap(id, buf, 0, blks, 0);
+        ASSERT_EQ(blks, rc);
+
+        rc = cblk_awrite(id, buf, 0, blks, &tag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+        ASSERT_EQ(0, rc);
+        rc=cblk_aresult(id, &tag, &status, CBLK_ARESULT_BLOCKING);
+        ASSERT_EQ(blks, rc);
+        ASSERT_EQ(0, errno);
+
+        rc = cblk_aunmap(id, buf, 0, blks, &tag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+        ASSERT_EQ(0, rc);
+        rc=cblk_aresult(id, &tag, &status, CBLK_ARESULT_BLOCKING);
+        ASSERT_EQ(blks, rc);
+        ASSERT_EQ(0, errno);
+        free(buf);
+    }
+    else
+    {
+        TESTCASE_SKIP("unmap is not supported");
+    }
+
+exit:
+    blk_open_tst_cleanup(flags, &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+TEST(Block_FVT_Suite, BLK_API_FVT_vlun_unmap_scrub_small)
+{
+    int         open_flags = CBLK_OPN_VIRT_LUN | CBLK_OPN_SCRUB_DATA;
+    chunk_id_t  id       = 0;
+    int         flags    = 0;
+    int         max_reqs = 64;
+    int         er_no    = 0;
+    int         open_cnt = 1;
+    int         ret      = 0;
+    size_t      temp_sz  = 5000;
+    chunk_attrs_t attrs;
+
+    ASSERT_EQ(0,blk_fvt_setup(1));
+
+    blk_open_tst(&id, max_reqs, &er_no, open_cnt, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID, id);
+
+    bzero(&attrs, sizeof(attrs));
+    ret = cblk_get_attrs(id, &attrs, 0);
+    ASSERT_EQ(ret,0);
+
+    blk_fvt_get_set_lun_size(id, &temp_sz, 0, 2, &ret,&er_no);
+    EXPECT_EQ(0, ret);
+
+    if (attrs.flags1 & CFLSH_ATTR_UNMAP)
+    {
+        char     buf[4096] = {0};
+        int      rc        = 0;
+        int      tag       = -1;
+        uint64_t status    = 0;
+
+        rc = cblk_write(id, buf, 0, 1, 0);
+        ASSERT_EQ(1, rc);
+        rc = cblk_unmap(id, buf, 0, 1, 0);
+        ASSERT_EQ(1, rc);
+
+        rc = cblk_awrite(id, buf, 0, 1, &tag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+        ASSERT_EQ(0, rc);
+        rc=cblk_aresult(id, &tag, &status, CBLK_ARESULT_BLOCKING);
+        ASSERT_EQ(1, rc);
+        ASSERT_EQ(0, errno);
+
+        rc = cblk_aunmap(id, buf, 0, 1, &tag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+        ASSERT_EQ(0, rc);
+        rc=cblk_aresult(id, &tag, &status, CBLK_ARESULT_BLOCKING);
+        ASSERT_EQ(1, rc);
+        ASSERT_EQ(0, errno);
+    }
+    else
+    {
+        TESTCASE_SKIP("unmap is not supported");
+    }
+
+    blk_open_tst_cleanup(flags, &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+TEST(Block_FVT_Suite, BLK_API_FVT_vlun_unmap_scrub_big)
+{
+    int         open_flags = CBLK_OPN_VIRT_LUN | CBLK_OPN_SCRUB_DATA;
+    chunk_id_t  id       = 0;
+    int         flags    = 0;
+    int         max_reqs = 64;
+    int         er_no    = 0;
+    int         open_cnt = 1;
+    int         ret      = 0;
+    size_t      temp_sz  = 500000;
+    chunk_attrs_t attrs;
+
+    ASSERT_EQ(0,blk_fvt_setup(1));
+
+    blk_open_tst(&id, max_reqs, &er_no, open_cnt, open_flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID, id);
+
+    bzero(&attrs, sizeof(attrs));
+    ret = cblk_get_attrs(id, &attrs, 0);
+    ASSERT_EQ(ret,0);
+
+    blk_fvt_get_set_lun_size(id, &temp_sz, 0, 2, &ret,&er_no);
+    EXPECT_EQ(0, ret);
+
+    if (attrs.flags1 & CFLSH_ATTR_UNMAP)
+    {
+        char     buf[4096] = {0};
+        int      rc        = 0;
+        int      tag       = -1;
+        uint64_t status    = 0;
+
+        rc = cblk_write(id, buf, 0, 1, 0);
+        ASSERT_EQ(1, rc);
+        rc = cblk_unmap(id, buf, 0, 1, 0);
+        ASSERT_EQ(1, rc);
+
+        rc = cblk_awrite(id, buf, 0, 1, &tag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+        ASSERT_EQ(0, rc);
+        rc=cblk_aresult(id, &tag, &status, CBLK_ARESULT_BLOCKING);
+        ASSERT_EQ(1, rc);
+        ASSERT_EQ(0, errno);
+
+        rc = cblk_aunmap(id, buf, 0, 1, &tag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+        ASSERT_EQ(0, rc);
+        rc=cblk_aresult(id, &tag, &status, CBLK_ARESULT_BLOCKING);
+        ASSERT_EQ(1, rc);
+        ASSERT_EQ(0, errno);
+    }
+    else
+    {
+        TESTCASE_SKIP("unmap is not supported");
+    }
+
+    blk_open_tst_cleanup(flags, &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
 TEST(Block_FVT_Suite, BLK_API_FVT_plun_blocking_perf_test)
 {
 

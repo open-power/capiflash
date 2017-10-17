@@ -23,11 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include <stdio.h>
-#include "tag.h"
-#include "am.h"
-#include <arkdb_trace.h>
-#include <errno.h>
+#include <ark.h>
 
 tags_t* tag_new(uint32_t n)
 {

@@ -23,7 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#include "vi.h"
+#include <vi.h>
 
 uint64_t vi_enc64(uint64_t n, uint8_t *buf) {
   uint64_t len = 0;

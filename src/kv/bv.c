@@ -22,14 +22,7 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "am.h"
-#include "ut.h"
-#include "bv.h"
-#include <errno.h>
+#include <ark.h>
 
 #define BPW 8
 #define WRD uint8_t

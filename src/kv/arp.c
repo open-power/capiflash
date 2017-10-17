@@ -28,24 +28,7 @@
  * \brief
  *   ark thread pool functions
  ******************************************************************************/
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-
-#include <sys/stat.h>
-#include <sys/time.h>
-
-#include <ct.h>
-#include <ut.h>
-#include <vi.h>
-#include <arkdb.h>
 #include <ark.h>
-#include <arp.h>
-#include <am.h>
-#include <ticks.h>
-#include <arkdb_trace.h>
-#include <errno.h>
 
 /**
  *******************************************************************************
@@ -119,22 +102,39 @@ int ark_anyreturn(_ARK *_arkp, int *tag, int64_t *res)
  ******************************************************************************/
 int64_t ark_take_pool(_ARK *_arkp, ark_stats_t *stats, uint64_t n)
 {
+  int64_t  i   = 0;
   int64_t  rc  = 0;
   uint64_t blk = 0;
 
   pthread_mutex_lock(&_arkp->mainmutex);
+
+  /* if there are enough blocks in the unmap list, use them */
+  if (_arkp->blu->count >= n)
+  {
+      /* move n blocks 1 at a time from unmap list */
+      for (i=0; i<n; i++)
+      {
+          blk = bls_rem(_arkp->blu);
+          bl_drop(_arkp->bl, blk);
+      }
+      blk = bl_take(_arkp->bl, n);
+      KV_TRC_EXT3(pAT, "TK_UM   blk:%ld n:%ld bl:%ld blu:%ld",
+                  blk, n, _arkp->bl->count, _arkp->blu->count);
+      goto blu_done;
+  }
 
   bl_check_take(_arkp->bl, n);
 
   if (bl_left(_arkp->bl) < n)
   {
       BL      *bl      = NULL;
+      BL      *blu     = NULL;
       int64_t  cursize = _arkp->size;
       int64_t  atleast = n * _arkp->bsize;
       int64_t  newsize = cursize + atleast + (_arkp->grow * _arkp->bsize);
       uint64_t newbcnt = newsize / _arkp->bsize;
 
-      KV_TRC(pAT, "RESIZE  n:%ld cur:%ld new:%ld",
+      KV_TRC(pAT, "TK_RESZ n:%ld cur:%ld new:%ld",
                   n, cursize/_arkp->bsize, newbcnt);
 
       rc = ea_resize(_arkp->ea, _arkp->bsize, newbcnt);
@@ -143,9 +143,14 @@ int64_t ark_take_pool(_ARK *_arkp, ark_stats_t *stats, uint64_t n)
           rc = -1;
           goto error;
       }
-
       bl = bl_resize(_arkp->bl, newbcnt, _arkp->bl->w);
       if (bl == NULL)
+      {
+          rc = -1;
+          goto error;
+      }
+      blu = bl_resize(_arkp->blu, newbcnt, _arkp->blu->w);
+      if (blu == NULL)
       {
           rc = -1;
           goto error;
@@ -153,6 +158,7 @@ int64_t ark_take_pool(_ARK *_arkp, ark_stats_t *stats, uint64_t n)
 
       _arkp->size = newsize;
       _arkp->bl   = bl;
+      _arkp->blu  = blu;
   }
 
   blk = bl_take(_arkp->bl, n);
@@ -162,16 +168,21 @@ int64_t ark_take_pool(_ARK *_arkp, ark_stats_t *stats, uint64_t n)
       goto error;
   }
 
+blu_done:
+  rc = blk;
+
   _arkp->blkused += n;
   stats->blk_cnt += n;
-  rc              = blk;
 
-  KV_TRC_EXT3(pAT, "TK_POOL blk:%ld n:%ld used:%ld", blk, n, _arkp->blkused);
+  KV_TRC_EXT3(pAT, "BL_STAT INC blk:%ld nblks:%ld used:%ld cnt:%ld",
+              blk, n, _arkp->blkused, stats->blk_cnt);
 
 error:
   pthread_mutex_unlock(&_arkp->mainmutex);
 
-  if (rc <= 0) KV_TRC_FFDC(pAT, "ERROR");
+  if (rc <= 0) {KV_TRC_FFDC(pAT, "ERROR");}
+
+  KV_TRC_EXT3(pAT, "BL_TAKE blk:%ld used:%ld", rc, _arkp->blkused);
   return rc;
 }
 
@@ -181,24 +192,172 @@ error:
  ******************************************************************************/
 void ark_drop_pool(_ARK *_arkp, ark_stats_t *stats, uint64_t blk)
 {
-  int64_t nblks = 0;
+  int64_t  nblks = 0;
+  int      i     = 0;
+  uint64_t tblk  = 0;
 
-  if (!blk) {return;}
+  if (blk <= 0) {KV_TRC_FFDC(pAT, "bad blk:%ld", blk); return;}
 
   pthread_mutex_lock(&_arkp->mainmutex);
+
   nblks = bl_drop(_arkp->bl, blk);
   if (nblks == -1)
   {
-      KV_TRC_FFDC(pAT, "failure, unable to decrement blocks for blk:%ld", blk);
+      KV_TRC_FFDC(pAT, "ERROR   unable to free chain for blk:%ld", blk);
   }
   else
   {
       _arkp->blkused -= nblks;
       stats->blk_cnt -= nblks;
+      KV_TRC_EXT3(pAT, "BL_STAT DEC blk:%ld nblks:%ld used:%ld cnt:%ld",
+                  blk, nblks, _arkp->blkused, stats->blk_cnt);
   }
+
+  /*------------------------------------------------------------------------
+   * if unmap is supported, mv UNMAP blks from bl to blu
+   *----------------------------------------------------------------------*/
+  if (_arkp->ea->unmap)
+  {
+      for (i=0; i<nblks; i++)
+      {
+          /* take single blk */
+          if ((tblk=bl_take(_arkp->bl,1)) <= 0)
+          {
+              KV_TRC_FFDC(pAT, "ERROR   bl_take i:%d nblks:%ld", i, nblks);
+              break;
+          }
+          KV_TRC_EXT3(pAT, "UM_bl   TAKE bl:%p i:%d blk:%ld nblks:%ld",
+                      _arkp->bl, i, tblk, nblks);
+
+          /* drop single blk to blu */
+          if (bls_add(_arkp->blu,tblk) <= 0)
+          {
+              KV_TRC_EXT3(pAT, "UM_blu  DROP bl:%p i:%d blk:%ld nblks:%ld",
+                          _arkp->blu, i, tblk, nblks);
+              bl_drop(_arkp->bl,tblk);
+              KV_TRC_FFDC(pAT, "ERROR   bl_drop i:%d blk:%ld", i, tblk);
+              break;
+          }
+          KV_TRC_EXT3(pAT, "UM_blu  DROP blk:%ld", tblk);
+      }
+  }
+
   pthread_mutex_unlock(&_arkp->mainmutex);
-  KV_TRC_EXT3(pAT, "DR_POOL blk:%ld drop:%ld used:%ld",
-              blk, nblks, _arkp->blkused);
+
+  KV_TRC_EXT3(pAT, "BL_DROP blk:%ld used:%ld", blk, _arkp->blkused);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *  schedule/harvest/complete unmaps
+ ******************************************************************************/
+void process_unmapQ(_ARK *_arkp, int id, int iss)
+{
+    scb_t   *scbp  = &(_arkp->poolthreads[id]);
+    iocb_t  *iocbp = NULL;
+    queue_t *usq   = scbp->uscheduleQ;
+    queue_t *uhq   = scbp->uharvestQ;
+    int32_t  utag  = 0;
+    int32_t  max   = ARK_UQ_SIZE;
+    int      i     = 0;
+    uint64_t blk   = 0;
+
+    if (!_arkp->blu->count && !usq->c && !uhq->c) {return;}
+
+    max = _arkp->blu->count>max ? max : _arkp->blu->count;
+
+    /*------------------------------------------------------------------------
+     * process blu and queue UNMAPs
+     *----------------------------------------------------------------------*/
+    for (i=0; iss && i<max; i++)
+    {
+        _arkp->utime = getticks();
+        if (EAGAIN == tag_unbury(_arkp->utags, &utag)) {break;}
+
+        if (i==0)
+        {
+            KV_TRC_IO(pAT, "UM_Q    tid:%d max:%d blu:%ld",
+                      id, max, _arkp->blu->count);
+        }
+
+        iocb_t        *iocbp = &(_arkp->ucbs[utag]);
+        ark_io_list_t *aiol = NULL;
+
+        if (!(aiol=am_malloc(sizeof(ark_io_list_t))))
+        {
+            tag_bury(_arkp->utags, utag);
+            break;
+        }
+
+        if ((blk=bls_rem(_arkp->blu)) <= 0)
+        {
+            tag_bury(_arkp->utags, utag);
+            break;
+        }
+        aiol[0].blkno     = blk;
+        aiol[0].a_tag.tag = -1;
+        ea_async_io_init(_arkp, iocbp, ARK_EA_UNMAP, (void *)_arkp->ea->zbuf,
+                         aiol, 1, 0, utag, ARK_CMD_DONE);
+        queue_enq_unsafe(usq, utag);
+    }
+
+    /*------------------------------------------------------------------------
+     * harvest UNMAPs
+     *----------------------------------------------------------------------*/
+    max=uhq->c;
+    for (i=0; i<max; i++)
+    {
+        if (queue_deq_unsafe(uhq, &utag)) {break;}
+
+        iocbp = &(_arkp->ucbs[utag]);
+
+        if (iocbp->state==ARK_IO_HARVEST) {ea_async_io_harvest(_arkp,id,iocbp);}
+
+        if      (iocbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(usq, utag);}
+        else if (iocbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(uhq, utag);}
+        else if (iocbp->state==ARK_CMD_DONE)
+        {
+            pthread_mutex_lock(&_arkp->mainmutex);
+            if (bl_drop(_arkp->bl, iocbp->blist[0].blkno) <= 0)
+               {KV_TRC_FFDC(pAT, "ERROR   bl_drop:%ld",iocbp->blist[0].blkno);}
+            pthread_mutex_unlock(&_arkp->mainmutex);
+
+            am_free(iocbp->blist);
+            tag_bury(_arkp->utags, iocbp->tag);
+            _arkp->um_opsT += 1;
+            _arkp->um_latT += iocbp->lat;
+        }
+    }
+
+    /*------------------------------------------------------------------------
+     * schedule UNMAPs
+     *----------------------------------------------------------------------*/
+    max=usq->c;
+    for (i=0; i<max; i++)
+    {
+        if (queue_deq_unsafe(usq, &utag)) {break;}
+
+        iocbp = &(_arkp->ucbs[utag]);
+
+        if (iocbp->state==ARK_IO_SCHEDULE) {ea_async_io_schedule(_arkp,id,iocbp);}
+
+        if      (iocbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(usq, utag);}
+        else if (iocbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(uhq, utag);}
+        else if (iocbp->state==ARK_CMD_DONE)
+        {
+            pthread_mutex_lock(&_arkp->mainmutex);
+            if (bl_drop(_arkp->bl, iocbp->blist[0].blkno) <= 0)
+               {KV_TRC_FFDC(pAT, "ERROR   bl_drop:%ld",iocbp->blist[0].blkno);}
+            pthread_mutex_unlock(&_arkp->mainmutex);
+
+            am_free(iocbp->blist);
+            tag_bury(_arkp->utags, iocbp->tag);
+            _arkp->um_opsT += 1;
+            _arkp->um_latT += iocbp->lat;
+        }
+        if (iocbp->eagain) {iocbp->eagain=0; break;}
+    }
 }
 
 /**
@@ -218,8 +377,8 @@ int ark_enq_cmd(int cmd, _ARK *_arkp, uint64_t klen, void *key,
 
   if ( (_arkp == NULL) || ((klen > 0) && (key == NULL)))
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: cmd %d, ark %p, \
-                     key %p, klen %"PRIu64"", cmd, _arkp, key, klen);
+    KV_TRC_FFDC(pAT, "ERROR   EINVAL cmd:%d ark:%p key:%p klen:%ld",
+                cmd, _arkp, key, klen);
     rc = EINVAL;
     goto ark_enq_cmd_err;
   }
@@ -291,7 +450,8 @@ ark_enq_cmd_err:
 void ark_rand_pool(_ARK *_arkp, int id, tcb_t *tcbp)
 {
   // find the hashtable position
-  rcb_t   *rcbp = &(_arkp->rcbs[tcbp->rtag]);
+  rcb_t   *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
+  iocb_t  *iocbp = &(_arkp->iocbs[tcbp->ttag]);
   int32_t  found = 0;
   int32_t  i = 0;
   int32_t  ea_rc = 0;
@@ -416,7 +576,7 @@ void ark_rand_pool(_ARK *_arkp, int id, tcb_t *tcbp)
   }
 
 ark_rand_pool_err:
-  tcbp->state = ARK_CMD_DONE;
+  iocbp->state = ARK_CMD_DONE;
 }
 
 /**
@@ -428,7 +588,8 @@ ark_rand_pool_err:
  ******************************************************************************/
 void ark_first_pool(_ARK *_arkp, int id, tcb_t *tcbp)
 {
-  rcb_t   *rcbp = &(_arkp->rcbs[tcbp->rtag]);
+  rcb_t   *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
+  iocb_t  *iocbp = &(_arkp->iocbs[tcbp->ttag]);
   _ARI *_arip = NULL;
   uint64_t i;
   int32_t  rc = 0;
@@ -559,7 +720,7 @@ ark_first_pool_err:
     _arip->bt = NULL;
   }
 
-  tcbp->state = ARK_CMD_DONE;
+  iocbp->state = ARK_CMD_DONE;
 }
 
 /**
@@ -571,7 +732,8 @@ ark_first_pool_err:
  ******************************************************************************/
 void ark_next_pool(_ARK *_arkp, int id, tcb_t *tcbp)
 {
-  rcb_t    *rcbp = &(_arkp->rcbs[tcbp->rtag]);
+  rcb_t    *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
+  iocb_t   *iocbp = &(_arkp->iocbs[tcbp->ttag]);
   _ARI     *_arip = (_ARI *)rcbp->val;
   uint64_t i;
   int32_t  rc = 0;
@@ -764,7 +926,7 @@ ark_next_pool_err:
     _arip->bt = NULL;
   }
 
-  tcbp->state = ARK_CMD_DONE;
+  iocbp->state = ARK_CMD_DONE;
 }
 
 /**
@@ -900,6 +1062,8 @@ void *pool_function(void *arg)
   queue_t *tq     = scbp->taskQ;
   queue_t *sq     = scbp->scheduleQ;
   queue_t *hq     = scbp->harvestQ;
+  queue_t *usq    = scbp->uscheduleQ;
+  queue_t *uhq    = scbp->uharvestQ;
   int32_t  i      = 0;
   uint64_t hval   = 0;
   uint64_t hlba   = 0;
@@ -911,47 +1075,41 @@ void *pool_function(void *arg)
 
   KV_TRC_DBG(pAT, "start tid:%d nactive:%d", id, _arkp->nactive);
 
+  _arkp->utime = getticks();
+
   /*----------------------------------------------------------------------------
-   * Run until the thread state is EXIT or the global
-   * state, ark_exit, is not set showing we are shutting
-   * down the ark db.
+   * Run until the thread state is EXIT
    *--------------------------------------------------------------------------*/
-  while ((scbp->poolstate != PT_EXIT))
+  while (scbp->poolstate != PT_EXIT)
   {
       /*------------------------------------------------------------------------
        * harvest IOs
        *----------------------------------------------------------------------*/
       MAX_POLL = queue_count(hq);
-      if (MAX_POLL)
-      {
-          MAX_POLL = MAX_POLL <  10 ? 1 : MAX_POLL/10;
-      }
+      if (MAX_POLL) {MAX_POLL = MAX_POLL<10 ? 1 : MAX_POLL/10;}
+
       for (i=0; i<MAX_POLL; i++)
       {
-          rcb_t  *rcbp  = NULL;
-          tcb_t  *tcbp  = NULL;
           iocb_t *iocbp = NULL;
           int32_t ttag  = 0;
 
           if (queue_deq_unsafe(hq, &ttag) != 0) {continue;}
-          tcbp  = &(_arkp->tcbs[ttag]);
           iocbp = &(_arkp->iocbs[ttag]);
-          rcbp  = &(_arkp->rcbs[tcbp->rtag]);
 
           KV_TRC_EXT3(pAT, "HQ_DEQ  tid:%d ttag:%3d state:%d",
-                     id, ttag, tcbp->state);
+                     id, ttag, iocbp->state);
 
-          if (tcbp->state == ARK_IO_HARVEST)
+          if (iocbp->state == ARK_IO_HARVEST)
           {
-              ea_async_io_harvest(_arkp, id, tcbp, iocbp, rcbp);
+              ea_async_io_harvest(_arkp, id, iocbp);
               if (iocbp->hmissN) {++tmiss;}
           }
 
           // place the iocb on a queue for the next step
-          if      (tcbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(sq, ttag);}
-          else if (tcbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(hq, ttag);}
-          else if (tcbp->state==ARK_CMD_DONE)    {queue_enq_unsafe(cq, ttag);}
-          else                                   {queue_enq_unsafe(tq, ttag);}
+          if      (iocbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(sq, ttag);}
+          else if (iocbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(hq, ttag);}
+          else if (iocbp->state==ARK_CMD_DONE)    {queue_enq_unsafe(cq, ttag);}
+          else                                    {queue_enq_unsafe(tq, ttag);}
       }
 
       /*------------------------------------------------------------------------
@@ -960,25 +1118,29 @@ void *pool_function(void *arg)
       int sN=sq->c;
       for (i=0; i<sN; i++)
       {
-          tcb_t  *tcbp  = NULL;
           iocb_t *iocbp = NULL;
           int32_t ttag  = 0;
 
           if (queue_deq_unsafe(sq, &ttag) != 0) {continue;}
-          tcbp  = &(_arkp->tcbs[ttag]);
           iocbp = &(_arkp->iocbs[ttag]);
 
           KV_TRC_EXT3(pAT, "SQ_DEQ  tid:%d ttag:%3d state:%d",
-                     id, ttag, tcbp->state);
+                     id, ttag, iocbp->state);
 
-          if (tcbp->state == ARK_IO_SCHEDULE)
-              {ea_async_io_schedule(_arkp, id, tcbp, iocbp);}
+          if (iocbp->state == ARK_IO_SCHEDULE)
+              {ea_async_io_schedule(_arkp, id, iocbp);}
 
           // place the iocb on a queue for the next step
-          if      (tcbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(sq, ttag);}
-          else if (tcbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(hq, ttag);}
-          else if (tcbp->state==ARK_CMD_DONE)    {queue_enq_unsafe(cq, ttag);}
-          else                                   {queue_enq_unsafe(tq, ttag);}
+          if      (iocbp->state==ARK_IO_SCHEDULE) {queue_enq_unsafe(sq, ttag);}
+          else if (iocbp->state==ARK_IO_HARVEST)  {queue_enq_unsafe(hq, ttag);}
+          else if (iocbp->state==ARK_CMD_DONE)    {queue_enq_unsafe(cq, ttag);}
+          else                                    {queue_enq_unsafe(tq, ttag);}
+          if (iocbp->eagain) {iocbp->eagain=0; break;}
+      }
+
+      if (_arkp->ea->unmap)
+      {
+          process_unmapQ(_arkp, id, 300<MDELTA(_arkp->utime,_arkp->ns_per_tick));
       }
 
       /*------------------------------------------------------------------------
@@ -987,7 +1149,7 @@ void *pool_function(void *arg)
        * in the task queue
        *----------------------------------------------------------------------*/
       queue_lock(rq);
-      if (!rq->c && !tq->c && !sq->c && !hq->c && !cq->c)
+      if (!rq->c && !tq->c && !sq->c && !hq->c && !cq->c && !usq->c && !uhq->c)
       {
           ticks delta;
           iticks = getticks();
@@ -1005,6 +1167,7 @@ void *pool_function(void *arg)
       {
           rcb_t  *rcbp  = NULL;
           tcb_t  *tcbp  = NULL;
+          iocb_t *iocbp = NULL;
           int32_t rtag  = 0;
           int32_t ttag  = 0;
           int32_t tskrc = EAGAIN;
@@ -1037,13 +1200,15 @@ void *pool_function(void *arg)
               break;
           }
 
-          tcbp = &(_arkp->tcbs[ttag]);
-          tcbp->rtag    = rtag;
-          rcbp->ttag    = ttag;
-          tcbp->state   = init_task_state(_arkp, tcbp);
-          tcbp->sthrd   = rcbp->sthrd;
-          tcbp->ttag    = ttag;
-          tcbp->new_key = 0;
+          tcbp            = &(_arkp->tcbs[ttag]);
+          iocbp           = &(_arkp->iocbs[ttag]);
+          tcbp->rtag      = rtag;
+          rcbp->ttag      = ttag;
+          iocbp->state    = init_task_state(_arkp, tcbp);
+          iocbp->io_error = 0;
+          tcbp->sthrd     = rcbp->sthrd;
+          tcbp->ttag      = ttag;
+          tcbp->new_key   = 0;
           hlba = HASH_LBA(hval);
           HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, ttag, hlba));
           (void)queue_enq_unsafe(tq, ttag);
@@ -1081,9 +1246,10 @@ void *pool_function(void *arg)
 
           if (queue_deq_unsafe(tq, &ttag) != 0) {continue;}
 
-          tcbp  = &(_arkp->tcbs[ttag]);
-          iocbp = &(_arkp->iocbs[ttag]);
-          s     = tcbp->state;
+          tcbp       = &(_arkp->tcbs[ttag]);
+          iocbp      = &(_arkp->iocbs[ttag]);
+          tcbp->ttag = ttag;
+          s          = iocbp->state;
 
           KV_TRC_EXT3(pAT, "TQ_DEQ  tid:%d ttag:%3d state:%d ", id, ttag, s);
 
@@ -1106,37 +1272,37 @@ void *pool_function(void *arg)
           /*--------------------------------------------------------------------
            * schedule the first IO right way
            *------------------------------------------------------------------*/
-          if (tcbp->state == ARK_IO_SCHEDULE)
+          if (iocbp->state == ARK_IO_SCHEDULE)
           {
               iocbp = &(_arkp->iocbs[ttag]);
-              ea_async_io_schedule(_arkp, id, tcbp, iocbp);
+              ea_async_io_schedule(_arkp, id, iocbp);
           }
 
           /*--------------------------------------------------------------------
            * requeue task
            *------------------------------------------------------------------*/
-          if (tcbp->state == ARK_IO_SCHEDULE)
+          if (iocbp->state == ARK_IO_SCHEDULE)
           {
               KV_TRC_EXT3(pAT, "SQ_ENQ  tid:%d ttag:%3d state:%d ",
-                          id, ttag, tcbp->state);
+                          id, ttag, iocbp->state);
               queue_enq_unsafe(sq,ttag);
           }
-          else if (tcbp->state == ARK_IO_HARVEST)
+          else if (iocbp->state == ARK_IO_HARVEST)
           {
               KV_TRC_EXT3(pAT, "HQ_ENQ  tid:%d ttag:%3d state:%d ",
-                          id, ttag, tcbp->state);
+                          id, ttag, iocbp->state);
               queue_enq_unsafe(hq,ttag);
           }
-          else if (tcbp->state == ARK_CMD_DONE)
+          else if (iocbp->state == ARK_CMD_DONE)
           {
               KV_TRC_EXT3(pAT, "CQ_ENQ  tid:%d ttag:%3d state:%d ",
-                          id, ttag, tcbp->state);
+                          id, ttag, iocbp->state);
               queue_enq_unsafe(cq,ttag);
           }
           else
           {
               KV_TRC_EXT3(pAT, "TQ_ENQ  tid:%d ttag:%3d state:%d ",
-                          id, ttag, tcbp->state);
+                          id, ttag, iocbp->state);
               (void)queue_enq_unsafe(tq, ttag);
           }
       }
@@ -1149,6 +1315,7 @@ void *pool_function(void *arg)
       {
           rcb_t  *rcbp = NULL;
           tcb_t  *tcbp = NULL;
+          iocb_t *iocbp = NULL;
           int32_t rtag = 0;
           int32_t ttag = 0;
 
@@ -1157,15 +1324,21 @@ void *pool_function(void *arg)
           tcbp  = &(_arkp->tcbs[ttag]);
           rtag = tcbp->rtag;
           rcbp  = &(_arkp->rcbs[rtag]);
+          iocbp = &(_arkp->iocbs[ttag]);
 
           KV_TRC_EXT3(pAT, "CQ_DEQ  tid:%d ttag:%3d state:%d ",
-                      id, ttag, tcbp->state);
+                      id, ttag, iocbp->state);
 
-          if (tcbp->state == ARK_CMD_DONE)
+          if (iocbp->state == ARK_CMD_DONE)
           {
               uint32_t lat = UDELTA(rcbp->stime, _arkp->ns_per_tick);
               UPDATE_LAT(_arkp, rcbp, lat);
 
+              if (iocbp->io_error)
+              {
+                   rcbp->res = -1;
+                   rcbp->rc  = iocbp->io_error;
+              }
               hlba = HASH_LBA(HASH_GET(_arkp->ht, rcbp->pos));
               HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(0, 0, hlba));
               if (rcbp->cb)
@@ -1194,7 +1367,7 @@ void *pool_function(void *arg)
           else
           {
               KV_TRC_EXT3(pAT, "FFDC CQ tid:%d ttag:%3d state:%d UNKNOWN_STATE",
-                      id, ttag, tcbp->state);
+                      id, ttag, iocbp->state);
           }
       }
 
@@ -1207,23 +1380,25 @@ void *pool_function(void *arg)
                           _arkp->del_opsT;
           uint64_t latT = _arkp->set_latT + _arkp->get_latT + _arkp->exi_latT +\
                           _arkp->del_latT;
-          uint64_t lat=0,set_lat=0,get_lat=0,exi_lat=0,del_lat=0,QDA=0;
+          uint64_t lat=0,set_lat=0,get_lat=0,exi_lat=0,del_lat=0,um_lat=0,QDA=0;
           if (opsT)            {lat     = latT/opsT;}
           if (_arkp->set_opsT) {set_lat = _arkp->set_latT/_arkp->set_opsT;}
           if (_arkp->get_opsT) {get_lat = _arkp->get_latT/_arkp->get_opsT;}
           if (_arkp->exi_opsT) {exi_lat = _arkp->exi_latT/_arkp->exi_opsT;}
           if (_arkp->del_opsT) {del_lat = _arkp->del_latT/_arkp->del_opsT;}
+          if (_arkp->um_opsT)  {um_lat  = _arkp->um_latT/_arkp->um_opsT;}
           if (_arkp->QDT)      {QDA     = _arkp->QDT/_arkp->QDN;}
           KV_TRC_PERF1(pAT,"IO:     tid:%d PERF   opsT:%7ld lat:%7ld "
-                           "opsT(%7ld %7ld %7ld %7ld) "
-                           "lat(%7ld %6ld %6ld %6ld) QD:%4ld issT:%4d",
+                           "opsT(%7ld %7ld %7ld %7ld %7ld) "
+                           "lat(%7ld %6ld %6ld %6ld %6ld) QD:%4ld issT:%4d",
                            id, opsT, lat,
                            _arkp->set_opsT, _arkp->get_opsT, _arkp->exi_opsT,
-                           _arkp->del_opsT,
-                           set_lat, get_lat, exi_lat, del_lat,
+                           _arkp->del_opsT, _arkp->um_opsT,
+                           set_lat, get_lat, exi_lat, del_lat, um_lat,
                            QDA, _arkp->issT);
           KV_TRC_PERF2(pAT,"IO:     tid:%d QUEUES rq:%3d tq:%3d sq:%4d hq:%4d "
-                           "cq:%4d", id, rq->c, tq->c, sq->c, hq->c, cq->c);
+                           "cq:%4d usq:%4d uhq:%4d",
+                           id, rq->c, tq->c, sq->c, hq->c, cq->c, usq->c, uhq->c);
           _arkp->set_latT = 0;
           _arkp->get_latT = 0;
           _arkp->exi_latT = 0;
@@ -1270,6 +1445,14 @@ void *pool_function(void *arg)
           }
       }
   }
+
+  /* allow unmaps to finish */
+  while (_arkp->ea->unmap && (_arkp->blu->count || usq->c || uhq->c))
+      {process_unmapQ(_arkp, id, 1);}
+
+  KV_TRC_PERF2(pAT,"IO:     tid:%d QUEUES rq:%3d tq:%3d sq:%4d hq:%4d "
+                   "cq:%4d usq:%4d uhq:%4d",
+                   id, rq->c, tq->c, sq->c, hq->c, cq->c, usq->c, uhq->c);
 
   KV_TRC_FFDC(pAT, "PSTATS  kv:%8ld ops:%8ld ios:%8ld bytes:%8ld blks:%8ld",
                scbp->poolstats.kv_cnt   + _arkp->pers_stats.kv_cnt,

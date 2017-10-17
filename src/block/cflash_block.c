@@ -738,6 +738,7 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
     cflsh_async_thread_cmp_t *async_data;
 #endif 
     cflsh_cmd_mgm_t *cmd = NULL;
+    size_t           buf_len=0;
 
     CFLASH_BLOCK_LOCK(chunk->lock);
 
@@ -931,22 +932,25 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
 
     if (op_code == SCSI_READ_16) {
 
-	local_flags = CFLASH_READ_DIR_OP;
-	chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_READ;
+        buf_len     = CAPI_FLASH_BLOCK_SIZE * nblocks;
+        local_flags = CFLASH_READ_DIR_OP;
+        chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_READ;
 
     } else if (op_code == SCSI_WRITE_16) {
 
-	local_flags = CFLASH_WRITE_DIR_OP;
-	chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_WRITE;
-	
+        buf_len     = CAPI_FLASH_BLOCK_SIZE * nblocks;
+        local_flags = CFLASH_WRITE_DIR_OP;
+        chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_WRITE;
+
     } else if (op_code == SCSI_WRITE_SAME_16) {
 
-	local_flags = CFLASH_WRITE_DIR_OP;
-	chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_WRITE;
-	
+        buf_len     = CAPI_FLASH_BLOCK_SIZE;
+        local_flags = CFLASH_WRITE_DIR_OP;
+        chunk->cmd_info[cmd->index].flags |= CFLSH_MODE_WRITE;
+
     }
 
-    CBLK_BUILD_ADAP_CMD(chunk,cmd,buf,(CAPI_FLASH_BLOCK_SIZE * nblocks),local_flags);
+    CBLK_BUILD_ADAP_CMD(chunk,cmd,buf,buf_len,local_flags);
 
 
     cdb = CBLK_GET_CMD_CDB(chunk,cmd);

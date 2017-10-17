@@ -32,18 +32,50 @@
 #define __ARK_H__
 
 #include <pthread.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
-#include "hash.h"
-#include "bl.h"
-#include "ea.h"
-#include "bt.h"
-#include "tag.h"
-#include "queue.h"
-#include "sq.h"
-#include "ut.h"
+#include <ticks.h>
+#include <kv_inject.h>
+#include <arkdb_trace.h>
+#include <am.h>
+#include <hash.h>
+#include <bv.h>
+#include <bl.h>
+#include <ea.h>
+#include <vi.h>
+#include <bt.h>
+#include <tag.h>
+#include <queue.h>
+#include <ht.h>
+#include <sq.h>
+#include <ut.h>
+#include <arkdb.h>
+
+#ifdef _OS_INTERNAL
+#include <sys/capiblock.h>
+#else
+#include <capiblock.h>
+#endif
+
+#include <errno.h>
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
 
 /* if on, then KV_TRC_HEX traces up to 64 bytes of key/value */
 #define DUMP_KV 0
+
+#define ARK_UQ_SIZE 255
 
 #define ARK_VERBOSE_SIZE_DEF   (1024*1024)
 #define ARK_VERBOSE_BSIZE_DEF         4096
@@ -266,14 +298,21 @@ typedef struct _ark
   uint32_t         htcN;    // # of hash cache
 
   BL              *bl;      // block lists
+  BL              *blu;     // block lists waiting for unmap
+
+  struct _tcb     *utcbs;   // unmap tcbs
+  struct _iocb    *ucbs;    // unmap iocbs
+
   struct _ea      *ea;      // in memory store space
   struct _rcb     *rcbs;
   struct _tcb     *tcbs;
   struct _iocb    *iocbs;
   struct _scb     *poolthreads;
   struct _pt      *pts;
+
   struct _tags    *rtags;
   struct _tags    *ttags;
+  struct _tags    *utags;
 
   uint32_t         min_bt;  // min size of inb/oub
   uint32_t         issT;
@@ -283,10 +322,14 @@ typedef struct _ark
   uint64_t         get_latT;
   uint64_t         exi_latT;
   uint64_t         del_latT;
+  uint64_t         um_latT;
   uint64_t         set_opsT;
   uint64_t         get_opsT;
   uint64_t         exi_opsT;
   uint64_t         del_opsT;
+  uint64_t         um_opsT;
+
+  ticks            utime;        // time since last unmaps processes
   double           ns_per_tick;
   ark_stats_t      pers_stats;
 } _ARK;
@@ -301,6 +344,10 @@ typedef struct _scb
   queue_t         *taskQ;
   queue_t         *scheduleQ;
   queue_t         *harvestQ;
+
+  queue_t         *uscheduleQ;
+  queue_t         *uharvestQ;
+
   int32_t          poolstate;
   int32_t          rlast;
   int32_t          dogc;
@@ -394,13 +441,13 @@ typedef struct _ari
 #define ARK_RAND_START       18
 #define ARK_FIRST_START      19
 #define ARK_NEXT_START       20
+#define ARK_UNMAP_PROCESS    21
 
 // operation 
 typedef struct _tcb
 {
   int32_t         rtag;
   int32_t         ttag;
-  int32_t         state;
   int32_t         sthrd;
 
   uint64_t        vbsize;
@@ -439,17 +486,18 @@ typedef struct _iocb
   uint64_t        start;
   uint64_t        new_start;
   uint64_t        cnt;
+  int32_t         state;
   int32_t         op;
   int32_t         tag;
   uint32_t        issT;
   uint32_t        cmpT;
-  uint32_t        rd;
   uint32_t        lat;
   uint64_t        stime;
   uint32_t        hmissN;
   uint32_t        aflags;
   uint32_t        io_error;
   uint32_t        io_done;
+  uint32_t        eagain;
 } iocb_t;
 
 int64_t ark_take_pool(_ARK *_arkp, ark_stats_t *stats, uint64_t n);
@@ -465,12 +513,40 @@ int ark_next_async_tag(_ARK *ark, uint64_t klen, void *key, _ARI *_arip, int32_t
 
 int ark_anyreturn(_ARK *ark, int *tag, int64_t *res);
 
+void *pool_function(void *arg);
+
+int ark_enq_cmd(int cmd, _ARK *_arkp,uint64_t klen,void *key,uint64_t vbuflen,void *vbuf,uint64_t voff,
+                void (*cb)(int errcode, uint64_t dt,int64_t res), uint64_t dt, int32_t pthr, int *ptag);
+
+int ark_wait_tag(_ARK *_arkp, int tag, int *errcode, int64_t *res);
+
+void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_process_inb(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+
+void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_get_process(_ARK *_arkp, int tid, tcb_t *tcbp);
+
+void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp);
+
+void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp);
+void ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp);
+
+void ea_async_io_schedule(_ARK *_arkp, int32_t tid, iocb_t *iocbp);
+void ea_async_io_harvest (_ARK *_arkp, int32_t tid, iocb_t *iocbp);
+
 /**
  *******************************************************************************
  * \brief
  *  init iocb struct for IO
  ******************************************************************************/
 static __inline__ void ea_async_io_init(_ARK          *_arkp,
+                                        iocb_t        *iocbp,
                                         int            op,
                                         void          *addr,
                                         ark_io_list_t *blist,
@@ -479,10 +555,7 @@ static __inline__ void ea_async_io_init(_ARK          *_arkp,
                                         int32_t        tag,
                                         int32_t        io_done)
 {
-  iocb_t *iocbp  = &(_arkp->iocbs[tag]);
-  tcb_t  *iotcbp = &(_arkp->tcbs[tag]);
-
-  iotcbp->state   = ARK_IO_SCHEDULE;
+  iocbp->state    = ARK_IO_SCHEDULE;
   iocbp->ea       = _arkp->ea;
   iocbp->op       = op;
   iocbp->addr     = addr;
@@ -491,13 +564,13 @@ static __inline__ void ea_async_io_init(_ARK          *_arkp,
   iocbp->start    = start;
   iocbp->issT     = 0;
   iocbp->cmpT     = 0;
-  iocbp->rd       = 0;
   iocbp->lat      = 0;
   iocbp->hmissN   = 0;
   iocbp->aflags   = CBLK_GROUP_RAID0;
   iocbp->io_error = 0;
   iocbp->io_done  = io_done;
   iocbp->tag      = tag;
+  iocbp->eagain   = 0;
   return;
 }
 

@@ -69,8 +69,9 @@ chluntable()
         "$LUNMODE_SIO-$LUNMODE_LEGACY" )
             echo "INFO: Removing LUN $targetlun from Super IO table.";
             sed "/$targetlun=.*/d" $SIOTABLE > ${SIOTABLE}.new;
-            mv $SIOTABLE ${SIOTABLE}.bak;
-            mv ${SIOTABLE}.new $SIOTABLE;
+            cp -f $SIOTABLE ${SIOTABLE}.bak;
+            cp -f ${SIOTABLE}.new $SIOTABLE;
+            rm -f ${SIOTABLE}.new;
         ;;
         "$LUNMODE_SIO-$LUNMODE_SIO" )
             echo "INFO: LUN $targetlun is already in SIO mode. No action needed.";

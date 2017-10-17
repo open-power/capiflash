@@ -45,6 +45,7 @@ extern "C"
 }
 
 uint64_t seed = 0xFF00000000000000;
+extern KV_Trace_t *pAT;
 
 /**
  *******************************************************************************
@@ -93,6 +94,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_iv)
     uint32_t i  = 0;
     IV      *iv = NULL;
 
+    KV_TRC_OPEN(pAT, "arkdb");
+
     ASSERT_TRUE(iv_set(iv, 0, 0) < 0);
     ASSERT_TRUE(iv_get(iv, 0)    < 0);
 
@@ -114,6 +117,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_iv)
     for (i=n-1; i>=0 && i<n; i--) ASSERT_TRUE(i+10 == iv_get(iv, i));
 
     iv_delete(iv);
+
+    KV_TRC_CLOSE(pAT);
 }
 
 /**
@@ -127,6 +132,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
     uint64_t       w  = ARK_VERBOSE_BLKBITS_DEF;
     BL            *bl = NULL;
     ark_io_list_t *aiol=NULL;
+
+    KV_TRC_OPEN(pAT, "arkdb");
 
     ASSERT_TRUE(bl_init_chain_link(bl) == 1);
     ASSERT_TRUE(bl_reserve(bl,1) < 0);
@@ -162,6 +169,140 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
 
     am_free(aiol);
     bl_delete(bl);
+
+    /* now do it backwards */
+    bl = bl_new(n, w);
+    ASSERT_TRUE(NULL != bl);
+    ASSERT_EQ(bl_left(bl), 0);
+    ASSERT_EQ(bl_drop(bl,1), 1);    ASSERT_EQ(bl_left(bl), 1);
+    ASSERT_EQ(bl_drop(bl,5), 1);    ASSERT_EQ(bl_left(bl), 2);
+    ASSERT_EQ(bl_drop(bl,3), 1);    ASSERT_EQ(bl_left(bl), 3);
+    ASSERT_EQ(bl_drop(bl,7), 1);    ASSERT_EQ(bl_left(bl), 4);
+    ASSERT_EQ(bl_take(bl,1), 7);    ASSERT_EQ(bl_left(bl), 3);
+    ASSERT_EQ(bl_take(bl,1), 3);    ASSERT_EQ(bl_left(bl), 2);
+    ASSERT_EQ(bl_take(bl,1), 5);    ASSERT_EQ(bl_left(bl), 1);
+    ASSERT_EQ(bl_take(bl,1), 1);    ASSERT_EQ(bl_left(bl), 0);
+
+    ASSERT_EQ(bl_drop(bl,1), 1);    ASSERT_EQ(bl_left(bl), 1);
+    ASSERT_EQ(bl_drop(bl,5), 1);    ASSERT_EQ(bl_left(bl), 2);
+    ASSERT_EQ(bl_take(bl,1), 5);    ASSERT_EQ(bl_left(bl), 1);
+    ASSERT_EQ(bl_drop(bl,3), 1);    ASSERT_EQ(bl_left(bl), 2);
+    ASSERT_EQ(bl_drop(bl,7), 1);    ASSERT_EQ(bl_left(bl), 3);
+    ASSERT_EQ(bl_take(bl,1), 7);    ASSERT_EQ(bl_left(bl), 2);
+    ASSERT_EQ(bl_take(bl,1), 3);    ASSERT_EQ(bl_left(bl), 1);
+    ASSERT_EQ(bl_take(bl,1), 1);    ASSERT_EQ(bl_left(bl), 0);
+
+    bl_delete(bl);
+
+    KV_TRC_CLOSE(pAT);
+}
+
+void rdy_unmap(BL *bl, BL *blu, uint64_t blk)
+{
+    uint32_t i=0,len=0;
+
+    len = bl_drop(bl,blk);
+
+    for (i=0; i<len; i++)
+    {
+        ASSERT_TRUE((blk=bl_take(bl,1)) > 0);
+        ASSERT_EQ(bls_add(blu,blk),1);
+    }
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   test BL functions
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_unmap_bl)
+{
+    uint64_t       n    = 10;
+    uint64_t       w    = ARK_VERBOSE_BLKBITS_DEF;
+    BL            *bl   = NULL;
+    BL            *blu  = NULL;
+    int64_t        a    = 0;
+    int64_t        b    = 0;
+    int64_t        c    = 0;
+    int64_t        d    = 0;
+    uint32_t       alen = 3;
+    uint32_t       blen = 1;
+    uint32_t       clen = 2;
+    uint32_t       dlen = 7;
+    uint32_t       i    = 0;
+
+    KV_TRC_OPEN(pAT, "arkdb");
+
+    bl  = bl_new(n, w);
+    blu = bl_new(n, w);
+    ASSERT_TRUE(NULL != bl);
+    ASSERT_TRUE(NULL != blu);
+
+    /* init */
+    ASSERT_EQ(bl_init_chain_link(bl), 0);
+    ASSERT_EQ(bl_left(bl),  8);
+    ASSERT_EQ(bl_left(blu), 0);
+
+    /* take chains */
+    ASSERT_EQ((a=bl_take(bl,alen)), 1); ASSERT_EQ(bl_left(bl), 5);
+    ASSERT_EQ((b=bl_take(bl,blen)), 4); ASSERT_EQ(bl_left(bl), 4);
+    ASSERT_EQ((c=bl_take(bl,clen)), 5); ASSERT_EQ(bl_left(bl), 2);
+
+    /* update bl and blu with chains for unmap */
+    rdy_unmap(bl, blu, b); ASSERT_EQ(bl_left(blu), 1); ASSERT_EQ(bl_left(bl), 2);
+    rdy_unmap(bl, blu, c); ASSERT_EQ(bl_left(blu), 3); ASSERT_EQ(bl_left(bl), 2);
+    rdy_unmap(bl, blu, a); ASSERT_EQ(bl_left(blu), 6); ASSERT_EQ(bl_left(bl), 2);
+
+    uint32_t left=bl_left(blu);
+
+    /* mark unmaps complete */
+    for (i=0; i<left; i++)
+    {
+        ASSERT_TRUE((a=bls_rem(blu)) > 0);
+        ASSERT_EQ(bl_drop(bl,a),1);
+    }
+
+    /* verify */
+    ASSERT_EQ(bl_left(bl),  8);
+    ASSERT_EQ(bl_left(blu), 0);
+
+    /* do it again, with a resize */
+
+    /* take chains */
+    ASSERT_EQ((b=bl_take(bl,blen)), 4); ASSERT_EQ(bl_left(bl), 7);
+    ASSERT_EQ((a=bl_take(bl,alen)), 5); ASSERT_EQ(bl_left(bl), 4);
+    ASSERT_EQ((c=bl_take(bl,clen)), 2); ASSERT_EQ(bl_left(bl), 2);
+
+    ASSERT_EQ(bl_resize(bl,  bl->n*2,  bl->w),  bl);
+    ASSERT_EQ(bl_resize(blu, blu->n*2, blu->w), blu);
+
+    ASSERT_EQ(bl_left(bl),  2);
+    ASSERT_EQ(bl_left(blu), 0);
+
+    ASSERT_EQ((d=bl_take(bl,dlen)), 7); ASSERT_EQ(bl_left(bl), 5);
+
+    /* update bl and blu with chains for unmap */
+    rdy_unmap(bl, blu, c); ASSERT_EQ(bl_left(blu), 2);  ASSERT_EQ(bl_left(bl), 5);
+    rdy_unmap(bl, blu, d); ASSERT_EQ(bl_left(blu), 9);  ASSERT_EQ(bl_left(bl), 5);
+    rdy_unmap(bl, blu, b); ASSERT_EQ(bl_left(blu), 10); ASSERT_EQ(bl_left(bl), 5);
+    rdy_unmap(bl, blu, a); ASSERT_EQ(bl_left(blu), 13); ASSERT_EQ(bl_left(bl), 5);
+
+    left=bl_left(blu);
+
+    /* mark unmaps complete */
+    for (i=0; i<left; i++)
+    {
+        ASSERT_TRUE((a=bl_take(blu,1)) > 0);
+        ASSERT_EQ(bl_drop(bl,a),1);
+    }
+
+    /* verify */
+    ASSERT_EQ(bl_left(bl),  18);
+    ASSERT_EQ(bl_left(blu), 0);
+
+    /* cleanup */
+    bl_delete(bl);
+    bl_delete(blu);
 }
 
 /**
@@ -187,6 +328,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bt)
     uint8_t  buf[11];
     uint64_t oldvdf;
     uint64_t oldvlen;
+
+    KV_TRC_OPEN(pAT, "arkdb");
 
     bt1 = bt_new(128, 8, sizeof(uint64_t), &bt1_orig);
     ASSERT_TRUE(NULL != bt1);
@@ -323,6 +466,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bt)
 
     bt_delete(bt1_orig);
     bt_delete(bt2_orig);
+
+    KV_TRC_CLOSE(pAT);
 }
 
 /**

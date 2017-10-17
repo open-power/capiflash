@@ -26,17 +26,11 @@
 #define __EA_H__
 
 #include <stdint.h>
-#include "ark.h"
-#include "bl.h"
-
-#ifdef _OS_INTERNAL
-#include <sys/capiblock.h>
-#else
-#include "capiblock.h"
-#endif
+#include <bl.h>
 
 #define ARK_EA_READ  0
 #define ARK_EA_WRITE 1
+#define ARK_EA_UNMAP 2
 
 #define st_memory  store.memory
 #define st_flash   store.flash.chkid
@@ -55,11 +49,14 @@ typedef union _store_id {
 
 #define ARK_EA_BLK_ASYNC_CMDS 4096
 
-typedef struct _ea {
+typedef struct _ea
+{
   pthread_rwlock_t ea_rwlock;
   uint64_t         bsize;
   uint64_t         bcount;
   uint64_t         size;
+  uint64_t         unmap;
+  char            *zbuf;
   store_id_t       store;
 
 #define EA_STORE_TYPE_MEMORY  1

@@ -114,6 +114,7 @@ typedef struct
     uint64_t tlat_rd;
     uint64_t tlat_wr;
     uint32_t tmiss;
+    uint32_t unmap;
     size_t   lba;
     size_t   last_lba;
     uint32_t nblocks;
@@ -135,6 +136,7 @@ uint32_t COMP        = 0;
 uint32_t eto         = 1000000;
 uint32_t lto         = 10000;
 uint32_t hbar        = 0;
+uint32_t UNMAP       = 0;
 double   ns_per_tick = 0;
 
 /**
@@ -317,8 +319,16 @@ void run_async(SGDEV_t *dev)
          *----------------------------------------------------------------*/
         for (i=0; i<QD && TIME && dev->WR && dev->issN<QD; i++)
         {
-            rc = cblk_awrite(dev->id, dev->wbuf, dev->lba, dev->nblocks,
-                            &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+            if (dev->unmap)
+            {
+                rc = cblk_aunmap(dev->id, dev->wbuf, dev->lba, dev->nblocks,
+                                 &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+            }
+            else
+            {
+                rc = cblk_awrite(dev->id, dev->wbuf, dev->lba, dev->nblocks,
+                                 &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+            }
             if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),WRITE);}
             else if (EBUSY == errno) {break;}
             else                     {IO_ISS_ERR(WRITE);}
@@ -420,12 +430,13 @@ int main(int argc, char **argv)
     uint32_t        tmiss       = 0;
     uint32_t        esecs       = 0;
     uint64_t        sticks      = 0;
-    pthread_t       pth[8];
+    chunk_attrs_t   attrs;
+    pthread_t       pth[32];
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:r:q:n:s:e:S:R:l:phivD")))
+    while (FF != (c=getopt(argc, argv, "d:r:q:n:s:e:S:R:l:phivUD")))
     {
         switch (c)
         {
@@ -441,6 +452,7 @@ int main(int argc, char **argv)
             case 'p': plun       = 1;      break;
             case 'i': intrp_thds = 1;      break;
             case 'D': DEBUG      = 1;      break;
+            case 'U': UNMAP      = 1;      break;
             case 'v': verbose    = 1;      break;
             case 'h':
             case '?': usage();             break;
@@ -520,7 +532,8 @@ int main(int argc, char **argv)
                     _4K*nblocks, rc);
             exit(0);
         }
-        memset(devs[i].wbuf,0x79,_4K*nblocks);
+        if (UNMAP) {memset(devs[i].wbuf,0,   _4K*nblocks);}
+        else       {memset(devs[i].wbuf,0x79,_4K*nblocks);}
     }
 
     /*--------------------------------------------------------------------------
@@ -567,6 +580,19 @@ int main(int argc, char **argv)
                 exit(errno);
             }
         }
+
+        if (UNMAP)
+        {
+            dev->unmap = 1;
+            bzero(&attrs, sizeof(attrs));
+            cblk_get_attrs(dev->id, &attrs, 0);
+            if (!(attrs.flags1 & CFLSH_ATTR_UNMAP))
+            {
+                printf("%s: unmap is not supported\n", devStrs[i]);
+                dev->unmap=0;
+            }
+        }
+
         debug("open: %s dev:%p id:%d nblks:%ld\n",
                 devStrs[i],dev, dev->id, dev->last_lba+1);
 
@@ -617,6 +643,7 @@ int main(int argc, char **argv)
     /*--------------------------------------------------------------------------
      * print IO stats
      *------------------------------------------------------------------------*/
+    if (cnt==0) {goto cleanup;}
     printf("r:%d q:%d s:%d p:%d n:%d i:%d v:%d eto:%d miss:%d/%d \
 lat:%d mbps:%d iops:%d",
             nRD, QD, nsecs, plun, nblocks,
@@ -630,6 +657,7 @@ lat:%d mbps:%d iops:%d",
                          (uint32_t)((tlat_wr*ns_per_tick)/cnt_wr/1000));}
     printf("\n"); fflush(stdout);
 
+cleanup:
     /*--------------------------------------------------------------------------
      * cleanup
      *------------------------------------------------------------------------*/

@@ -22,17 +22,8 @@
 /* permissions and limitations under the License.                         */
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
-#include <stdlib.h>
-#include <string.h>
-#include <fcntl.h>
 
-#include "bl.h"
-#include "ea.h"
-#include "am.h"
-
-#include <kv_inject.h>
-#include <arkdb_trace.h>
-#include <errno.h>
+#include <ark.h>
 
 static int cflsh_blk_lib_init = 0;
 
@@ -80,6 +71,11 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
                          path, bsize, *size, *bcount, errno);
         goto error_exit;
     }
+    memset(ea,0,sizeof(EA));
+    pthread_rwlock_init(&(ea->ea_rwlock), NULL);
+    ea->bsize  = bsize;
+    ea->bcount = *bcount;
+    ea->size   = *size;
 
     // We need to check the path parameter to see if
     // we are going to use memory or a file/capi
@@ -102,6 +98,9 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
 
         *bcount = ((*size) / bsize);
         ea->st_memory = store;
+        if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}
+        else                                 goto error_exit;
+        ea->unmap     = 1;
     }
     else
     {
@@ -193,14 +192,18 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         strncpy(ea->st_device, path, plen);
     }
 
-    // Fill in the EA struct
-    pthread_rwlock_init(&(ea->ea_rwlock), NULL);
-    ea->bsize  = bsize;
-    ea->bcount = *bcount;
-    ea->size   = *size;
+    chunk_attrs_t attrs;
 
-    KV_TRC(pAT, "path(%s) id:%d bsize %"PRIu64" size %"PRIu64" bcount %"PRIu64"",
-           path, ea->st_flash, bsize, *size, *bcount);
+    bzero(&attrs, sizeof(attrs));
+    if ((rc=cblk_get_attrs(ea->st_flash, &attrs, CBLK_GROUP_RAID0)) == 0)
+    {
+        if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}
+        else                                 goto error_exit;
+        ea->unmap = attrs.flags1 & CFLSH_ATTR_UNMAP;
+    }
+
+    KV_TRC(pAT, "path(%s) id:%d bsize:%ld size:%ld bcount:%ld unmap:%ld",
+           path, ea->st_flash, bsize, *size, *bcount, ea->unmap);
     goto done;
 
 error_exit:
@@ -477,11 +480,9 @@ int ea_delete(EA *ea)
         am_free(ea->st_device);
     }
 
-    if ( rc == 0 )
-    {
-        KV_TRC(pAT, "free ea %p", ea);
-        am_free(ea);
-    }
+    KV_TRC(pAT, "free ea %p", ea);
+    am_free(ea->zbuf);
+    am_free(ea);
 
     return rc;
 }

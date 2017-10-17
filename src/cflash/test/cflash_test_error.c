@@ -455,6 +455,19 @@ int mc_invalid_ioarcb(int cmd)
         send_cmd(p_ctx);
     }
     rc = wait_resp(p_ctx);
+#ifndef _AIX
+    /* 
+       As mentioned in defect#SW359926, afu_rc=0x62 for GT card
+       for reference rc = afu_rc | scsi_rc | afu_rc
+       example:- GT card rc = 0x62 | 0x0 | 0x58
+                 and Corsa Card rc = 0x0 | 0x0 | 0x58
+    */
+    if ( cmd == 3 && is_UA_device( p_ctx->dev ) == FALSE )
+    {
+        if ( rc == 0x7A )
+             rc = 0x58 ; 
+    }
+#endif
     if ( cmd >= 9 && cmd <= 13)
     {
         if (!rc_flags)
@@ -947,4 +960,79 @@ int test_fc_port_reset_plun()
     close_res(p_ctx);
     ctx_close(p_ctx);
     return rc;
+}
+
+
+
+int test_port_offline_online_GTplus()
+{
+    int rc;
+#ifndef _AIX
+    struct ctx myctx;
+
+    struct ctx *p_ctx = &myctx;
+
+    pthread_t thread;
+
+    char  afuName[MAXBUFF]; 
+    char  portName[MAXBUFF];
+
+    char cmdToRun[MAXBUFF];
+
+    __u64 stride= 0x100;
+
+    pid = getpid();
+
+    rc = ctx_init(p_ctx);
+    CHECK_RC(rc, "Context init failed");
+
+    //thread to handle AFU interrupt & events
+    pthread_create(&thread, NULL, ctx_rrq_rx, p_ctx);
+
+    //for PLUN 2nd argument(lba_size) would be ignored
+    rc = create_resource(p_ctx, 0, DK_UDF_ASSIGN_PATH, LUN_DIRECT);
+    CHECK_RC(rc, "create LUN_DIRECT failed");
+    rc = compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
+    CHECK_RC(rc, "failed compare_size");
+
+    rc = do_io(p_ctx, stride);
+    
+    CHECK_RC(rc, "IO failed");
+
+    diskToPortnAFU(cflash_path, afuName, portName) ;
+
+    sprintf(cmdToRun,"/usr/bin/cxl_afu_status -d %s -p %s | grep \"link up\"",afuName ,portName);
+    debug("%d:%s\n",pid,cmdToRun);
+    rc = system(cmdToRun);
+    CHECK_RC(rc,"cxl_afu_status failed");
+
+    sprintf(cmdToRun,"/usr/bin/cflash_inject -d %s -offline", strrchr( cflash_path, '/') + 1);
+    debug("%d:%s\n",pid,cmdToRun); 
+    rc = system(cmdToRun);
+    CHECK_RC(rc,"cxl_afu_inject failed"); 
+      
+    rc = do_io(p_ctx, stride);
+    if (rc == 0 )
+    CHECK_RC(1, "IO should fail");
+
+    sprintf(cmdToRun,"/usr/bin/cflash_inject -d %s -online", strrchr( cflash_path, '/') + 1);
+    debug("%d:%s\n",pid,cmdToRun);
+    rc = system(cmdToRun);
+    CHECK_RC(rc,"cxl_afu_inject failed"); 
+      
+    rc = do_io(p_ctx, stride);
+    CHECK_RC(rc, "IO should not fail");
+
+    sprintf(cmdToRun,"/usr/bin/cxl_afu_status -d %s -p %s | grep \"link up\"",afuName ,portName);
+    debug("%d:%s\n",pid,cmdToRun);
+
+    rc = system(cmdToRun);
+    CHECK_RC(rc,"cxl_afu_status failed");
+
+    pthread_cancel(thread);
+    close_res(p_ctx);
+    ctx_close(p_ctx);
+#endif
+    return rc;
+
 }

@@ -680,7 +680,7 @@ int main(int argc, char **argv)
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:n:rhSM")))
+    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:rhSMn")))
     {
         switch (c)
         {

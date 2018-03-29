@@ -23,7 +23,7 @@
 # permissions and limitations under the License.
 #
 # IBM_PROLOG_END_TAG
-##
+
 use strict;
 use warnings;
 use Fcntl;
@@ -35,6 +35,7 @@ use Getopt::Long;
 my $target;
 my $prthelp=0;
 my $serial;
+my $correct=0;
 my $csv="vpd_FlashGT.csv";
 my $rbf="vpd_FlashGT.vpdrbf";
 
@@ -56,6 +57,7 @@ if ($#ARGV<0) {usage();}
 
 if (! GetOptions ("t|target=s" => \$target,
                   "s|serial:s" => \$serial,
+                  "c|correct!" => \$correct,
                   "h|help!"    => \$prthelp
                   ))
 {
@@ -76,40 +78,48 @@ if ($prthelp) {usage();}
 #check permissions
 (! (`groups $ENV{'USER'}` =~ / cxl/ || `id -u $ENV{'USER'}` == 0)) && die "You do not have enough permissions\n";
 
-
-if (defined $serial) {(length($serial)==8) || die "serial is not 8 chars\n";}
-
 #-------------------------------------------------------------------------------
 # Make stdout autoflush
 #-------------------------------------------------------------------------------
 select(STDOUT);
 $| = 1;
 
-my $out=`lspci -s $target |egrep "0601|0628"`;
-($out =~ /0601/ || $out =~ /0628/) || die "Invalid target $target\n";
-
-if ($out =~ /0628/)
-{
-  $csv="vpd_FlashGTplus.csv";
-  $rbf="vpd_FlashGTplus.vpdrbf";
-}
-
-my $card=`ls -d /sys/devices/pci*/*/$target/cxl/card* 2>/dev/null|awk -F/ '{print \$NF}'`;
-($card =~ /card/) || die "Invalid target $target\n";
-chomp $card;
-my $cardN=substr $card,-1;
-
-if (defined $serial)
-{
-  `/usr/bin/surelock_vpd2rbf -f $csv -s $serial`;
-  (-f "/usr/share/cxlflash/$rbf") || die "failure creating the VPD\n";
-  `/usr/bin/flashgt_vpd_access $target $cardN /usr/share/cxlflash/$rbf`;
-  if ($? != 0) {print "VPD update failed\n";}
-  else         {print "VPD updated\n";}
-}
-
 if (defined $target)
 {
+  my $out=`lspci -s $target |egrep "0601|0628"`;
+  ($out =~ /0601/ || $out =~ /0628/) || die "Invalid target $target\n";
+
+  my $card=`ls -d /sys/devices/pci*/*/$target/cxl/card* 2>/dev/null|awk -F/ '{print \$NF}'`;
+  ($card =~ /card/) || die "Invalid target $target\n";
+  chomp $card;
+  my $cardN=substr $card,-1;
+
+  if (defined $correct && $out =~ /0628/)
+  {
+    my $opt="";
+    if (defined $serial)
+    {
+      (length($serial)==7) || die "serial is not 7 chars\n";
+      $opt=" -s $serial";
+    }
+    (-f "/usr/bin/flashgtp_vpd_fixup") || die "install the package cxlflashimage\n";
+    print "fixing VPD for $target... ";
+    `flashgtp_vpd_fixup -t $target $opt`;
+    ($? == 0) || die "failed\n";
+    print "done\n";
+    exit $?;
+  }
+  if (defined $serial && $out =~ /0601/)
+  {
+    if (defined $serial) {(length($serial)==8) || die "serial is not 8 chars\n";}
+    `surelock_vpd2rbf -f $csv -s $serial`;
+    (-f "/usr/share/cxlflash/$rbf") || die "failure creating the VPD\n";
+    `flashgt_vpd_access $target $cardN /usr/share/cxlflash/$rbf`;
+    if ($? != 0) {print "VPD update failed\n";}
+    else         {print "VPD updated\n";}
+    exit 0;
+  }
+
   my @devs;
   my $dev;
 

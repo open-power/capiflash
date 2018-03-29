@@ -194,13 +194,13 @@ int main(int argc, char **argv)
             int  mb;
 
             assert(0 == ark_create_verbose(penv, &ark,
-                                           1048576,
-                                           4096,
+                                           ARK_VERBOSE_SIZE_DEF,
+                                           ARK_VERBOSE_BSIZE_DEF,
                                            1048576,
                                            npool,
-                                           256,
-                                           8*1024,
-                                           ARK_KV_VIRTUAL_LUN));
+                                           ARK_MAX_NASYNCS,
+                                           ARK_MAX_BASYNCS,
+                                           ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
             assert(NULL != ark);
 
             if      (vlen < 256)     mb=1;

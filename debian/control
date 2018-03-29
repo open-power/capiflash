@@ -1,22 +1,58 @@
 Source: cxlflash
-Maintainer: IBM Corp. <mpvageli@us.ibm.com>
-Uploaders: Rodrigo R. Galvao <rosattig@br.ibm.com>
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: IBM Corp. <mpvageli@us.ibm.com>
+Uploaders: Rodrigo R. Galvao <rosattig@br.ibm.com>,
 Section: utils
 XS-Autobuild: yes
 Priority: optional
 Standards-Version: 4.0.1
-Build-Depends: debhelper (>=10), dh-systemd, doxygen, linux-libc-dev, libudev-dev, libcxl-dev, help2man
+Build-Depends: debhelper (>= 9),
+               dh-systemd,
+               doxygen,
+               help2man,
+               libcxl-dev,
+               libudev-dev,
+               linux-libc-dev,
 Homepage: https://github.com/open-power
-Vcs-Browser: https://github.com/open-power/capiflash.git
+Vcs-Browser: https://github.com/open-power/capiflash
 Vcs-Git: https://github.com/open-power/capiflash.git
 
 Package: cxlflash
 Architecture: ppc64 ppc64el
-Depends: ${shlibs:Depends}, ${misc:Depends}, ${perl:Depends}
-Conflicts: ibmcapikv
-Replaces: ibmcapikv
+Depends: libcxlflash0 (= ${binary:Version}),
+         ${misc:Depends},
+         ${perl:Depends},
+         ${shlibs:Depends},
+Conflicts: ibmcapikv,
+Replaces: ibmcapikv,
 Description: IBM Capiflash IO Data Engine
  This provides IO and utility support for IBM Capiflash adapters,
  and includes a NoSQL Software Interface. The latest
  adapter firmware updates are provided separately
  in cxlflashimage.
+
+Package: libcxlflash0
+Section: libs
+Architecture: ppc64 ppc64el
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+Description: IBM Capiflash IO Data Engine libraries
+ This provides IO and utility support for IBM Capiflash adapters,
+ and includes a NoSQL Software Interface. The latest
+ adapter firmware updates are provided separately
+ in cxlflashimage.
+ .
+ This package contains all the runtime libraries.
+
+Package: libcxlflash-dev
+Section: libdevel
+Architecture: ppc64 ppc64el
+Depends: libcxlflash0 (= ${binary:Version}),
+         ${misc:Depends},
+Description: IBM Capiflash IO Data Engine development files
+ This provides IO and utility support for IBM Capiflash adapters,
+ and includes a NoSQL Software Interface. The latest
+ adapter firmware updates are provided separately
+ in cxlflashimage.
+ .
+ This package contains all development files for cxlflash.

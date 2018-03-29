@@ -33,7 +33,7 @@
 #endif
 
 #define CHUNK_SIZE 4096
-#define NBUFS      1000
+#define NBUFS      MAX_NUM_CMDS
 
 #ifdef _AIX
 #define GEN_VAL_MOD for (_i=7; _i>=8-_mod; _i--) {*(_t++)=_s[_i];}
@@ -69,11 +69,13 @@ extern uint64_t block_number;
 extern int num_loops;
 extern int thread_flag;
 extern int  num_threads;
-extern uint64_t  max_xfer;;
+extern uint64_t  max_xfer;
 extern int virt_lun_flags;
 extern int share_cntxt_flags;
 extern int  test_max_cntx;
 extern int  host_type;
+extern int  dev_type;
+extern int  max_cntxt;
 extern char* env_filemode;
 extern char* env_max_xfer;
 extern char* env_num_cntx;
@@ -193,10 +195,10 @@ int blk_fvt_setup(int size)
     /* user specifying num list io */
     if (env_num_list) {
         num_listio = atoi(env_num_list);	
-        if ((num_listio >= 500) ||
+        if ((num_listio >= MAX_NUM_CMDS) ||
                 (!num_listio) ) {
-            /* Use default if 0 or greater than 500 */
-            num_listio = 500;
+            /* Use default if 0 or greater than MAX_NUM_CMDS */
+            num_listio = MAX_NUM_CMDS;
         }
     }
 
@@ -1343,18 +1345,18 @@ void blk_thread_tst(int *ret, int *err, int open_flags,
     {
         if (open_flags & CBLK_GROUP_RAID0)
         {
-            id[x] = cblk_cg_open(dev_paths[0], 1024, O_RDWR, 1, ext,open_flags);
+            id[x] = cblk_cg_open(dev_paths[0], NBUFS, O_RDWR, 1, ext,open_flags);
             DEBUG_1("Open RAID0 id:%d\n", id[x]);
         }
         else if (open_flags & CBLK_GROUP_MASK)
         {
-            id[x] = cblk_cg_open(dev_paths[0], 1024, O_RDWR, ext, 0,open_flags);
+            id[x] = cblk_cg_open(dev_paths[0], NBUFS, O_RDWR, ext, 0,open_flags);
             DEBUG_2("Open CG ext:%d id:%d\n", (uint32_t)ext, id[x]);
         }
         else
         {
             DEBUG_0("Opening\n");
-            id[x] = cblk_open(dev_paths[x], 1024, O_RDWR, ext, open_flags);
+            id[x] = cblk_open(dev_paths[x], NBUFS, O_RDWR, ext, open_flags);
         }
 
         if (id[x] == NULL_CHUNK_ID)
@@ -1665,7 +1667,7 @@ void io_perf_tst (int *ret, int *err, int rwflags, int resflags, int eeh)
     char           *env_num_loop    = getenv("FVT_NUM_LOOPS");
     int             bsz             = 4096;
     int             loops           = 100;
-    int             num_cmds        = 1024;
+    int             num_cmds        = NBUFS;
     int             eeh_fail        = 0;
     char           *addr            = NULL;
 
@@ -1678,7 +1680,7 @@ void io_perf_tst (int *ret, int *err, int rwflags, int resflags, int eeh)
     else if (num_opens > 8) {loops=2;}
 
     if (eeh)                                  {loops=2; num_cmds=128;}
-    if (env_num_cmds && atoi(env_num_cmds)>0) {num_cmds = atoi(env_num_cmds) % 1024;}
+    if (env_num_cmds && atoi(env_num_cmds)>0) {num_cmds = atoi(env_num_cmds) % NBUFS;}
     if (env_num_loop && atoi(env_num_loop)>0) {loops = atoi(env_num_loop);}
 
     for (idx=0; idx<num_opens; idx++)
@@ -1787,17 +1789,20 @@ void io_perf_tst (int *ret, int *err, int rwflags, int resflags, int eeh)
             for (i=0; i<num_cmds; i++)
             {
                 addr = (char*)(blk_fvt_data_buf)+(((idx*num_cmds)+i)*bsz);
-                DEBUG_3("id:%d aread addr:%p lba:%ld\n", chunks[idx], addr, lba);
                 if (rwflags & CBLK_GROUP_MASK)
                 {
                     rc = cblk_cg_aread(chunks[idx], addr, lba, nblocks,
                                        &cgtag[idx][i], NULL,
                                        rwflags);
+                    DEBUG_3("id:%d cg_aread addr:%p lba:%ld\n",
+                                    chunks[idx], addr, lba);
                 }
                 else
                 {
-                    rc = cblk_aread(chunks[idx], addr, lba, nblocks, &ctag[idx][i],
+                    rc = cblk_aread(chunks[idx], addr,lba,nblocks,&ctag[idx][i],
                                     NULL,rwflags);
+                    DEBUG_3("id:%d aread addr:%p lba:%ld\n",
+                                    chunks[idx], addr, lba);
                 }
                 if (rc < 0)
                 {
@@ -2919,7 +2924,7 @@ int check_completions(cblk_io_t *io, int num_listio )
 #ifdef _AIX
 char *find_parent(char *device_name)
 {
-
+    max_cntxt = 494;
     return NULL;
 }
 char *getunids (char *device_name)
@@ -3007,6 +3012,23 @@ char *find_parent(char *device_name)
     if (child_part) {
         child_part[0] = '\0';
     }
+
+    if (host_type == HOST_TYPE_VM)
+    {
+        max_cntxt = 502;
+    }
+    else
+    {
+        while ((parent=udev_device_get_parent(parent)))
+        {
+            const char* devtype = udev_device_get_sysattr_value(parent,"device");
+            if (devtype && strncmp(devtype,"0x0628",6)==0) {dev_type=0x628;}
+        }
+        if (dev_type == 0x628) {max_cntxt = 511;}
+        else                   {max_cntxt = 508;}
+    }
+    DEBUG_1("\nmax_cntxt = %d", max_cntxt);
+
     return parent_name;
 }
 

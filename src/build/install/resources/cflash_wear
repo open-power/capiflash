@@ -108,7 +108,7 @@ for my $adap (@cards)
   my $cardN=substr $cardstr,-1;
   print "\nFound $Acard[5] $card $afu\n";
 
-  for (my $i=0; $i<2; $i++)
+  for (my $i=0; $i<4; $i++)
   {
     my $Astick=`ls -d /sys/devices/*/*/$card/*/*/host*/target*:$i:*/*:*:*:*/scsi_generic/* 2>/dev/null`;
     if ($? != 0) {next;}

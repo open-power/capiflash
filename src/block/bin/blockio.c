@@ -60,6 +60,7 @@
 #include <ticks.h>
 #include <math.h>
 #include <pthread.h>
+#include <pbuf.h>
 
 #ifdef _OS_INTERNAL
 #include <sys/capiblock.h>
@@ -94,6 +95,7 @@ typedef struct
     uint32_t max_to;
     uint32_t iss;
     uint32_t rd;
+    void    *pbuf;
 } OP_t;
 
 /**
@@ -119,8 +121,7 @@ typedef struct
     size_t   last_lba;
     uint32_t nblocks;
     uint32_t issN;
-    uint8_t *rbuf;
-    uint8_t *wbuf;
+    pbuf_t  *pbuf;
 } SGDEV_t;
 
 uint32_t nsecs       = 4;
@@ -162,21 +163,24 @@ double   ns_per_tick = 0;
 ********************************************************************************
 ** \brief call to begin an op, init data for the op
 *******************************************************************************/
-#define OP_BEG(_dev,_op,_rd)   _op->start  = getticks();                       \
-                               _op->iss    = 1;                                \
-                               _op->id     = _dev->id;                         \
-                               _op->lba    = _dev->lba;                        \
-                               _op->rd     = _rd;                              \
-                               _op->cnt    = _dev->cnt;                        \
-                               _op->miss   = 0;                                \
-                               _op->min_to = 0;                                \
-                               _op->max_to = 0;                                \
-                               _dev->issN   += 1;                              \
-                               if (_rd==READ) {--_dev->RD;} else {--_dev->WR;} \
-      debug("OP_BEG: id:%d rd:%d lba:%9ld len:%5d, issN:%4d RD:%d cnt:%d\n",   \
-            _op->id, (_op->rd==READ), _op->lba, _dev->nblocks, _dev->issN,     \
+#define OP_BEG(_dev,_rtag,_pbuf,_rd)                                           \
+        op = &_dev->op[rtag];                                                  \
+        op->start  = getticks();                                               \
+        op->iss    = 1;                                                        \
+        op->id     = _dev->id;                                                 \
+        op->lba    = _dev->lba;                                                \
+        op->rd     = _rd;                                                      \
+        op->pbuf   = _pbuf;                                                    \
+        op->cnt    = _dev->cnt;                                                \
+        op->miss   = 0;                                                        \
+        op->min_to = 0;                                                        \
+        op->max_to = 0;                                                        \
+        dev->issN += 1;                                                        \
+        if (_rd==READ) {--_dev->RD;} else {--_dev->WR;}                        \
+        debug("OP_BEG: id:%d rd:%d lba:%9ld len:%5d, issN:%4d RD:%d cnt:%d\n", \
+            op->id, (op->rd==READ), op->lba, _dev->nblocks, _dev->issN,        \
             _dev->RD,_dev->cnt);                                               \
-                               BMP_LBA(_dev);
+            BMP_LBA(_dev);
 
 /**
 ********************************************************************************
@@ -192,6 +196,7 @@ double   ns_per_tick = 0;
                         {  if (_op->rd) {++_dev->cnt_rd; _dev->tlat_rd+=lat;}  \
                            else         {++_dev->cnt_wr; _dev->tlat_wr+=lat;}  \
                         }                                                      \
+                        pbuf_put(_dev->pbuf,_op->pbuf);                        \
     debug("OP_END: id:%d rd:%d lba:%9ld lat:%5d, issN:%4d\n",                  \
           _op->id, (_op->rd==READ), _op->lba,                                  \
           (uint32_t)((lat*ns_per_tick)/1000),                                  \
@@ -260,6 +265,7 @@ double   ns_per_tick = 0;
 **   -p            *run in physical lun mode                                  \n
 **   -i            *run using interrupts, not polling                         \n
 **   -R            *randomize lbas, default is on, use -R0 to run sequential  \n
+**   -U            *run 100% unmaps                                           \n
 **   -v            *print cmd timeout warnings                                \n
 *******************************************************************************/
 void usage(void)
@@ -267,7 +273,7 @@ void usage(void)
     printf("Usage:\n");
     printf("  \
 [-d device:device] [-r %%rd] [-q queuedepth] [-n nblocks] [-s secs] [-e eto] \
-[-l lto] [-S vlunsize] [-p] [-i] [-R0] [-v]\n");
+[-l lto] [-S vlunsize] [-p] [-i] [-R0] [-U] [-v]\n");
     exit(0);
 }
 
@@ -290,10 +296,14 @@ void run_async(SGDEV_t *dev)
     uint64_t  status = 0;
     OP_t     *op     = NULL;
     uint32_t  lat    = 0;
+    uint8_t  *pbuf   = NULL;
+    int       bs     = _4K * nblocks;
 
     debug("start dev:%p id:%d\n", dev, dev->id);
 
     sticks = cticks = getticks();
+
+    dev->pbuf = pbuf_new(QD, bs);
 
     /*--------------------------------------------------------------------------
      * loop running IO for nsecs
@@ -308,35 +318,35 @@ void run_async(SGDEV_t *dev)
          *----------------------------------------------------------------*/
         for (i=0; i<QD && TIME && dev->RD && dev->issN<QD; i++)
         {
-            rc = cblk_aread(dev->id, dev->rbuf, dev->lba, dev->nblocks,
-                            &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
-            if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),READ);}
-            else if (EBUSY == errno) {break;}
-            else                     {IO_ISS_ERR(READ);}
+            if (NULL == (pbuf=pbuf_get(dev->pbuf))) {break;}
+            *pbuf=0;
+            rc = cblk_aread(dev->id, pbuf, dev->lba, dev->nblocks, &rtag, 0, 0);
+            if      (0      == rc)    {OP_BEG(dev,rtag,pbuf,READ);}
+            else if (EAGAIN == errno) {debug("EAGAIN\n"); break;}
+            else if (EBUSY  == errno) {debug("EBUSY\n");  break;}
+            else                      {IO_ISS_ERR(READ);}
         }
         /*------------------------------------------------------------------
          * send up to WR writes, as long as the queuedepth N is not max
          *----------------------------------------------------------------*/
         for (i=0; i<QD && TIME && dev->WR && dev->issN<QD; i++)
         {
+            if (NULL == (pbuf=pbuf_get(dev->pbuf))) {break;}
             if (dev->unmap)
             {
-                rc = cblk_aunmap(dev->id, dev->wbuf, dev->lba, dev->nblocks,
-                                 &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+                memset(pbuf,0,bs);
+                rc = cblk_aunmap(dev->id, pbuf,dev->lba,dev->nblocks,&rtag,0,0);
             }
             else
             {
-                rc = cblk_awrite(dev->id, dev->wbuf, dev->lba, dev->nblocks,
-                                 &rtag, NULL, CBLK_ARW_WAIT_CMD_FLAGS);
+                memset(pbuf,0x79,bs);
+                rc = cblk_awrite(dev->id, pbuf,dev->lba,dev->nblocks,&rtag,0,0);
             }
-            if      (0 == rc)        {OP_BEG(dev,(dev->op+rtag),WRITE);}
-            else if (EBUSY == errno) {break;}
-            else                     {IO_ISS_ERR(WRITE);}
+            if      (0      == rc)    {OP_BEG(dev,rtag,pbuf,WRITE);}
+            else if (EAGAIN == errno) {debug("EAGAIN\n"); break;}
+            else if (EBUSY  == errno) {debug("EBUSY\n");  break;}
+            else                      {IO_ISS_ERR(WRITE);}
         }
-
-        /* if polling, usleep if #hits are below bar */
-        if (QD>1 && !intrp_thds && hits<hbar)
-            {debug("USLEEP issN:%d\n", dev->issN); usleep(10);}
 
         /*----------------------------------------------------------------------
          * complete cmds
@@ -383,6 +393,7 @@ void run_async(SGDEV_t *dev)
     while (TIME || dev->issN);
 
 exit:
+    if (dev->pbuf) {pbuf_free(dev->pbuf);}
     return;
 }
 
@@ -520,20 +531,6 @@ int main(int argc, char **argv)
             exit(0);
         }
         memset(devs[i].op,0,QD*sizeof(OP_t));
-        if ((rc=posix_memalign((void**)&devs[i].rbuf, _4K, _4K*nblocks)))
-        {
-            fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                    _4K*nblocks, rc);
-            exit(0);
-        }
-        if ((rc=posix_memalign((void**)&devs[i].wbuf, _4K, _4K*nblocks)))
-        {
-            fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                    _4K*nblocks, rc);
-            exit(0);
-        }
-        if (UNMAP) {memset(devs[i].wbuf,0,   _4K*nblocks);}
-        else       {memset(devs[i].wbuf,0x79,_4K*nblocks);}
     }
 
     /*--------------------------------------------------------------------------
@@ -664,8 +661,6 @@ cleanup:
     for (i=0; i<devN; i++)
     {
         free(devs[i].op);
-        free(devs[i].rbuf);
-        free(devs[i].wbuf);
         debug("cblk_close id:%d\n", devs[i].id);
         cblk_close(devs[i].id,0);
     }

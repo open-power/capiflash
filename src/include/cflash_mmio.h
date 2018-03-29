@@ -42,7 +42,7 @@
 static inline void out_be64 (__u64 *addr, __u64 val)
 {
     __u64 val2 = CFLASH_TO_ADAP64(val);
-    __asm__ __volatile__ ("sync; std%U0%X0 %1, %0"
+    __asm__ __volatile__ ("std%U0%X0 %1, %0"
 			  : "=m" (*addr) : "r" (val2) : "memory");
 }
 
@@ -51,7 +51,7 @@ static inline void out_be64 (__u64 *addr, __u64 val)
 static inline __u64 in_be64 (__u64 *addr)
 {
     __u64 ret;
-    __asm__ __volatile__ ("sync; ld%U1%X1 %0, %1; twi 0,%0,0; isync"
+    __asm__ __volatile__ ("ld%U1%X1 %0, %1; twi 0,%0,0; isync"
 			  : "=r" (ret) : "m" (*addr) : "memory");
     return CFLASH_FROM_ADAP64(ret);
 }
@@ -76,7 +76,7 @@ static inline __u64 in_mmio64 (volatile __u64 *addr)
     __u64 val;
 #ifdef CFLASH_LITTLE_ENDIAN_HOST
     __u64 zero = 0;
-    asm volatile ( "ldbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) ); 
+    asm volatile ( "ldbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
 #else
    val =  *((volatile __u64 *)(addr));
 #endif /* _AIX */
@@ -101,7 +101,7 @@ static inline __u32 in_mmio32 (volatile __u64 *addr)
     __u32 val;
 #ifdef CFLASH_LITTLE_ENDIAN_HOST
     __u32 zero = 0;
-    asm volatile ( "lwbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) ); 
+    asm volatile ( "lwbrx %0, %1, %2" : "=r"(val) : "r"(zero), "r"(addr) );
 #else
    val =  *((volatile __u64 *)(addr));
 #endif /* _AIX */

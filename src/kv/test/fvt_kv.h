@@ -35,6 +35,7 @@
 #ifndef FVT_KV_H
 #define FVT_KV_H
 
+#include <ark.h>
 #include <arkdb.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -52,22 +53,23 @@
 #endif
 
 #define ARK_CREATE \
-    ASSERT_EQ(0, ark_create(getenv("FVT_DEV"), &ark, ARK_KV_VIRTUAL_LUN)); \
+    ASSERT_EQ(0, ark_create(getenv("FVT_DEV"), &ark,           \
+                            ARK_KV_VIRTUAL_LUN | ARK_KV_HTC)); \
     ASSERT_TRUE(ark != NULL);
 
 #define ARK_CREATE_PERSIST_READONLY \
-    ASSERT_EQ(0, ark_create(getenv("FVT_DEV_PERSIST"), &ark, \
-                            ARK_KV_PERSIST_LOAD));           \
+    ASSERT_EQ(0, ark_create(getenv("FVT_DEV_PERSIST"), &ark,    \
+                            ARK_KV_PERSIST_LOAD | ARK_KV_HTC)); \
     ASSERT_TRUE(ark != NULL);
 
 #define ARK_CREATE_PERSIST \
     ASSERT_EQ(0, ark_create(getenv("FVT_DEV_PERSIST"), &ark,              \
-                            ARK_KV_PERSIST_STORE | ARK_KV_PERSIST_LOAD)); \
+               ARK_KV_PERSIST_STORE | ARK_KV_PERSIST_LOAD | ARK_KV_HTC)); \
     ASSERT_TRUE(ark != NULL);
 
 #define ARK_CREATE_NEW_PERSIST \
-    ASSERT_EQ(0, ark_create(getenv("FVT_DEV_PERSIST"), &ark, \
-                            ARK_KV_PERSIST_STORE));          \
+    ASSERT_EQ(0, ark_create(getenv("FVT_DEV_PERSIST"), &ark,     \
+                            ARK_KV_PERSIST_STORE | ARK_KV_HTC)); \
     ASSERT_TRUE(ark != NULL);
 
 #define ARK_DELETE \

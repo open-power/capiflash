@@ -161,8 +161,7 @@ void Sync_pth::run_write_loop(set_get_args_t *args)
  ******************************************************************************/
 void Sync_pth::wait(set_get_args_t *args)
 {
-    if (args->pth)
-        EXPECT_EQ(0, pthread_join(args->pth, NULL));
+    if (args->pth) {EXPECT_EQ(0, pthread_join(args->pth, NULL));}
 }
 
 /**
@@ -228,7 +227,9 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
                               uint32_t *p_ops,
                               uint32_t *p_ios)
 {
-    run_multi_ctxt(num_ctxt, num_pth, 1, 512, KV_8K, vlen,LEN,secs,p_ops,p_ios);
+    run_multi_ctxt(num_ctxt, num_pth, 1,
+                   ARK_MAX_NASYNCS,
+                   ARK_MAX_BASYNCS, vlen, LEN, secs, p_ops, p_ios);
 }
 
 /**
@@ -256,9 +257,9 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
     uint64_t        ops      = 0;
     uint64_t        ios      = 0;
 
-    if (num_pth > MAX_PTH_PER_CONTEXT)
+    if (num_pth > ARK_MAX_BASYNCS)
     {
-        printf("cannot exceed %d pthreads for sync ops\n", MAX_PTH_PER_CONTEXT);
+        printf("cannot exceed %d pthreads for sync ops\n", ARK_MAX_BASYNCS);
         return;
     }
 
@@ -274,7 +275,7 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
                                         npool,
                                         nasync,
                                         basync,
-                                        ARK_KV_VIRTUAL_LUN));
+                                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
         ASSERT_TRUE(NULL != ark[ctxt_i]);
     }
 
@@ -306,8 +307,8 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
             pth_i = 0;
         }
     }
-    printf("SYNC %dx%dx%d ctxt:%d pth:%d npool:%d ",
-            KLEN,vlen, LEN, num_ctxt, num_pth, npool); fflush(stdout);
+    printf("SYNC %dx%dx%d ctxt:%d pth:%d ",
+            KLEN,vlen, LEN, num_ctxt, num_pth); fflush(stdout);
     for (i=0; i<tot_pth; i++)
     {
         wait(pth_args+i);
@@ -359,9 +360,9 @@ void Sync_pth::run_multi_ctxt_rd(uint32_t  num_ctxt,
     uint32_t        t_ops    = 0;
     uint32_t        t_ios    = 0;
 
-    if (num_pth > MAX_PTH_PER_CONTEXT)
+    if (num_pth > ARK_MAX_BASYNCS)
     {
-        printf("cannot exceed %d pthreads for sync ops\n", MAX_PTH_PER_CONTEXT);
+        printf("cannot exceed %d pthreads for sync ops\n", ARK_MAX_BASYNCS);
         return;
     }
 
@@ -377,7 +378,7 @@ void Sync_pth::run_multi_ctxt_rd(uint32_t  num_ctxt,
                                         npool,
                                         256,
                                         8*1024,
-                                        ARK_KV_VIRTUAL_LUN));
+                                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
         ASSERT_TRUE(NULL != ark[ctxt_i]);
     }
 
@@ -454,9 +455,9 @@ void Sync_pth::run_multi_ctxt_wr(uint32_t  num_ctxt,
     uint32_t        t_ops    = 0;
     uint32_t        t_ios    = 0;
 
-    if (num_pth > MAX_PTH_PER_CONTEXT)
+    if (num_pth > ARK_MAX_BASYNCS)
     {
-        printf("cannot exceed %d pthreads for sync ops\n", MAX_PTH_PER_CONTEXT);
+        printf("cannot exceed %d pthreads for sync ops\n", ARK_MAX_BASYNCS);
         return;
     }
 
@@ -472,7 +473,7 @@ void Sync_pth::run_multi_ctxt_wr(uint32_t  num_ctxt,
                                         npool,
                                         256,
                                         8*1024,
-                                        ARK_KV_VIRTUAL_LUN));
+                                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
         ASSERT_TRUE(NULL != ark[ctxt_i]);
     }
 

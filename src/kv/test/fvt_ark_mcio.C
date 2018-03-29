@@ -48,29 +48,30 @@ using namespace std;
  ******************************************************************************/
 TEST(FVT_KV_ARK_IO, SYNC_PTH_MULTI_CONTEXT)
 {
-    uint32_t num_ctxt = 1;
-    uint32_t num_pth  = 32;
-    uint32_t vlen     = KV_500K;
-    uint32_t LEN      = 1;
-    uint32_t xmin     = 1;
-    char    *env_min  = getenv("FVT_ARK_IO_MIN");
+    uint32_t ctxt     = 1;
+    uint32_t pth      = 32;
+    uint32_t vlen     = 300;
+    uint32_t len      = 500;
+    uint32_t secs     = 10;
+    char    *env_ctxt = getenv("FVT_MCIO_CTXT");
+    char    *env_pth  = getenv("FVT_MCIO_PTH");
+    char    *env_vlen = getenv("FVT_MCIO_VLEN");
+    char    *env_len  = getenv("FVT_MCIO_LEN");
+    char    *env_secs = getenv("FVT_MCIO_SEC");
 
-    if (env_min) xmin = atoi(env_min);
+    if (env_ctxt) ctxt = atoi(env_ctxt);
+    if (env_pth)  pth  = atoi(env_pth);
+    if (env_vlen) vlen = atoi(env_vlen);
+    if (env_len)  len  = atoi(env_len);
+    if (env_secs) secs = atoi(env_secs);
 
-    cout << "\nRunning for " << xmin;
-    cout << " minutes. How many contexts? ";
-    cin >> num_ctxt;
-
-    if (num_ctxt <= 0 || num_ctxt > 508)
+    if (ctxt <= 0 || ctxt > 508)
     {
-        printf("bad context num %d\n", num_ctxt);
+        printf("bad context num %d\n", ctxt);
         return;
     }
-    if      (num_ctxt < 10) num_pth = 32;
-    else if (num_ctxt < 32) num_pth = 8;
-    else                    num_pth = 2;
 
     Sync_pth sync_pth;
 
-    sync_pth.run_multi_ctxt(num_ctxt, num_pth, vlen, LEN, xmin*60);
+    sync_pth.run_multi_ctxt(ctxt, pth, vlen, len, secs);
 }

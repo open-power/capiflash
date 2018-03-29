@@ -2174,7 +2174,11 @@ int ioctl_dk_capi_uvirtual(struct ctx *p_ctx)
 #else
     uvirtual.hdr.version = p_ctx->version;
     //TBD enabled flag once defined
-    //uvirtual.hdr.flags = p_ctx->flags;
+    // flag will be unset unless it has WRITE SAME request for vlun
+    if ( p_ctx->flags == DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME )
+    {  
+       uvirtual.hdr.flags = p_ctx->flags;
+    }
     uvirtual.context_id = p_ctx->context_id;
     uvirtual.lun_size = p_ctx->lun_size;
     rc = ioctl(p_ctx->fd, DK_CXLFLASH_USER_VIRTUAL, &uvirtual);
@@ -2742,8 +2746,9 @@ int get_flash_disks(struct flash_disk disks[], int type)
 #ifdef _AIX
     const char *cmd ="lsdev -c disk -s capidev -t extflash |awk '{print $1}'>/tmp/flist";
 #else
+    // listing all uniq superpipe mode LUN in the box
     const char *cmd ="/usr/bin/cxlfstatus | \
-			grep superpipe | sort -u -k5 | \
+			grep superpipe | awk -F \",\" '{print $1 $4}' | sort -u -k3 | \
 			awk '{print $1}' | tr -d ':' >/tmp/flist";
 #endif
 
@@ -5689,3 +5694,65 @@ xerror:
 }
 
 #endif
+
+int isGTPlusDisk( char * diskName )
+{
+    int found = FALSE ;
+#ifndef _AIX
+    int rc     =0;
+    int iTer   =0;
+    int iKey   =0;
+    FILE *fileP;
+
+    char tmpBuff[MAXBUFF];
+    char blockCheckP[MAXBUFF];
+
+    const char *initCmdP = "lspci -v | grep -E \"0628\" | awk '{print $1}' > /tmp/GTFile";
+
+    rc = system(initCmdP);
+    if( rc != 0)
+    {
+	fprintf(stderr,"%d: Failed in lspci \n",pid);
+	return FALSE;
+    }
+
+    fileP = fopen("/tmp/GTFile", "r");
+    if (NULL == fileP)
+    {
+            fprintf(stderr,"%d: Error opening file /tmp/GTFile \n", pid);
+            return FALSE ;
+     }
+
+    while (fgets(tmpBuff,MAXBUFF, fileP) != NULL)
+    {
+	 iTer = 0;
+	 while (iTer < MAXBUFF)
+	 {
+	      if (tmpBuff[iTer] =='\n')
+	      {
+		      tmpBuff[iTer]='\0';
+		      break;
+
+	      }
+
+	      iTer++;
+
+	 }
+         iKey = strlen("/dev/");
+	 sprintf(blockCheckP,"ls -d /sys/devices/*/*/"
+	 "%s/*/*/host*/target*/*:*:*:*/scsi_generic/* | grep -w %s >/dev/null 2>&1",tmpBuff,&diskName[iKey]);
+
+	 rc = system(blockCheckP);
+	 if ( rc ==0 )
+	 {
+		found = TRUE ; 
+		printf(".................... isGTPlusDisk : %s is GTPlus disk ........ \n", diskName);
+		fclose(fileP);
+		break;
+	 }
+
+    }
+
+#endif
+    return found;
+}

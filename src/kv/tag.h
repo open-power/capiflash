@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <errno.h>
 
 typedef struct _tags {
   pthread_mutex_t l;
@@ -42,6 +43,28 @@ void tag_free(tags_t *tags);
 
 int tag_unbury(tags_t *tags, int32_t *tag);
 int tag_bury(tags_t *tags, int32_t tag);
+
+static __inline__ int tag_get(tags_t *tags, int32_t *tag)
+{
+  int ret = 0;
+
+  if (tags->c==0) {ret = EAGAIN;}
+  else            {*tag = tags->s[--(tags->c)];}
+
+  KV_TRC_EXT3(pAT, "GETTAG  tags:%p c:%d tag:%d ret:%d", tags,tags->c,*tag,ret);
+  return ret;
+}
+
+static __inline__ int tag_put(tags_t *tags, int32_t tag)
+{
+  int ret = 0;
+
+  if (tags->c == tags->n) {ret = ENOSPC;}
+  else                    {tags->s[tags->c++] = tag;}
+
+  KV_TRC_EXT3(pAT, "PUTTAG  tags:%p c:%d tag:%d ret:%d", tags, tags->c,tag,ret);
+  return ret;
+}
 
 #define tag_empty(tag) ((tag)->c==0)
 

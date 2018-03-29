@@ -247,7 +247,7 @@ TEST(FVT_KV_GOOD_PATH, SYNC_ASYNC_MAGNUS_DIFFICULTUS)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, SYNC_ASYNC_EEH)
+TEST(FVT_KV_ERROR_PATH, SYNC_ASYNC_EEH)
 {
     uint32_t num_ctxt = 1;
     uint32_t ops      = 20;

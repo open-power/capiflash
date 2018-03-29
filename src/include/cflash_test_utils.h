@@ -53,7 +53,8 @@ static inline void get_inject_EEH_cmd(char *dev, char* cmd)
             snprintf(devstr, strlen(dev)-4, "%s", dev+5);
         }
     }
-    sprintf(cmd, "echo 1 > /sys/kernel/debug/powerpc/$(find /sys | grep $(find "
+    sprintf(cmd, "echo 0x8000000000000000 > /sys/kernel/debug/powerpc/"
+                 "$(find /sys | grep $(find "
                  "/sys|grep %s|head -1|awk -F/ \'{print $5}\')|grep afu|grep "
                  "reset|awk -F/ \'{print $4}\'|awk -F: \'{print $1}\'|"
                  "tr /a-z/ /A-Z/)/err_injct_outbound", devstr);

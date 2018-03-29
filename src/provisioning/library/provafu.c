@@ -236,7 +236,7 @@ bool provLoopbackTest(const prov_adapter_info_t* i_adapter, uint64_t i_test_time
     bool l_rc = true; //rely on l_rc defaulting to true. only write it to false on error
     bool l_portrc = true;
     uint8_t l_curr_port = 0;
-    char l_afu_path[DEV_PATH_LENGTH] = {0};
+    char l_afu_path[DEV_PATH_LENGTH*2] = {0};
     //Code
     do
     {
@@ -417,7 +417,7 @@ bool provInitAdapter(const prov_adapter_info_t* i_adapter)
     bool l_rc = false;
     uint64_t l_curr_wwpn = 0;
     uint8_t l_curr_port = 0;
-    char l_afu_path[DEV_PATH_LENGTH] = {0};
+    char l_afu_path[DEV_PATH_LENGTH*2] = {0};
     //Code
     do
     {

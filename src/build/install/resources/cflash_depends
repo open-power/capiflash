@@ -94,7 +94,7 @@ then
     then
       echo "ERROR: unable to reach the internet for required packages. A firewall may be up, telnet to www.ibm.com and rerun to update"
     else
-      yum -y install libgudev1 libgudev1-devel sg3_utils libcxl libcxl-devel systemd-devel make cscope ctags doxygen git gcc-c++ ksh
+      yum -y install pciutils libgudev1 libgudev1-devel sg3_utils libcxl libcxl-devel systemd-devel make cscope ctags doxygen git gcc-c++ ksh
     fi
   fi
 

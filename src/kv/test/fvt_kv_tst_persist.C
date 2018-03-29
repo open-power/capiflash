@@ -328,7 +328,7 @@ TEST(FVT_KV_GOOD_PATH, PERSIST_COMPLEX)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, PERSIST_EEH)
+TEST(FVT_KV_ERROR_PATH, PERSIST_EEH)
 {
     ARK     *ark   = NULL;
     kv_t    *fdb   = NULL;

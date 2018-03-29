@@ -101,7 +101,7 @@ then
     echo "INFO:      cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
   fi
 
-  EXISTS_K_VER=$(dpkg -l |grep $(uname -a|awk '{print $3}')|grep linux-image|grep -v extra|awk '{print $3}')
+  EXISTS_K_VER=$(dpkg -l |grep $(uname -a|awk '{print $3}')|grep linux-image|egrep -v "dbg|extra"|awk '{print $3}')
   if [[ -z ${EXISTS_K_VER} ]]; then EXISTS_K_VER=$(uname -a|awk '{print $3}'); fi
   n1=$(echo $EXISTS_K_VER|awk -F. '{print $1}')
   n2=$(echo $EXISTS_K_VER|awk -F. '{print $2}')
@@ -148,7 +148,7 @@ then
 
  if [[ -e /usr/bin/capi_flash ]]
  then
-    capi_flash -l | while read -r line
+    while read -r line
     do
       if [[ $VM ]]
       then
@@ -190,7 +190,7 @@ then
           echo "INFO:      $adap   $type $fw"
         fi
       fi
-    done
+    done <<< "$(capi_flash -l)"
   fi
 
 elif [[ $redhat ]]
@@ -232,7 +232,7 @@ then
     echo "ERROR:     cxlflash-test: Installed($EXISTS_CF_TEST_VER) != Required($CF_VER)"
   fi
 
-  EXISTS_K_VER=$(rpm -qa|grep $(uname -a|awk '{print $3}')|awk -Fkernel- '{print $2}')
+  EXISTS_K_VER=$(cat /proc/sys/kernel/osrelease)
   n1=$(echo $EXISTS_K_VER|awk -F. '{print $1}')
   n2=$(echo $EXISTS_K_VER|awk -F. '{print $2}')
   if [[ ($n1 -lt 3) || ($n1 -eq 3 && $n2 -lt 10) ]]

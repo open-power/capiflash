@@ -29,7 +29,7 @@ ALLOW_WARNINGS = yes
 
 ROOTPATH = ../../..
 SUBDIRS  =
-BTESTS   = blockio blocklistio blockplistio blocksio blockr0io blockr0sio asyncstress
+BTESTS   = blockio blocklistio blockplistio blocksio blockr0io blockr0sio blockcache asyncstress
 CFLAGS   =
 LCFLAGS  = -D__FVT__ -I$(ROOTPATH)/src/block
 VPATH   += ${ROOTPATH}/src/common

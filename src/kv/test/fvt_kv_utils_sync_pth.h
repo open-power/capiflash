@@ -41,7 +41,6 @@ extern "C"
 #include <arkdb_trace.h>
 }
 
-#define MAX_PTH_PER_CONTEXT 2048
 #define KLEN 4
 
 /**

@@ -28,5 +28,6 @@ MODULE   = cflshcom
 OBJS     = cflash_scsi_user.o cflash_tools_user.o
 EXPFLAGS = -bexpall
 LCFLAGS  =
+BTESTS   = ptrcdump
 
 include ${ROOTPATH}/config.mk

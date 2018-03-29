@@ -285,6 +285,13 @@ int mc_invalid_ioarcb(int cmd)
 
     pid = getpid();
 
+#ifndef _AIX
+    if ( (30 == cmd || 31 == cmd) && is_UA_device( cflash_path ) == TRUE )
+    {
+         TESTCASE_SKIP("Test case is not valid for Corsa Card");
+	 return 0;
+    }
+#endif
     signal(SIGABRT, sig_handle);
     signal(SIGSEGV, sig_handle);
     rc = mc_init();
@@ -296,8 +303,10 @@ int mc_invalid_ioarcb(int cmd)
 
     pthread_create(&thread,NULL,ctx_rrq_rx, p_ctx);
 
-    if (15 == cmd)
+    if (13==cmd || 14==cmd || 15==cmd  || 16==cmd ||
+        17==cmd || 18==cmd || 30==cmd)
     {
+        debug("cmd:%d create plun\n", cmd);
         //PLBA out of range
         rc = create_resource(p_ctx, 0, DK_UDF_ASSIGN_PATH, LUN_DIRECT);
         CHECK_RC(rc, "opening res_hndl");
@@ -305,7 +314,12 @@ int mc_invalid_ioarcb(int cmd)
     }
     else
     {
+        debug("cmd:%d create vlun\n",cmd);
         p_ctx->flags = DK_UVF_ALL_PATHS;
+#ifndef _AIX
+	if (17 == cmd)
+	   p_ctx->flags = DK_CXLFLASH_UVIRTUAL_NEED_WRITE_SAME;
+#endif
         rc = create_res(p_ctx);
         CHECK_RC(rc, "opening res_hndl");
         rc = mc_size1(p_ctx,chunks, &actual_size);
@@ -372,37 +386,42 @@ int mc_invalid_ioarcb(int cmd)
             //test flag underrun
             p_ctx->cmd[i].rcb.data_len = sizeof(p_ctx->wbuf[0])/2;
         }
-        else if (10 == cmd)
+        else if (10 == cmd || 14 == cmd)
         {
             // test flag overrun
             p_ctx->cmd[i].rcb.data_len = sizeof(p_ctx->wbuf[0]);
             p_u32 = (__u32*)&p_ctx->cmd[i].rcb.cdb[10];
             write_32(p_u32, 2);
         }
-        else if (11 == cmd)
+        else if (15 == cmd)
         {
             //rc scsi_rc_check
             p_u32 = (__u32*)&p_ctx->cmd[i].rcb.cdb[10];
             write_32(p_u32, p_ctx->blk_len +1);
         }
-        else if (12 == cmd)
+        else if (11 == cmd || 16 == cmd)
         {
             //data len 0 in ioarcb
             p_ctx->cmd[i].rcb.data_len = 0;
         }
-        else if (13 == cmd)
+        else if (17 == cmd)
         {
             //NUM  BLK to write 0
             p_u32 = (__u32*)&p_ctx->cmd[i].rcb.cdb[10];
             write_32(p_u32, 0);
         }
-        else if ((14 == cmd) || (15 == cmd))
+        else if (12 == cmd || 18 == cmd || 13 == cmd)
         {
             //test out of range LBAs
             p_u64 = (__u64*)&p_ctx->cmd[i].rcb.cdb[2];
-            vlba += i+1;
-            write_lba(p_u64, vlba);
+            write_lba(p_u64, p_ctx->last_lba+i+1);
         }
+
+	else if (( 30 == cmd ) || ( 31 == cmd ))
+	{
+	    // test SCSI_WRITE_SAME_16 
+            p_ctx->cmd[i].rcb.cdb[0] = 0x93; 
+	}	    
     }
 
     //test BAD IOARCB, IOASA & CMD room violation
@@ -468,16 +487,13 @@ int mc_invalid_ioarcb(int cmd)
              rc = 0x58 ; 
     }
 #endif
-    if ( cmd >= 9 && cmd <= 13)
+    if ((cmd==9 || cmd==11 || cmd==13 || cmd==14 ||
+         cmd==15 || cmd==16 || cmd==18) && !rc_flags)
     {
-        if (!rc_flags)
-        {
-            if (!dont_displa_err_msg)
-                fprintf(stderr, "%d: Expecting rc flags non zero\n", pid);
-            rc = -1;
-        }
+        fprintf(stderr, "%d: Expecting non-zero rc flags\n", pid);
+        rc = -1;
     }
-    if (4 == cmd)
+    else if (4 == cmd)
     {
         //invalid fc port & lun id
         debug("invalid fc port(0xFF)&lun id(0X1200), action=%d",cmd);
@@ -772,7 +788,7 @@ int test_ctx_reset()
     rc = allocate_buf(&rwbuf, buf_size);
     CHECK_RC(rc, "memory allocation failed");
     rc = do_large_io(p_ctx, &rwbuf, buf_size);
-    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    if ( 0x13 != rc ) CHECK_RC(1, "max transfer size should fail");
     deallocate_buf(&rwbuf);
     buf_size = 0x100000; //4k
     rc = allocate_buf(&rwbuf, buf_size);
@@ -982,6 +998,12 @@ int test_port_offline_online_GTplus()
     __u64 stride= 0x100;
 
     pid = getpid();
+
+    if ( is_UA_device( cflash_path ) == TRUE )
+    {
+	TESTCASE_SKIP("Test case is not valid for Corsa Card");
+        return 0;
+    }	
 
     rc = ctx_init(p_ctx);
     CHECK_RC(rc, "Context init failed");

@@ -460,5 +460,6 @@ int cblk_cg_clone_after_fork(chunk_cg_id_t cgid,
                              int           flags);
 int cblk_cg_get_num_chunks(chunk_cg_id_t cgid,
                            int           flags);
+int cblk_cg_get_attrs(chunk_cg_id_t cgid, chunk_attrs_t *attr, int flags);
 
 #endif /* _H_CFLASH_BLOCK */

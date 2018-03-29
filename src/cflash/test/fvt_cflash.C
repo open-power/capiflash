@@ -687,38 +687,58 @@ TEST(Cflash_FVT_Suite, E_Test_mc_ioarcb_invalid_ctx_id)
     ASSERT_EQ(0x21, test_mc_invalid_ioarcb(8));
 }
 
-TEST(Cflash_FVT_Suite, E_Test_rc_flags_underrun)
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_vlun_underrun)
 {
     ASSERT_EQ(0x2, test_mc_invalid_ioarcb(9));
 }
-
-TEST(Cflash_FVT_Suite, E_Test_rc_flags_overrun)
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_vlun_overrun)
 {
-    ASSERT_EQ(0x2, test_mc_invalid_ioarcb(10));
+    ASSERT_EQ(0x13, test_mc_invalid_ioarcb(10));
 }
-
-TEST(Cflash_FVT_Suite, E_Test_scsi_rc_check)
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_vlun_d_len_0)
 {
     ASSERT_EQ(0x2, test_mc_invalid_ioarcb(11));
 }
-TEST(Cflash_FVT_Suite, E_Test_ioarcb_d_len_0)
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_vlun_out_range)
 {
-    ASSERT_EQ(0x2, test_mc_invalid_ioarcb(12));
-}
-TEST(Cflash_FVT_Suite, E_Test_ioarcb_blk_len_0)
-{
-    ASSERT_EQ(0x0, test_mc_invalid_ioarcb(13));
+    ASSERT_EQ(0x13, test_mc_invalid_ioarcb(12));
 }
 
-TEST(Cflash_FVT_Suite, E_Test_ioarcb_vlba_out_range)
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_plun_underrun)
 {
-    ASSERT_EQ(0x13, test_mc_invalid_ioarcb(14));
+    ASSERT_EQ(0x2, test_mc_invalid_ioarcb(13));
 }
-
-TEST(Cflash_FVT_Suite, E_Test_ioarcb_plba_out_range)
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_plun_overrun)
+{
+    ASSERT_EQ(0x2, test_mc_invalid_ioarcb(14));
+}
+TEST(Cflash_FVT_Suite, E_Test_plun_scsi_rc_check)
 {
     ASSERT_EQ(0x2, test_mc_invalid_ioarcb(15));
 }
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_plun_d_len_0)
+{
+    ASSERT_EQ(0x2, test_mc_invalid_ioarcb(16));
+}
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_plun_blk_len_0)
+{
+    ASSERT_EQ(0x0, test_mc_invalid_ioarcb(17));
+}
+TEST(Cflash_FVT_Suite, E_Test_ioarcb_plba_out_range)
+{
+    ASSERT_EQ(0x2, test_mc_invalid_ioarcb(18));
+}
+
+#ifndef _AIX
+TEST(Cflash_FVT_Suite, G_Test_write_same_ioctl_plun)
+{
+    ASSERT_EQ(0, test_mc_invalid_ioarcb(30));
+}
+TEST(Cflash_FVT_Suite, G_Test_write_same_ioctl_vlun)
+{
+    ASSERT_EQ(0, test_mc_invalid_ioarcb(31));
+}
+#endif
 
 TEST(Cflash_FVT_Suite, E_bad_ioarcb_address)
 {

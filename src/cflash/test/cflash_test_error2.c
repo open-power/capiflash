@@ -884,7 +884,7 @@ int test_cfdisk_ctxs_diff_devno()
 {
     int nDisk;
     int rc=0;
-    struct flash_disk cfDisk[2];
+    struct flash_disk cfDisk[4];
     struct ctx myctx1, myctx2;
     struct ctx *p_ctx1 = &myctx1;
     struct ctx *p_ctx2 = &myctx2;
@@ -923,7 +923,7 @@ int test_attach_reuse_diff_proc()
 {
     int rc=0;
     int nDisk;
-    struct flash_disk cfDisk[2];
+    struct flash_disk cfDisk[4];
     int cstat;
     struct ctx myctx;
     struct ctx *p_ctx = &myctx;

@@ -30,7 +30,6 @@
 #define CFLSH_BLK_FILENUM 0x0100
 #include "cflash_block_internal.h"
 #include "cflash_block_inline.h"
-#include <ticks.h>
 
 #ifndef _AIX
 #include <revtags.h>
@@ -56,26 +55,33 @@ REVISION_TAGS(block);
 #include <sys/scsi.h>
 #endif
 
-cflsh_block_t cflsh_blk;
+cflsh_block_t    cflsh_blk;
 
+pthread_mutex_t  cblk_ptrc_slock        = PTHREAD_MUTEX_INITIALIZER; /*slots lock*/
+PerfTrace_t      cblk_ptrc_save[CBLK_PTRC_SLOTS];/* cmd trace save slots     */
+int              cblk_ptrc_per_chunk    = 60;    /* # of traces per chunk    */
+int              cblk_ptrc_per_cmd      = 32;    /* # of traces per cmd      */
+int              cblk_ptrc_high_latency = 1000;  /* high latency bar         */
 
 char             *cblk_log_filename = NULL;    /* Trace log filename       */
                                                /* This traces internal     */
                                                /* activities               */
 int              cblk_log_verbosity = 0;       /* Verbosity of traces in   */
                                                /* log.                     */
+int              cblk_latency_verbosity = 5;   /* Verbosity for latency trc*/
+int              cblk_ptrc_verbosity = 0;      /* Verbosity for ptrc       */
 FILE             *cblk_logfp = NULL;           /* File pointer for         */
                                                /* trace log                */
 FILE             *cblk_dumpfp = NULL;          /* File pointer  for        */
                                                /* dumpfile                 */
 int              cblk_dump_level;              /* Run time level threshold */
-					       /* required to initiate     */
-					       /* live dump.               */
+                                               /* required to initiate     */
+                                               /* live dump.               */
 int              dump_sequence_num;            /* Dump sequence number     */
 
 
-int 	         cblk_notify_log_level;        /* Run time level threshold */
-					       /* notify/error logging     */
+int              cblk_notify_log_level;        /* Run time level threshold */
+                                               /* notify/error logging     */
 
 
 pthread_mutex_t  cblk_log_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -257,8 +263,12 @@ void _cflsh_blk_init(void)
     char *env_adap_poll_delay = getenv("CFLSH_BLK_ADAP_POLL_DLY");
 #endif /* _SKIP_READ_CALL */
     char *env_eras_thread = getenv("CFLSH_BLK_ERAS_THREAD");
+    char *env_ptrc_high_latency = getenv("PTRC_HIGH_LATENCY");
+    char *env_latency_verbosity = getenv("CFLSH_BLK_LATENCY_VERBOSITY");
     int rc;
     int i=0;
+
+    if (env_latency_verbosity) {cblk_latency_verbosity=atoi(env_latency_verbosity);}
 
     memset(cflsh_blk.hash,0,sizeof(cflsh_blk.hash));
 
@@ -303,27 +313,28 @@ void _cflsh_blk_init(void)
 
     cflsh_blk.next_chunk_starting_lba = 0;
 
-    cflsh_blk.timeout = CAPI_SCSI_IO_TIME_OUT;
+    cflsh_blk.timeout       = CAPI_SCSI_IO_TIME_OUT;
     cflsh_blk.timeout_units = CFLSH_G_TO_SEC;
-   
-    if (env_timeout) {
+    cflsh_blk.timeout_secs  = cflsh_blk.timeout * 10;
 
-	cflsh_blk.timeout = atoi(env_timeout);
-    } 
-
-    if (env_timeout_units) {
-
-	if (!strcmp(env_timeout_units,"MILLI")) {
-
-	    cflsh_blk.timeout_units = CFLSH_G_TO_MSEC;
-
-	} else if (!strcmp(env_timeout_units,"MICRO")) {
-
-	    cflsh_blk.timeout_units = CFLSH_G_TO_USEC;
-	    
-	}
+    if (env_timeout)
+    {
+        cflsh_blk.timeout = cflsh_blk.timeout_secs = atoi(env_timeout);
     }
 
+    if (env_timeout_units)
+    {
+        if (!strcmp(env_timeout_units,"MILLI"))
+        {
+            cflsh_blk.timeout_units = CFLSH_G_TO_MSEC;
+            cflsh_blk.timeout_secs  = 1;
+        }
+        else if (!strcmp(env_timeout_units,"MICRO"))
+        {
+            cflsh_blk.timeout_units = CFLSH_G_TO_USEC;
+            cflsh_blk.timeout_secs  = 1;
+        }
+    }
 
     if (env_port_mask) {
 	
@@ -442,7 +453,13 @@ void _cflsh_blk_init(void)
 
     cblk_get_host_type();
 
+    /* init perf tracing vars */
+    if (env_ptrc_high_latency) {cblk_ptrc_high_latency = atoi(env_ptrc_high_latency);}
     cflsh_blk.nspt = time_per_tick(1000, 100);
+    for (i=0; i<CBLK_PTRC_SLOTS; i++)
+    {
+        PTRC_INIT(&cblk_ptrc_save[i], cblk_ptrc_per_cmd, cflsh_blk.nspt);
+    }
 
     return;
 }
@@ -518,6 +535,7 @@ void _cflsh_blk_free(void)
 	free(cflsh_blk.process_name);
     }
 
+    CBLK_PTRC_SAVE_GLBS(1);
 
     return;
 
@@ -885,7 +903,7 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
 
 	    errno = EWOULDBLOCK;
 
-	    CBLK_TRACE_LOG_FILE(1,"could not find a free cmd, num_active_cmds = %d, errno = %d, chunk->index = %d",
+	    CBLK_TRACE_LOG_FILE(5,"could not find a free cmd, num_active_cmds = %d, errno = %d, chunk->index = %d",
 				chunk->num_active_cmds,errno,chunk->index);
 
 	}
@@ -898,7 +916,7 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
 
 	    errno = EBUSY;
 
-	    CBLK_TRACE_LOG_FILE(1,"could not find a free cmd, num_active_cmds = %d, errno = %d, chunk->index = %d",
+	    CBLK_TRACE_LOG_FILE(5,"could not find a free cmd, num_active_cmds = %d, errno = %d, chunk->index = %d",
 				chunk->num_active_cmds,errno,chunk->index);
 	}
     }
@@ -907,7 +925,7 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
     if (rc) {
 
 
-	CBLK_TRACE_LOG_FILE(1,"could not find a free cmd, num_active_cmds = %d, errno = %d, chunk->index = %d",
+	CBLK_TRACE_LOG_FILE(5,"could not find a free cmd, num_active_cmds = %d, errno = %d, chunk->index = %d",
 			    chunk->num_active_cmds,errno,chunk->index);
 	
 	CFLASH_BLOCK_UNLOCK(chunk->lock);
@@ -916,7 +934,15 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
     }
 
     *cmd_index = cmd->index;
-    chunk->cmd_info[cmd->index].stime = getticks();
+    chunk->cmd_info[cmd->index].lba        = lba;
+    chunk->cmd_info[cmd->index].orig_stime = getticks();
+    chunk->cmd_info[cmd->index].stime      = chunk->cmd_info[cmd->index].orig_stime;
+    chunk->cmd_info[cmd->index].spolltime  = 0;
+    chunk->cmd_info[cmd->index].lpolltime  = 0;
+
+    /* trace for build cmd start */
+    PTRC(&chunk->cmd_info[cmd->index].ptrc, 5, CBLK_BUILD, chunk->index, lba,
+                    UDELTA(chunk->cmd_info[cmd->index].stime,cflsh_blk.nspt));
 
     if (flags & CBLK_ARW_USER_STATUS_FLAG) {
 	    
@@ -1036,6 +1062,10 @@ int cblk_build_issue_rw_cmd(cflsh_chunk_t *chunk, int *cmd_index, void *buf,cfla
     }
 
 #endif /* !_COMMON_INTRPT_THREAD */
+
+    /* trace for issue start */
+    PTRC(&chunk->cmd_info[cmd->index].ptrc, 5, CBLK_ISSUE, chunk->index, lba,
+                    UDELTA(chunk->cmd_info[cmd->index].stime, cflsh_blk.nspt));
 
     if (CBLK_ISSUE_CMD(chunk,cmd,buf,chunk->start_lba + lba,nblocks,0)) {
 
@@ -1655,7 +1685,10 @@ chunk_id_t cblk_open(const char *path, int max_num_requests, int mode, chunk_ext
 	 */
 	chunk->flags |= CFLSH_CHNK_RDY;
 
-    	CFLASH_BLOCK_UNLOCK(chunk->lock);
+        PTRC_INIT(&chunk->ptrc, cblk_ptrc_per_chunk, cflsh_blk.nspt);
+        chunk->ltime = getticks();
+
+        CFLASH_BLOCK_UNLOCK(chunk->lock);
     }
 
 
@@ -1791,6 +1824,10 @@ int cblk_close(chunk_id_t chunk_id, int flags)
 
     }
 
+
+    char fn[64]={0};
+    sprintf(fn, "/tmp/ptrc%d.cnk", chunk_id);
+    PTRC_DONE(&chunk->ptrc,fn);
 
     if (chunk->num_active_cmds > 0) {
 
@@ -2158,6 +2195,7 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
 	return rc;
     }
 
+
 #ifndef _COMMON_INTRPT_THREAD
 
     rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk,&cmd_index,&transfer_size,TRUE,0);
@@ -2165,9 +2203,18 @@ int cblk_read(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t nblocks,
 
 #else     
 
-    if (chunk->flags & CFLSH_CHNK_NO_BG_TD) {
+    if (chunk->flags & CFLSH_CHNK_NO_BG_TD)
+    {
+        rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk,&cmd_index,&transfer_size,TRUE,0);
 
-	rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk,&cmd_index,&transfer_size,TRUE,0);
+        if (rc<0)
+        {
+            cmd = &(chunk->cmd_start[cmd_index]);
+            CBLK_TRACE_LOG_FILE(4,"rd_fail rc:%d errno:%d lba:0x%llx",rc,errno,lba);
+            CFLASH_BLOCK_LOCK(chunk->lock);
+            CBLK_COMPLETE_CMD(chunk,cmd,&transfer_size);
+            CFLASH_BLOCK_UNLOCK(chunk->lock);
+        }
 
     } else {
 
@@ -2319,7 +2366,7 @@ int cblk_write_unmap(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t n
 	CBLK_TRACE_LOG_FILE(1,"chunk not found, chunk_id = %d",
 			    chunk_id);
 	errno = EINVAL;
-	return -1;	
+	return -1;
     }
 
 
@@ -2377,6 +2424,15 @@ int cblk_write_unmap(chunk_id_t chunk_id,void *buf,cflash_offset_t lba, size_t n
     if (chunk->flags & CFLSH_CHNK_NO_BG_TD) {
 
 	rc = CBLK_WAIT_FOR_IO_COMPLETE(chunk,&cmd_index,&transfer_size,TRUE,0);
+
+        if (rc<0)
+        {
+            cmd = &(chunk->cmd_start[cmd_index]);
+            CBLK_TRACE_LOG_FILE(4,"wr_fail rc:%d errno:%d lba:0x%llx",rc,errno,lba);
+            CFLASH_BLOCK_LOCK(chunk->lock);
+            CBLK_COMPLETE_CMD(chunk,cmd,&transfer_size);
+            CFLASH_BLOCK_UNLOCK(chunk->lock);
+        }
 
     } else {
 
@@ -2979,7 +3035,7 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
     cflsh_cmd_mgm_t *cmd = NULL;
     size_t transfer_size = 0;
     int pthread_rc;
-    cflsh_cmd_info_t *cmdi;
+    cflsh_cmd_info_t *cmdi=NULL;
     int i;
 
 
@@ -3460,9 +3516,25 @@ static inline int _cblk_aresult(cflsh_chunk_t *chunk,int *tag, uint64_t *status,
 
 	    errno = cmd->cmdi->status & 0xffffffff;
 	    
-	} 
-    
-         CBLK_IO_LATENCY(chunk, cmd);
+	}
+
+        int lat = UDELTA(cmd->cmdi->orig_stime, cflsh_blk.nspt);
+
+        PTRC(&chunk->ptrc,     6, CBLK_LAT, rc, cmd->cmdi->lba, lat);
+        PTRC(&cmd->cmdi->ptrc, 5, CBLK_ARESULT_CMP, chunk->index, cmd->cmdi->lba, lat);
+
+        CBLK_IO_LATENCY(chunk, cmd, lat);
+
+        if (cblk_log_verbosity >= cblk_latency_verbosity)
+        {
+            CBLK_TRACE_LOG_FILE(cblk_latency_verbosity,
+                                  "in_use:0x%x lba:%8llx rc:%d lat:%6ld "
+                                  "flags:0x%x id:%2d rd:%d",
+                                  cmd->cmdi->in_use, cmd->cmdi->lba, rc,
+                                  UDELTA(cmd->cmdi->orig_stime, cflsh_blk.nspt),
+                                  cmd->cmdi->flags, chunk->index,
+                                  ((cmd->cmdi->flags & CFLSH_MODE_READ)!=0));
+        }
 
 	if (cmd->cmdi->flags & CFLSH_ASYNC_IO) {
 	    
@@ -4808,9 +4880,13 @@ int cblk_get_attrs(chunk_id_t chunk_id, chunk_attrs_t *attr, int flags)
     int rc = 0;
     cflsh_chunk_t *chunk;
 
+    if (flags & CBLK_GROUP_MASK)
+    {
+        flags &= ~CBLK_GROUP_ID;
+        return cblk_cg_get_attrs(chunk_id, attr, flags);
+    }
 
     CBLK_TRACE_LOG_FILE(6,"flags = 0x%x",flags);
-			
 
     if ((chunk_id <= NULL_CHUNK_ID) ||
 	(chunk_id >= cflsh_blk.next_chunk_id)) {

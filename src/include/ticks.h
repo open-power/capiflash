@@ -91,14 +91,9 @@ static __inline__ uint64_t NDELTA(ticks sticks, double ns)
 #if defined(__powerpc__) || defined(__ppc__)
 static __inline__ ticks getticks(void)
 {
-     unsigned int x, x0, x1;
-     do {
-          __asm__ __volatile__ ("mftbu %0" : "=r"(x0));
-          __asm__ __volatile__ ("mftb %0" : "=r"(x));
-          __asm__ __volatile__ ("mftbu %0" : "=r"(x1));
-     } while (x0 != x1);
-
-     return (((uint64_t)x0) << 32) | x;
+    uint64_t x;
+    __asm__ __volatile__ ("mftb %0" : "=r"(x));
+    return x;
 }
 #endif
 

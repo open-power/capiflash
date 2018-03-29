@@ -27,6 +27,7 @@
 BIN_DIR=/usr/bin
 source $BIN_DIR/cflashutils
 
+if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 
 showhelp()
 {
@@ -40,12 +41,19 @@ if [ "$#" -ne 2 ]; then
     exit $EINVAL;
 fi
 
+if [[ ! $(lsmod) =~ cxlflash ]]; then echo "The cxlflash module is not loaded"; exit -1; fi
+
 TARGETLUN=`echo $1 | awk '{print tolower($0)}'`
 TARGETMODE=$2
 
 #set up the SIO table
-chluntable $TARGETLUN $TARGETMODE;
-#immediately set the desired LUNs to the correct mode
-$BIN_DIR/cxlflashutil -l $TARGETLUN -m $TARGETMODE
+chluntable $TARGETLUN $TARGETMODE
+rc=$?
 
-exit 0
+if [[ $rc -eq 0 ]]
+then
+  #immediately set the desired LUNs to the correct mode
+  $BIN_DIR/cxlflashutil -l $TARGETLUN -m $TARGETMODE
+fi
+
+exit $rc

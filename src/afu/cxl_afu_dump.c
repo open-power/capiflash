@@ -38,6 +38,7 @@
 #define debug(fmt, ...) do { if (DEBUG) fprintf(stderr,fmt,__VA_ARGS__); fflush(stderr);} while (0)
 #define debug0(fmt)     do { if (DEBUG) fprintf(stderr,fmt); fflush(stderr);} while (0)
 
+uint64_t portmask=0;
 
 void print_64(FILE *f, int a, uint64_t v) {
     if (v != 0xFFFFFFFFFFFFFFFF)
@@ -124,32 +125,71 @@ void print_version(FILE *f, struct cxl_afu_h *afu)
     get_str(version, r);
     fprintf(f,"  NVMe0 Version = %s\n",version);
   }
-  addr = 4 * (__u64) ((0x2012710>>2) & ~0x1);     // Force 8byte align
+  addr = 4 * (__u64) ((0x2060710>>2) & ~0x1);     // Force 8byte align
   cxl_mmio_read64(afu,addr,&r);
   if (r != -1l)  {
     get_str(version, r);
     fprintf(f,"  NVMe0 NEXT    = %s\n",version);
   }
-  addr = 4 * (__u64) ((0x2012700>>2) & ~0x1);     // Force 8byte align
+  addr = 4 * (__u64) ((0x2060700>>2) & ~0x1);     // Force 8byte align
   cxl_mmio_read64(afu,addr,&r);
   if (r != -1l) {fprintf(f,"  NVMe0 STATUS  = 0x%lx\n", r);}
 
   fprintf(f,"\n");
-  addr = 4 * (__u64) ((0x2080708>>2) & ~0x1);     // Force 8byte align
+  addr = 4 * (__u64) ((0x2013708>>2) & ~0x1);     // Force 8byte align
   cxl_mmio_read64(afu,addr,&r);
   if (r != -1l)  {
     get_str(version, r);
     fprintf(f,"  NVMe1 Version = %s\n",version);
   }
-  addr = 4 * (__u64) ((0x2013710>>2) & ~0x1);     // Force 8byte align
+  addr = 4 * (__u64) ((0x2080710>>2) & ~0x1);     // Force 8byte align
   cxl_mmio_read64(afu,addr,&r);
   if (r != -1l)  {
     get_str(version, r);
     fprintf(f,"  NVMe1 NEXT    = %s\n",version);
   }
-  addr = 4 * (__u64) ((0x2013700>>2) & ~0x1);     // Force 8byte align
+  addr = 4 * (__u64) ((0x2080700>>2) & ~0x1);     // Force 8byte align
   cxl_mmio_read64(afu,addr,&r);
   if (r != -1l) {fprintf(f,"  NVMe1 STATUS  = 0x%lx\n", r);}
+
+  if (portmask != 0xf) {goto done;}
+
+  fprintf(f,"\n");
+  addr = 4 * (__u64) ((0x20A0708>>2) & ~0x1);     // Force 8byte align
+  cxl_mmio_read64(afu,addr,&r);
+  if (r != -1l)  {
+    get_str(version, r);
+    fprintf(f,"  NVMe2 Version = %s\n",version);
+  }
+  addr = 4 * (__u64) ((0x20A0710>>2) & ~0x1);     // Force 8byte align
+  cxl_mmio_read64(afu,addr,&r);
+  if (r != -1l)  {
+    get_str(version, r);
+    fprintf(f,"  NVMe2 NEXT    = %s\n",version);
+  }
+  addr = 4 * (__u64) ((0x20A0700>>2) & ~0x1);     // Force 8byte align
+  cxl_mmio_read64(afu,addr,&r);
+  if (r != -1l) {fprintf(f,"  NVMe2 STATUS  = 0x%lx\n", r);}
+
+  fprintf(f,"\n");
+  addr = 4 * (__u64) ((0x20C0708>>2) & ~0x1);     // Force 8byte align
+  cxl_mmio_read64(afu,addr,&r);
+  if (r != -1l)  {
+    get_str(version, r);
+    fprintf(f,"  NVMe3 Version = %s\n",version);
+  }
+  addr = 4 * (__u64) ((0x20C0710>>2) & ~0x1);     // Force 8byte align
+  cxl_mmio_read64(afu,addr,&r);
+  if (r != -1l)  {
+    get_str(version, r);
+    fprintf(f,"  NVMe3 NEXT    = %s\n",version);
+  }
+  addr = 4 * (__u64) ((0x20C0700>>2) & ~0x1);     // Force 8byte align
+  cxl_mmio_read64(afu,addr,&r);
+  if (r != -1l) {fprintf(f,"  NVMe3 STATUS  = 0x%lx\n", r);}
+
+done:
+  return;
 }
 
 int main(int argc, char **argv) {
@@ -193,6 +233,9 @@ int main(int argc, char **argv) {
   debug0 ("Installing libcxl SIGBUS handler\n");
   cxl_mmio_install_sigbus_handler();
 
+  __u64 addr = 4 * (0x80400C & ~ 0x1);
+  cxl_mmio_read64(afu,addr,(__u64 *)&portmask);
+
   FILE *f = stdout;
   print_version(f,afu);
   if (argv[2] && strncmp(argv[2],"-v",2)==0) {return 0;}
@@ -205,6 +248,11 @@ int main(int argc, char **argv) {
   dump_afu_dbg(f,afu);
   dump_fc_dbg(f,afu,0);
   dump_fc_dbg(f,afu,1);
+  if (portmask==0xf)
+  {
+    dump_fc_dbg(f,afu,2);
+    dump_fc_dbg(f,afu,3);
+  }
   return 0;
 }
 

@@ -57,7 +57,53 @@ chluntable()
     local targetlun=$1;
     local targetmode=$2;
     local currmode="unknown";
-    getluntablestate  currmode $targetlun;
+    local sgdev=;
+    local blockdev=;
+    local sdlink=
+    local sglink=
+    local vgname=
+    local eg=
+    local numopens=
+    local sglist=
+
+    #get a list of the sg devs for the wwid
+    getsgfromwwid    sglist   $targetlun
+    getluntablestate currmode $targetlun
+
+    for sgdev in $sglist
+    do
+      getblockdev blockdev $sgdev
+
+      #if this is a switch from superpipe to legacy, check if sd* is in use
+      if [[ $targetmode -eq 1 && $blockdev =~ sd ]]
+      then
+
+        if [[ ! -z $blockdev ]]; then getpersist sdlink $blockdev; fi
+        if [[ ! -z $sgdev    ]]; then getpersist sglink $sgdev;    fi
+
+        vgname=$(pvs --noheading /dev/$blockdev 2>/dev/null|awk '{print $2}')
+        if [[ ! -z $vgname ]]
+        then
+          numopens=$(dmsetup info | awk -v RS= '/'$vgname'/'|grep Open|awk '{print $3}')
+        fi
+        eg=
+        if [[ ! -z $sdlink ]]; then eg=$sdlink; fi
+        if [[ ! -z $eg && ! -z $sglink   ]]; then eg="$eg|$sglink"
+        elif [[ -z $eg && ! -z $sglink   ]]; then eg="$sglink"; fi
+        if [[ ! -z $eg && ! -z $blockdev ]]; then eg="$eg|$blockdev"
+        elif [[ -z $eg && ! -z $blockdev ]]; then eg="$blockdev"; fi
+        inuse=$(lsof |awk '{print $1}' 2>/dev/null | egrep "$eg")
+
+        if [[ ! -z "$inuse" || $numopens -gt 0 ]]
+        then
+          echo "$targetlun is INUSE" >> $LOGFILE
+          echo $inuse >> $LOGFILE
+          echo "INFO: $targetlun is in use, cannot set mode:$targetmode"
+          return $EINVAL
+        fi
+      fi
+    done
+
     case "$currmode-$targetmode" in
         "$LUNMODE_LEGACY-$LUNMODE_LEGACY" )
             echo "INFO: LUN $targetlun is already in legacy mode. No action needed.";
@@ -82,16 +128,36 @@ chluntable()
         ;;
     esac
 
-    #do bind/unbind if required
+    for sgdev in $sglist
+    do
+      ctrlblockdevmap $sgdev $targetmode
+    done
+    return 0
+}
+
+getpersist()
+{
+    local __resultvar=$1;
+    local target=$2;
+    local dev=$(find /dev -maxdepth 1 -type l -ls|grep $target|awk -F"/dev/" '{print $2}'|awk '{print $1}')
+    eval $__resultvar="'$dev'"
+}
+
+getsgfromwwid()
+{
+    local __resultvar=$1;
+    local target=$2;
+    local wwid=;
+    local dev=;
+    local list=;
     local _SGDEVS=`ls /sys/module/cxlflash/drivers/pci:cxlflash/*:*:*.*/host*/target*:*:*/*:*:*:*/scsi_generic 2>/dev/null| grep sg`
-    local wwid
+
     for dev in $_SGDEVS; do
         getlunid wwid $dev
-        if [[ $wwid = $targetlun ]]; then
-          ctrlblockdevmap $dev $targetmode
-        fi
+        if [[ $wwid = $target ]]; then list="$list$dev "; fi
     done
-}    
+    eval $__resultvar="'$list'"
+}
 
 #@desc map a block device to its underlying sg device
 #@param $1 - output variable
@@ -150,10 +216,11 @@ getmode()
 #@returns block device (e.g. "sdc" and sets rc to 0 on success, OR sets return code to non-zero value on error
 getblockdev()
 {
-    local __resultvar=$1;
-    local dev=$2;
-    local block="   ";
-    if [[ -e /sys/class/scsi_generic/$dev/device/block ]]; then
+    local __resultvar=$1
+    local dev=$2
+    local block=
+    if [[ -e /sys/class/scsi_generic/$dev/device/block ]]
+    then
         local block=`ls /sys/class/scsi_generic/$dev/device/block`;
     fi
     eval $__resultvar="'$block'"
@@ -179,19 +246,22 @@ ctrlblockdevmap()
     local scsitopo=0;
     local tgmode=$2;
     local scsiaction="noop";
-    local blockdev=;
+    local blockdev=
+
     getblockdev blockdev $dev;
     getscsitopo scsitopo $dev;
-    #only unmap the device if the block device is NOT unknown, and we want to go to SIO mode
-    if [[ ( "$tgmode" == "$LUNMODE_SIO" ) &&  ( "$blockdev" != "   " ) ]]; then
+
+    if [[ $tgmode -eq $LUNMODE_SIO && ! -z $blockdev ]]; then
         scsiaction="unbind";
-    #only map the device if the block device is unknown, and want to go to LEGACY mode
-    elif [[ ("$tgmode" == "$LUNMODE_LEGACY") &&  ("$blockdev" == "   ") ]]; then
+    elif [[ $tgmode -eq $LUNMODE_LEGACY && -z $blockdev ]]; then
         scsiaction="bind";
     fi
-    echo "INFO: sgdev:$dev mode:$tgmode action:${scsiaction} sddev:$blockdev" >> $LOGFILE;
+
+    echo "INFO: sgdev:$dev mode:$tgmode action:${scsiaction}" >> $LOGFILE;
+
     #if there's something to do, call either bind or unbind appropriately
-    if [[ "$scsiaction" != "noop" && $blockdev && $(id -u ${USER}) -eq 0 ]]; then
+    if [[ "$scsiaction" != "noop" && $(id -u ${USER}) -eq 0 ]]
+    then
         out=$(echo -n "$scsitopo" > /sys/bus/scsi/drivers/sd/$scsiaction 2>&1)
         echo "INFO: action:${scsiaction} sgdev:$dev sddev:$blockdev scsitopo:$scsitopo rc:$?" >> $LOGFILE;
     fi
@@ -201,8 +271,6 @@ ctrlblockdevmap()
 #@returns sets rc to 0 on success, OR sets return code to non-zero value on error
 printstatus()
 {
-    declare -A GMAP
-    declare -A DMAP
     echo   "CXL Flash Device Status"
     if [[ -z $_VM ]]
     then
@@ -221,8 +289,11 @@ printstatus()
         devid=$(lspci|grep $grep_id |awk -F" " '{print $7}')
       fi
       local devspec=$(cat /sys/bus/pci/devices/$capi/devspec)
-      local loccode=$(tr '\000' '\012' </proc/device-tree$devspec/ibm,loc-code)
-
+      local loccode
+      if [[ -e /proc/device-tree$devspec/ibm,loc-code ]]
+      then
+        loccode=$(tr '\000' '\012' </proc/device-tree$devspec/ibm,loc-code)
+      fi
       printf "\nFound $devid $capi $loccode\n"
 
       #list of all known SG devices - local to prevent this from causing side effects / problems in udev handler
@@ -241,23 +312,20 @@ printstatus()
       then
         continue
       fi
-      sgdevs=$(ls -1 /dev|grep sg)
-      sddevs=$(ls -1 /dev|grep sd)
-      for dev in $sgdevs; do link=$(readlink /dev/$dev); if [[ ! -z $link ]]; then GMAP[$link]=$dev; sgpdevs=1; fi; done
-      for dev in $sddevs; do link=$(readlink /dev/$dev); if [[ ! -z $link ]]; then DMAP[$link]=$dev; sdpdevs=1; fi; done
 
-      printf "  %-8s %-10s %-8s %-10s %-33s %-s" "Device:" "SCSI" "Block" "Mode" "LUN WWID"
-      if [[ $sgpdevs || $sdpdevs ]]; then printf "Persist"; fi
-      printf "\n";
+      printf "  %-8s %-10s %-8s %-10s %-33s %-s\n" "Device:" "SCSI" "Block" "Mode" "LUN WWID" "Persist"
+
       for dev in $_SGDEVS
       do
           getlunid lunid $dev;
           getmode lunmode $dev;
           getblockdev blockdev $dev;
           getscsitopo scsitopo $dev;
+          if [[ ! -z $blockdev ]]; then getpersist sdlink $blockdev; else sdlink=; fi
+          if [[ ! -z $dev      ]]; then getpersist sglink $dev;      else sglink=; fi
           printf "  %-8s %-10s %-8s %-10s %-34s" "$dev:" "$scsitopo," "$blockdev," "$lunmode," "$lunid,"
-          if [[ $sgpdevs ]]; then printf "%-11s" "${GMAP[$dev]},";      fi
-          if [[ $sdpdevs ]]; then printf "%-11s" "${DMAP[$blockdev]}"; fi
+          if [[ ! -z $sglink ]]; then printf "%-11s" "$sglink,"; fi
+          if [[ ! -z $sdlink ]]; then printf "%-11s" "$sdlink";  fi
           printf "\n"
       done
     done

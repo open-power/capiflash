@@ -983,16 +983,18 @@ int main(int argc, char **argv)
     char    *_RD         = NULL;
     char    *_np         = NULL;
     char    *_len        = NULL;
+    char    *_htc        = NULL;
     uint32_t plun        = 0;
     uint32_t sync        = 0;
     uint32_t QD          = 0;
     uint32_t nRD         = 100;
     uint32_t all         = 0;
+    uint32_t htc         = 1;
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:r:q:s:n:l:hpiSa")))
+    while (FF != (c=getopt(argc, argv, "d:r:q:s:n:l:c:hpiSa")))
     {
         switch (c)
         {
@@ -1002,6 +1004,7 @@ int main(int argc, char **argv)
             case 's': _secs      = optarg; break;
             case 'n': _np        = optarg; break;
             case 'l': _len       = optarg; break;
+            case 'c': _htc       = optarg; break;
             case 'p': plun       = 1;      break;
             case 'a': all        = 1;      break;
             case 'S': sync       = 1;      break;
@@ -1009,15 +1012,18 @@ int main(int argc, char **argv)
             case '?': usage();             break;
         }
     }
-    if (_secs)      KV_MIN_SECS = atoi(_secs);
-    if (_QD)        QD          = atoi(_QD);
-    if (_RD)        nRD         = atoi(_RD);
-    if (_np)        KV_NPOOL    = atoi(_np);
-    if (_len)       LEN         = atoi(_len);
+    if (_secs)     {KV_MIN_SECS = atoi(_secs);}
+    if (_QD)       {QD          = atoi(_QD);}
+    if (_RD)       {nRD         = atoi(_RD);}
+    if (_np)       {KV_NPOOL    = atoi(_np);}
+    if (_len)      {LEN         = atoi(_len);}
+    if (_htc)      {htc         = atoi(_htc);}
 
     if (QD  >  KV_NASYNC) QD          = KV_NASYNC;
     if (nRD >= 100)       nRD         = 100;
     else                  nRD         = 75;
+
+    if (htc) {ark_create_flag |= ARK_KV_HTC;}
 
     if (dev == NULL || (dev && strlen(dev)==0))
     {
@@ -1028,7 +1034,7 @@ int main(int argc, char **argv)
     {
         printf("PHYSICAL: %s: npool:%d nasync:%d basync:%d\n",
                  dev, KV_NPOOL, KV_NASYNC, KV_BASYNC);
-        ark_create_flag = 0;
+        ark_create_flag &= ~ARK_KV_VIRTUAL_LUN;
     }
     else if (QD)
     {

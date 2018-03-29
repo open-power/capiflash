@@ -106,6 +106,8 @@ typedef __u64 dev64_t; //no use in Linux, its dummy
 #define TRUE 1
 #endif
 
+#define MASK_256MB(_n) (_n & 0xFFFFFFFFFFFF0000ul)
+
 #define CFLASH_ADAP_POLL_INDX  0
 #define CFLASH_DISK_POLL_INDX  1
 
@@ -237,6 +239,7 @@ int diskToPCIslotConv( char *, char * );
 int prepEEHcmd(char *, char * );
 void * do_trigger_eeh_cmd( void * );
 int is_UA_device( char * disk_name );
+int isGTPlusDisk( char * disk_name );
 
 //Context structure.
 

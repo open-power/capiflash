@@ -39,6 +39,7 @@ void ea_async_io_schedule(_ARK   *_arkp,
                           int32_t tid,
                           iocb_t *iocbp)
 {
+  scb_t    *scbp   = &(_arkp->poolthreads[tid]);
   EA       *ea     = iocbp->ea;
   int32_t   arc    = 0;
   void     *prc    = 0;
@@ -68,7 +69,7 @@ void ea_async_io_schedule(_ARK   *_arkp,
           p_addr       = ((uint8_t *)(iocbp->addr)) + (i * ea->bsize);
           m_addr       = ea->st_memory + (iocbp->blist[i].blkno * ea->bsize);
           iocbp->issT += 1;
-          _arkp->issT += 1;
+          scbp->issT  += 1;
 
           if      (ARK_EA_READ  == iocbp->op) {prc = memcpy(p_addr,m_addr,ea->bsize);}
           else if (ARK_EA_WRITE == iocbp->op) {prc = memcpy(m_addr,p_addr,ea->bsize);}
@@ -129,7 +130,7 @@ void ea_async_io_schedule(_ARK   *_arkp,
           if (arc == 0)
           {   /* success */
               iocbp->issT += 1;
-              _arkp->issT += 1;
+              scbp->issT  += 1;
           }
           else if (arc <  0)
           {
@@ -159,7 +160,7 @@ void ea_async_io_schedule(_ARK   *_arkp,
                          ot, tid, iocbp->tag, iocbp->blist[i].a_tag.tag,
                          iocbp->issT, iocbp->cmpT, iocbp->nblks,
                          iocbp->blist[i].blkno);
-              _arkp->issT += 1;
+              scbp->issT += 1;
               iocbp->issT += 1;
               iocbp->cmpT += 1;
               iocbp->blist[i].a_tag.tag = -1; // mark as harvested
@@ -191,6 +192,7 @@ void ea_async_io_harvest(_ARK   *_arkp,
                          int32_t tid,
                          iocb_t *iocbp)
 {
+  scb_t    *scbp   = &(_arkp->poolthreads[tid]);
   EA       *ea     = iocbp->ea;
   int32_t   i      = 0;
   int32_t   arc    = 0;
@@ -241,7 +243,7 @@ void ea_async_io_harvest(_ARK   *_arkp,
           break;
       }
 
-      ++iocbp->cmpT; --_arkp->issT;
+      ++iocbp->cmpT; --scbp->issT;
 
       iocbp->lat = UDELTA(iocbp->stime, _arkp->ns_per_tick);
 
@@ -280,11 +282,15 @@ void ea_async_io_harvest(_ARK   *_arkp,
       }
       else
       {
-          // IOs outstanding, harvest the remaining IOs for this iocb
-          KV_TRC_FFDC(pAT,"%s_ERRH tid:%d ttag:%3d ERROR_RE_HARVEST "
+          // IOs outstanding, log and allow harvesting of the remaining IOs
+          if (iocbp->ltime && SDELTA(iocbp->ltime, _arkp->ns_per_tick) > 1)
+          {
+              iocbp->ltime = getticks();
+              KV_TRC_FFDC(pAT,"%s_ERRH tid:%d ttag:%3d ERROR_RE_HARVEST "
                           "issT:%3d cmpT:%3d nblks:%3ld",
                           ot, tid, iocbp->tag, iocbp->issT, iocbp->cmpT,
                           iocbp->nblks);
+          }
       }
   }
   // if all IO has completed successfully for this iocb, done

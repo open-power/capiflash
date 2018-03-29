@@ -33,8 +33,8 @@
 void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t         *scbp     = &(_arkp->poolthreads[tid]);
-  rcb_t         *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t        *iocbp    = &(_arkp->iocbs[rcbp->ttag]);
+  rcb_t         *rcbp     = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t        *iocbp    = &(scbp->iocbs[rcbp->ttag]);
   int32_t        rc       = 0;
 
   scbp->poolstats.ops_cnt += 1;
@@ -88,9 +88,9 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  if (HTC_HIT(_arkp->htc[rcbp->pos], tcbp->blen))
+  if (HTC_HIT(_arkp, rcbp->pos, tcbp->blen))
   {
-      ++_arkp->htc_hits;
+      ++scbp->htc_hits;
       KV_TRC(pAT, "HTC_HIT tid:%d ttag:%3d pos:%ld", tid, tcbp->ttag,rcbp->pos);
       HTC_GET(_arkp->htc[rcbp->pos], tcbp->inb, tcbp->blen*_arkp->bsize);
       ark_exist_finish(_arkp, tid, tcbp);
@@ -112,13 +112,6 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
                    tcbp->blen, 0, tcbp->ttag, ARK_EXIST_FINISH);
 
-  if (MEM_FASTPATH)
-  {
-      ea_async_io_schedule(_arkp, tid, iocbp);
-      ea_async_io_harvest (_arkp, tid, iocbp);
-      if (iocbp->state == ARK_EXIST_FINISH) {ark_exist_finish(_arkp,tid,tcbp);}
-  }
-
 ark_exist_start_err:
 
   return;
@@ -130,8 +123,9 @@ ark_exist_start_err:
  ******************************************************************************/
 void ark_exist_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t *iocbp = &(_arkp->iocbs[rcbp->ttag]);
+  scb_t  *scbp  = &(_arkp->poolthreads[tid]);
+  rcb_t  *rcbp  = &(_arkp->poolthreads[tid].rcbs[tcbp->rtag]);
+  iocb_t *iocbp = &(scbp->iocbs[rcbp->ttag]);
 
   KV_TRC(pAT, "INB_GET tid:%d ttag:%3d tot:%ld used:%ld",
                tid, tcbp->ttag, tcbp->inb_size, tcbp->inb->len);

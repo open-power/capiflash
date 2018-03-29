@@ -27,11 +27,7 @@
 ********************************************************************************
 ** \file
 ** \brief
-**   run iops benchmark for the Ark Key/Value Database Sync/Async IO
-** \details
-**   Usage:                                                                   \n
-**     [-d device] [-r %rd] [-q qdepth] [-s secs] [-p]                        \n
-**
+**   performance benchmark for the Ark Key/Value Database
 *******************************************************************************/
 #include <ark.h>
 #include <arkdb.h>
@@ -48,7 +44,6 @@
 #define KV_MAX_QD           256
 #define KV_NASYNC           256
 #define KV_BASYNC           8*1024
-int     KV_NPOOL    =       1;
 int     KV_MIN_SECS =       1;
 
 #define _4K                 (4*1024)
@@ -138,7 +133,7 @@ typedef struct
 uint32_t error_stop      = 0;
 uint64_t ark_create_flag = 0;
 double   ns_per_tick     = 0;
-uint64_t seed            = 0xFF00000000000000;
+uint64_t seed            = UINT64_C(0xFF00000000000000);
 uint32_t MEMCMP          = 0;
 
 void kv_async_SET_KEY   (async_CB_t *pCB);
@@ -177,11 +172,10 @@ void kv_async_DEL_KEY   (async_CB_t *pCB);
 #define KV_ERR_STOP(_pCB, _msg, _rc)                                           \
 do                                                                             \
 {                                                                              \
-    KV_TRC(pAT, "ERR_STOP pCB:%p msg:(%s) rc:%d", _pCB, _msg,_rc);             \
+    error_stop=1;                                                              \
+    KV_TRC_FFDC(pAT, "ERR_STOP pCB:%p msg:(%s) rc:%d", _pCB, _msg,_rc);        \
     printf("(%s:%d)", _msg,_rc);                                               \
-    if (NULL == _pCB) {error_stop=1; return;}                                  \
     if (_pCB->flags & KV_ASYNC_RUNNING) {_pCB->flags &= ~KV_ASYNC_RUNNING;}    \
-    else                                {error_stop=1;}                        \
     return;                                                                    \
 } while (0)
 
@@ -207,24 +201,6 @@ do                                                                             \
 #define NEW_ARK(_dev, _ark)                                                    \
         assert(0 == ark_create(_dev, _ark, ark_create_flag));                  \
         assert(NULL != ark);
-
-/**
-********************************************************************************
-** \brief print the usage
-** \details
-**   -d device     *the device name to run KV IO                              \n
-**   -r %rd        *the percentage of reads to issue (75 or 100)              \n
-**   -q queuedepth *the number of outstanding ops to maintain                 \n
-**   -n npool      *the number of threads in the Ark pool                     \n
-**   -s secs       *the number of seconds to run the I/O                      \n
-**   -p            *run in physical lun mode                                  \n
-*******************************************************************************/
-void usage(void)
-{
-    printf("Usage:\n");
-    printf("   [-d device] [-r %%rd] [-q qdepth] [-n npool] [-s secs] [-p]\n");
-    exit(0);
-}
 
 /**
 ********************************************************************************
@@ -266,13 +242,16 @@ void kv_async_cb(int errcode, uint64_t dt, int64_t res)
         if (0 != memcmp(pCB->genval, pCB->getval, pCB->vlen))
         {
             KV_ERR_STOP(pCB,"get miscompare",pCB->vlen);
+            goto done;
         }
     }
+
+    if (error_stop) {KV_ERR_STOP(pCB, "ALLSTOP", 99); goto done;}
 
     pCB->cur += 1;
     if (pCB->cur > pCB->end)
     {
-        if (pCB->flags & KV_ASYNC_SHUTDOWN)
+        if (pCB->flags & KV_ASYNC_SHUTDOWN || pCB->flags & KV_ASYNC_DEL)
         {
             KV_TRC(pAT, "Stop RUNNING:%p", pCB);
             pCB->flags &= ~KV_ASYNC_RUNNING;
@@ -431,8 +410,9 @@ void kv_async_io(ARK     *ark,
     for (pCB=pCTs->pCBs; pCB<pCTs->pCBs+jobs; pCB++)
     {
         pCB->flags |=  KV_ASYNC_RUNNING;
-        if (pCB->flags & KV_ASYNC_SET) {kv_async_SET_KEY(pCB);}
-        else                           {kv_async_GET_KEY(pCB);}
+        if      (pCB->flags & KV_ASYNC_SET) {kv_async_SET_KEY(pCB);}
+        else if (pCB->flags & KV_ASYNC_GET) {kv_async_GET_KEY(pCB);}
+        else                                {kv_async_DEL_KEY(pCB);}
     }
 
     /* loop until all jobs are done or until time elapses */
@@ -450,8 +430,9 @@ void kv_async_io(ARK     *ark,
             if (pCB->flags & KV_ASYNC_EAGAIN)
             {
                 pCB->flags &= ~KV_ASYNC_EAGAIN;
-                if (pCB->flags & KV_ASYNC_SET) {kv_async_SET_KEY(pCB);}
-                else                           {kv_async_GET_KEY(pCB);}
+                if      (pCB->flags & KV_ASYNC_SET) {kv_async_SET_KEY(pCB);}
+                else if (pCB->flags & KV_ASYNC_GET) {kv_async_GET_KEY(pCB);}
+                else                                {kv_async_DEL_KEY(pCB);}
             }
         }
 
@@ -474,10 +455,15 @@ void kv_async_io(ARK     *ark,
 
     /* sum perf ops for all contexts/jobs and delete arks */
     get_stats(pCTs->ark, &ops, &ios);
-    printf(" tops:%8d tios:%8d op/s:%7d io/s:%7d secs:%d\n",
-            ops-s_ops, ios-s_ios,
-            (ops-s_ops)/e_secs, (ios-s_ios)/e_secs, e_secs);
-
+    char *op=NULL;
+    if      (flags & KV_ASYNC_SET) {op="SET";}
+    else if (flags & KV_ASYNC_GET) {op="GET";}
+    if (op)
+    {
+        printf("%s: tops:%8d tios:%8d op/s:%7d io/s:%7d secs:%d\n",
+               op, ops-s_ops, ios-s_ios,
+               (ops-s_ops)/e_secs, (ios-s_ios)/e_secs, e_secs);
+    }
     /* sum perf ops for all contexts/jobs and delete arks */
     for (job=0; job<jobs; job++)
     {
@@ -567,22 +553,22 @@ uint32_t kv_del(worker_t *w)
     uint32_t i     = 0;
     uint32_t rc    = 0;
     int64_t  res   = 0;
-    ticks    start = getticks();
 
-    while (SDELTA(start,ns_per_tick) < KV_MIN_SECS)
+    KV_TRC(pAT, "DEL   w:%p", &w);
+
+    for (i=w->beg; i<=w->end; i++)
     {
-        for (i=w->beg; i<=w->end; i++)
-        {
-            GEN_VAL(w->keyval, seed+i, w->klen);
+        GEN_VAL(w->keyval, seed+i, w->klen);
 
-            while (EAGAIN == (rc=ark_del(w->ark,
-                                         w->klen,
-                                         w->keyval,
-                                         &res))) usleep(10000);
-            if (rc)             KV_ERR("del1", rc);
-            if (w->vlen != res) KV_ERR("del2",0);
-        }
+        while (EAGAIN == (rc=ark_del(w->ark,
+                                     w->klen,
+                                     w->keyval,
+                                     &res))) usleep(10000);
+        if (rc)             KV_ERR("del1", rc);
+        if (w->vlen != res) KV_ERR("del2",0);
     }
+    KV_TRC(pAT, "DONE w:%p", &w);
+
     return 0;
 }
 
@@ -636,8 +622,10 @@ void kv_sync_io(ARK     *ark,
 
     /* sum perf ops for all contexts/jobs and delete arks */
     get_stats(ark, &ops, &ios);
-    printf(" tops:%8d tios:%8d op/s:%7d io/s:%7d secs:%d\n",
-            ops-s_ops, ios-s_ios,
+    char *op=NULL;
+    if ((void*)fp == (void*)kv_set) {op="SET";} else {op="GET";}
+    printf("%s: tops:%8d tios:%8d op/s:%7d io/s:%7d secs:%d\n",
+            op, ops-s_ops, ios-s_ios,
             (ops-s_ops)/e_secs, (ios-s_ios)/e_secs, e_secs);
 
     for (i=0; i<QD; i++)
@@ -646,6 +634,30 @@ void kv_sync_io(ARK     *ark,
         free(w[i].genval);
         free(w[i].getval);
     }
+}
+
+/**
+********************************************************************************
+** \brief print the usage
+** \details
+**   -d device     *the device name to run KV IO                              \n
+**   -q queuedepth *the number of outstanding ops to maintain to the Arkdb    \n
+**   -s secs       *the number of seconds to run the I/O                      \n
+**   -l len        *number of k/v pairs to set/get (default is 10000)         \n
+**   -k klen       *len in bytes of each key                                  \n
+**   -v vlen       *len in bytes of each value                                \n
+**   -c 0          *disable the metadata cache                                \n
+**   -n            *write to a new persisted ark                              \n
+**   -r            *read the existing persisted ark                           \n
+**   -S            *run sync Arkdb ops                                        \n
+**   -M            *memcmp every read to validate data integrity              \n
+*******************************************************************************/
+void usage(void)
+{
+    printf("Usage:\n");
+    printf("   [-d device] [-q qdepth] [-s secs] [-l len]"
+           " [-k klen] [-v vlen] [-n] [-r] [-S] [-M] [-c]\n");
+    exit(0);
 }
 
 /**
@@ -672,15 +684,17 @@ int main(int argc, char **argv)
     char    *_len        = NULL;
     char    *_klen       = NULL;
     char    *_vlen       = NULL;
+    char    *_htc         = NULL;
     uint32_t readonly    = 0;
     uint32_t new         = 0;
     uint32_t sync        = 0;
+    uint32_t htc         = 1;
     uint32_t QD          = 100;
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:rhSMn")))
+    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:c:rhSMn")))
     {
         switch (c)
         {
@@ -690,6 +704,7 @@ int main(int argc, char **argv)
             case 'l': _len       = optarg;   break;
             case 'v': _vlen      = optarg;   break;
             case 'k': _klen      = optarg;   break;
+            case 'c': _htc       = optarg;   break;
             case 'n': new        = 1;        break;
             case 'r': readonly   = 1; new=0; break;
             case 'S': sync       = 1;        break;
@@ -703,29 +718,38 @@ int main(int argc, char **argv)
     if (_len)  {LEN         = atoi(_len);}
     if (_klen) {KLEN        = atoi(_klen);}
     if (_vlen) {VLEN        = atoi(_vlen);}
+    if (_htc)  {htc         = atoi(_htc);}
 
-    QD %= KV_NASYNC;
+    QD         %= KV_NASYNC;
+    LEN         = LEN<QD ? QD : LEN;
+    LEN         = LEN - (LEN%QD);
     ns_per_tick = time_per_tick(1000, 100);
 
     if      (new)      {ark_create_flag = ARK_KV_PERSIST_STORE;}
     else if (readonly) {ark_create_flag = ARK_KV_PERSIST_LOAD;}
     else               {ark_create_flag = ARK_KV_VIRTUAL_LUN;}
 
+    if (htc) {ark_create_flag |= ARK_KV_HTC;}
+
     NEW_ARK(dev, &ark);
 
     if (sync)
     {
-        printf("SYNC: %s: QD:%d\n", dev, QD); fflush(stdout);
+        printf("SYNC: %s: QD:%d LEN:%d\n", dev, QD, LEN); fflush(stdout);
         if (!readonly) {kv_sync_io(ark, dev, QD, KLEN, VLEN, LEN,(void*(*)(void*))kv_set);}
         if (!new)      {kv_sync_io(ark, dev, QD, KLEN, VLEN, LEN,(void*(*)(void*))kv_get);}
     }
     else
     {
-        printf("ASYNC: %s: QD:%d\n", dev, QD); fflush(stdout);
+        printf("ASYNC: %s: QD:%d LEN:%d\n", dev, QD, LEN); fflush(stdout);
         if (!readonly) {kv_async_io(ark, dev, KV_ASYNC_SET, QD, KLEN,VLEN,LEN);}
         if (!new)      {kv_async_io(ark, dev, KV_ASYNC_GET, QD, KLEN,VLEN,LEN);}
     }
 
+    if (!new && !readonly) {kv_async_io(ark, dev, KV_ASYNC_DEL, QD, KLEN,VLEN,LEN);}
+
     assert(0 == ark_delete(ark));
-    exit(0);
+
+    if (error_stop) {exit(-1);}
+    else            {exit(0);}
 }

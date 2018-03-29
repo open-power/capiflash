@@ -1,0 +1,18 @@
+
+Package: cxlflash-test
+Architecture: ppc64 ppc64el
+Depends: cxlflash (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Description: IBM Capiflash IO Data Engine Tests
+ This provides an infrastructure for testing IBM capiflash adapters.
+ Included is an automated Functional Verification Test framework.
+ The capiflash IO path, and the NoSQL Software Interface are tested.
+
+Package: cxlflashimage
+Architecture: ppc64 ppc64el
+Depends: cxlflash (= ${binary:Version}), ${misc:Depends}
+Conflicts: afuimage
+Replaces: afuimage
+Description: IBM Capiflash IO Data Engine Images
+ This provides an infrastructure for downloading firmware updates
+ to IBM capiflash adapters. Included is the download framework
+ and the firmware images.

@@ -501,20 +501,20 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_SET_GET_EXISTS_DEL)
 
     ARK_CREATE;
 
-    EXPECT_EQ(ENOENT, ark_get   (ark, klen, k, vlen, g, 0, &res));
-    EXPECT_EQ(ENOENT, ark_exists(ark, klen, k, &res));
-    EXPECT_EQ(ENOENT, ark_del   (ark, klen, k, &res));
-    EXPECT_EQ(-1, res);
-    EXPECT_EQ(0,      ark_set   (ark, klen, k, vlen, v, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0,      ark_get   (ark, klen, k, vlen, g, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(v,g,vlen));
-    EXPECT_EQ(0,      ark_exists(ark, klen, k, &res));
-    EXPECT_EQ(0,      ark_del   (ark, klen, k, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(ENOENT, ark_get   (ark, klen, k, vlen, g, 0, &res));
-    EXPECT_EQ(ENOENT, ark_exists(ark, klen, k, &res));
+    ASSERT_EQ(ENOENT, ark_get   (ark, klen, k, vlen, g, 0, &res));
+    ASSERT_EQ(ENOENT, ark_exists(ark, klen, k, &res));
+    ASSERT_EQ(ENOENT, ark_del   (ark, klen, k, &res));
+    ASSERT_EQ(-1, res);
+    ASSERT_EQ(0,      ark_set   (ark, klen, k, vlen, v, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0,      ark_get   (ark, klen, k, vlen, g, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(v,g,vlen));
+    ASSERT_EQ(0,      ark_exists(ark, klen, k, &res));
+    ASSERT_EQ(0,      ark_del   (ark, klen, k, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(ENOENT, ark_get   (ark, klen, k, vlen, g, 0, &res));
+    ASSERT_EQ(ENOENT, ark_exists(ark, klen, k, &res));
 
     ARK_DELETE;
 }
@@ -854,71 +854,71 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_REP_MIXED)
     ARK_CREATE;
 
     GEN_VAL(val, idx, vlen);
-    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(val,buf,vlen));
+    ASSERT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(val,buf,vlen));
 
     /* replace with a different value */
     idx = 15;
     GEN_VAL(val, idx, vlen);
-    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(val,buf,vlen));
+    ASSERT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(val,buf,vlen));
 
     /* replace with a bigger different value */
     idx  = 20;
     vlen = 20;
     GEN_VAL(val, idx, vlen);
-    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(val,buf,vlen));
+    ASSERT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(val,buf,vlen));
 
     /* replace with >vdf bigger different value */
     idx  = 4096;
     vlen = 4096;
     GEN_VAL(val, idx, vlen);
-    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(val,buf,vlen));
+    ASSERT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(val,buf,vlen));
 
     /* replace with a smaller different value */
     idx  = 256;
     vlen = 256;
     GEN_VAL(val, idx, vlen);
-    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(val,buf,vlen));
+    ASSERT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(val,buf,vlen));
 
     /* replace with a smaller different value */
     idx  = 4;
     vlen = 4;
     GEN_VAL(val, idx, vlen);
-    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(val,buf,vlen));
+    ASSERT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(val,buf,vlen));
 
     /* replace with a bigger different value */
     idx  = 256;
     klen = 256;
     vlen = 4096;
     GEN_VAL(val, idx, vlen);
-    EXPECT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
-    EXPECT_EQ(vlen, res);
-    EXPECT_EQ(0, memcmp(val,buf,vlen));
+    ASSERT_EQ(0, ark_set(ark, klen, key, vlen, val, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, ark_get(ark, klen, key, vlen, buf, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(val,buf,vlen));
 
     ARK_DELETE;
 }
@@ -1032,10 +1032,10 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_ark_get_PARTIAL_VALUE)
 
     ARK_CREATE;
 
-    EXPECT_EQ(0, ark_set(ark,  5,    s,    5,    s,    &res));
-    EXPECT_EQ(0, ark_get(ark,  5,    s,    3,    g, 0, &res));
+    ASSERT_EQ(0, ark_set(ark,  5,    s,    5,    s,    &res));
+    ASSERT_EQ(0, ark_get(ark,  5,    s,    3,    g, 0, &res));
 
-    EXPECT_EQ(0, memcmp(s,g,3));
+    ASSERT_EQ(0, memcmp(s,g,3));
     ARK_DELETE;
 }
 
@@ -1095,7 +1095,7 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_random)
 
     ARK_CREATE;
 
-    EXPECT_EQ(ENOENT, ark_random(ark, KV_4K, &klen, kvalue));
+    ASSERT_EQ(ENOENT, ark_random(ark, KV_4K, &klen, kvalue));
 
     db = (kv_t*)kv_db_create_fixed(LEN, 64, 1);
     ASSERT_TRUE(db != NULL);
@@ -1269,8 +1269,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
                                     10,
                                     ARK_VERBOSE_NTHRDS_DEF,
                                     ARK_MAX_NASYNCS,
-                                    ARK_EA_BLK_ASYNC_CMDS,
-                                    ARK_KV_VIRTUAL_LUN));
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
     park = (_ARK *)ark;
 
     kl=16; vl=32;
@@ -1446,8 +1446,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_smallkv)
                                     64,
                                     ARK_VERBOSE_NTHRDS_DEF,
                                     ARK_MAX_NASYNCS,
-                                    ARK_EA_BLK_ASYNC_CMDS,
-                                    ARK_KV_VIRTUAL_LUN));
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
 
     db = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
     ASSERT_TRUE(db != NULL);
@@ -1488,8 +1488,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_bigkv)
                                     16,
                                     ARK_VERBOSE_NTHRDS_DEF,
                                     ARK_MAX_NASYNCS,
-                                    ARK_EA_BLK_ASYNC_CMDS,
-                                    ARK_KV_VIRTUAL_LUN));
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
 
     db = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
     ASSERT_TRUE(db != NULL);
@@ -1528,8 +1528,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_cleanup_task_memory)
                                     4,
                                     ARK_VERBOSE_NTHRDS_DEF,
                                     ARK_MAX_NASYNCS,
-                                    ARK_EA_BLK_ASYNC_CMDS,
-                                    ARK_KV_VIRTUAL_LUN));
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
 
     if (dev != NULL) {loops=3;}
 

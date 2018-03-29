@@ -73,7 +73,6 @@ AFU_BIN=${AFU_PREFIX}/usr/bin
 endif
 
 LIBSRCDIR=${IMGDIR}
-TESTSRCDIR=${TESTDIR}
 DOCSRCDIR=${ROOTPATH}/obj/doxygen
 RESOURCEDIR=${ROOTPATH}/src/build/install/resources
 AFUDIR=${ROOTPATH}/src/afu
@@ -154,30 +153,32 @@ else
 endif
 ifeq ($(UNAME),AIX)
 	${INSTALL} ${TESTDIR}/blockio64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blocksio64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blockr0io64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blockr0sio64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blocklistio64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blockplistio64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blocksio ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blockr0io ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blockr0sio ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blockio ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blocklistio ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blockplistio ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_kv_async64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_kv_sync64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_kv_persist64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_kv_benchmark64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/kv_perf64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blocksio64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockcache64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockr0io64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockr0sio64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blocklistio64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockplistio64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockio ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blocksio ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockcache ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockr0io ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockr0sio ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blocklistio ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blockplistio ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/run_kv_async64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/run_kv_sync64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/run_kv_persist64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/run_kv_benchmark64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/kv_perf64 ${BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppt ${BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_dump ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_status ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_temp ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/flashgt_vpd_access ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/cxl_afu_dump ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/cxl_afu_status ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/flashgt_temp ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/flashgt_vpd_access ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlfd ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlflashutil ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/provtool ${BIN_DIR}
@@ -198,17 +199,19 @@ ifeq (yes,${RPMBUILD})
 	${INSTALL} ${RESOURCEDIR}/preremove ${EXT_DIR}
 endif
 endif
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockio ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blocksio ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockr0io ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockr0sio ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blocklistio ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/blockplistio ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_sync ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_async ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_persist ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_kv_benchmark ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/kv_perf ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blocksio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockcache ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockr0io ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockr0sio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blocklistio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockplistio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_sync ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_async ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_persist ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_benchmark ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/kv_perf ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/ptrcdump ${BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppt ${BIN_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/ioppts.qd ${BIN_DIR}
 
@@ -243,8 +246,8 @@ endif
        echo "${INSTALL} ${ROOTPATH}/src/build/version.txt ${SHARE_DIR}"; \
        ${INSTALL} -m 644 ${ROOTPATH}/src/build/version.txt ${SHARE_DIR}; \
      else \
-       echo "${INSTALL} ${TESTSRCDIR}/version.txt ${SHARE_DIR}"; \
-       ${INSTALL} -m 644 ${TESTSRCDIR}/version.txt ${SHARE_DIR}; \
+       echo "${INSTALL} ${TESTDIR}/version.txt ${SHARE_DIR}"; \
+       ${INSTALL} -m 644 ${TESTDIR}/version.txt ${SHARE_DIR}; \
      fi
 	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${SHARE_DIR}
 	${INSTALL} ${RESOURCEDIR}/cflash_configure ${PKGDIR}
@@ -300,51 +303,51 @@ cxlflash-test:
 	@mkdir -p ${BIN_DIR}
 	@mkdir -p ${TEST_DIR}
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} ${TESTSRCDIR}/blk_test ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/pvtestauto ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/pblkread ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/transport_test ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_cflash_fvt ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/blk_test ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/pvtestauto ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/pblkread ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/transport_test ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_cflash_fvt ${TEST_DIR}
 endif
-	${INSTALL} ${TESTSRCDIR}/asyncstress ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/_tst_ark ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_fvt_kv ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_fvt ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_block_fvt ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_kv_async_multi ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_io ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_mcio ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_mc_aio ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf2 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf_check ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf_tool ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/asyncstress ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/_tst_ark ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/run_fvt_kv ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_fvt ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_block_fvt ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_kv_async_multi ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_io ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_mcio ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_mc_aio ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_perf ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_perf2 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_perf_check ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_perf_tool ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/run_ioppts ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/multi_process_perf ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/block/test/block_perf_check ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/run_regression ${TEST_DIR}
 
 ifeq ($(UNAME),AIX)
-	${INSTALL} ${TESTSRCDIR}/asyncstress64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/_tst_ark64 ${BIN_DIR}
-	${INSTALL} ${TESTSRCDIR}/blk_test64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/pvtestauto64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/pblkread64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/transport_test64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_cflash_fvt64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_fvt_kv64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_fvt64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_block_fvt64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/run_kv_async_multi64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_io64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_mcio64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_mc_aio64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf_check64 ${TEST_DIR}
-	${INSTALL} ${TESTSRCDIR}/fvt_ark_perf_tool64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/asyncstress64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/_tst_ark64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blk_test64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/pvtestauto64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/pblkread64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/transport_test64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_cflash_fvt64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_fvt_kv64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_fvt64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_block_fvt64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/run_kv_async_multi64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_io64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_mcio64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_mc_aio64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_perf64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_perf_check64 ${TEST_DIR}
+	${INSTALL} ${TESTDIR}/fvt_ark_perf_tool64 ${TEST_DIR}
 else
 ifneq ($(TARGET_PLATFORM),x86_64)
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/cxl_afu_inject ${TEST_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/cxl_afu_inject ${TEST_DIR}
 endif
 	@if [[ -e ${RESOURCEDIR}/flashgt_nvme_override ]]; then \
        echo ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_override ${TEST_DIR}; \
@@ -352,7 +355,7 @@ endif
      fi
 	${INSTALL} ${RESOURCEDIR}/cflash_inject ${TEST_DIR}
 	${INSTALL} ${ROOTPATH}/src/test/utils_scripts_tst ${TEST_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTSRCDIR}/run_fvt_scripts ${TEST_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_fvt_scripts ${TEST_DIR}
 endif
 
 ifneq ($(UNAME),AIX)
@@ -373,9 +376,7 @@ ${FW_FILES}:
      fi
 
 cxlflashimage: ${FW_FILES}
-	@mkdir -p ${SHARE_DIR}
 	@mkdir -p ${AFU_BIN}
-	${INSTALL} -m 644 ${RESOURCEDIR}/afu_versions ${SHARE_DIR}
 	@if [[ -e ${RESOURCEDIR}/flashgt_nvme_nsq ]]; then \
        echo ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_nsq ${AFU_BIN}; \
        ${INSTALL} ${RESOURCEDIR}/flashgt_nvme_nsq ${AFU_BIN}; \
@@ -384,6 +385,13 @@ cxlflashimage: ${FW_FILES}
        echo ${INSTALL} ${RESOURCEDIR}/psl_trace_dump ${AFU_BIN}; \
        ${INSTALL} ${RESOURCEDIR}/psl_trace_dump ${AFU_BIN}; \
      fi
+	@if [[ -e ${RESOURCEDIR}/psl_trace_dump_p9 ]]; then \
+       echo ${INSTALL} ${RESOURCEDIR}/psl_trace_dump_p9 ${AFU_BIN}; \
+       ${INSTALL} ${RESOURCEDIR}/psl_trace_dump_p9 ${AFU_BIN}; \
+     fi
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/flashgtp_vpd_dump ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/flashgtp_vpd_write ${BIN_DIR}
+	${INSTALL} ${RESOURCEDIR}/flashgtp_vpd_fixup ${BIN_DIR}
 endif
 endif
 

@@ -30,6 +30,25 @@ export PATH=$PATH:/usr/bin
 
 DIR=cxlffdc."$(date|awk '{print $4"_"$2"_"$3"_"$6}'|sed 's/:/_/'g)"
 
+##################
+#setup kernel debug
+##################
+if [[ $1 =~ kdebug ]]
+then
+  if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
+  echo "unload cxlflash"
+  rmmod cxlflash
+  echo "unload cxl"
+  rmmod cxl
+  echo "load cxl"
+  insmod /lib/modules/$(uname -a|awk '{print $3}')/kernel/drivers/misc/cxl/cxl.ko verbose=1
+  echo 1 > /sys/kernel/debug/tracing/events/cxl/enable
+  echo "load cxlflash"
+  modprobe cxlflash
+  echo "module cxlflash +p" > /sys/kernel/debug/dynamic_debug/control
+  exit 0
+fi
+
 #check permissions
 if [[ $(id -u ${USER}) -eq 0 ]]
 then
@@ -80,7 +99,7 @@ check_pid()
 ##################
 if [[ $1 =~ help || $1 =~ -h ]]
 then
-  echo "Usage: $(basename $0)"
+  echo "Usage: $(basename $0) [kdebug]"
   echo "export CFLSH_BLK_TRC_VERBOSITY=4"
   echo "export CFLSH_BLK_TRC_SYSLOG=off"
   echo "export KV_TRC_VERBOSITY=2"
@@ -101,27 +120,35 @@ fi
 ##################
 # main
 ##################
-
 ret=$(pwd)
 if [[ -e $DATADIR ]]; then rm -rf $DATADIR 2>/dev/null; fi
 mkdir -p $DATADIR
 cd $DATADIR
 
 cardnums=`ls -d /sys/class/cxl/card* | awk -F"/sys/class/cxl/card" '{ print $2 }'`
-for i in $cardnums
+while read -r line
 do
-  mkdir card$i;
+  card=$(echo "$line"|awk -F"afu" '{print $2}'|cut -c1)
+  mkdir card$card;
+  type=$(echo "$line"|awk '{print $4}')
   if [[ $VM ]]
   then
     printf "\n INFO:  psl trace on VM Not Supported! \n\n"
   else
-    if [[ -f ${BINDIR}/psl_trace_dump && $perms -eq 1 ]]
+    if [[ ($type =~ 0601 || $type =~ 04cf) &&
+          -f ${BINDIR}/psl_trace_dump && $perms -eq 1 ]]
+    then
+      echo "Dumping PSL data for card$card"
+      ${BINDIR}/psl_trace_dump ${DATADIR}/card$card $card >/dev/null
+    elif [[ $type =~ 0628 && -f ${BINDIR}/psl_trace_dump_p9 && $perms -eq 1 ]]
     then
       echo "Dumping PSL data for card$i"
-      ${BINDIR}/psl_trace_dump ${DATADIR}/card$i $i >/dev/null
+      ${BINDIR}/psl_trace_dump_p9 --card $card --dump \
+         --output=${DATADIR}/card$card/psl_dump >/dev/null
+      ${BINDIR}/psl_trace_dump_p9 --card $card --starttrace >/dev/null
     fi
   fi
-done
+done <<< "$(/usr/bin/capi_flash -l)"
 
 AFUs=`ls /dev/cxl/afu*m`
 for afu_m in $AFUs
@@ -136,9 +163,13 @@ do
 
   card=$(ls -d /sys/devices/*/*/$gt/cxl/card* 2>/dev/null)
   cardN=${card: -1}
-  echo "afu$cardN:"                             >> cxl_afu_status
-  ${BINDIR}/cxl_afu_status -d afu$cardN.0m        >> cxl_afu_status
-  printf "\n"                                   >> cxl_afu_status
+  echo "afu$cardN:"                                   >> cxl_afu_status
+  for port in 0 1 2 3
+  do
+    if [[ $(lspci -s $gt) =~ 0601 && $port -gt 1 ]]; then continue; fi
+    ${BINDIR}/cxl_afu_status -d afu$cardN.0m -p $port >> cxl_afu_status
+  done
+  printf "\n"                                         >> cxl_afu_status
 done
 
 ps_fields="user,group,ruser,rgroup,pid,tid,ppid,pgid,uid,tgid,nlwp,sgi_p,nice,pri,\
@@ -184,11 +215,12 @@ then
 fi
 
 dmesg > dmesg
-if [[ -e /var/log/syslog ]]
-then
-  cp /var/log/syslog $DATADIR
-  truncate --size=0 /var/log/syslog
-fi
+
+for file in $(ls -1 /var/log/syslog 2>/dev/null)
+do
+  tail -400000 $file  > $DATADIR/${file##*/}
+  truncate --size=0 $file
+done
 
 if [[ $redhat ]]
 then
@@ -196,45 +228,33 @@ then
 fi
 
 #redhat version of syslog
-if [[ -e /var/log/messages ]]
-then
-  cp /var/log/messages $DATADIR
-  truncate --size=0   /var/log/messages
-fi
-
-if [[ -e /sys/firmware/opal/msglog ]]
-then
-  cp /sys/firmware/opal/msglog $DATADIR/opal_msglog
-fi
-
-for file in $(ls -1 /var/log/kern.log)
+for file in $(ls -1 /var/log/messages 2>/dev/null)
 do
-  lines=$(wc -l $file | awk '{print $1}')
-  if [[ $lines -gt 0 ]]
-  then
-    tail -1000000 $file  > $DATADIR/${file##*/}
-    truncate --size=0 $file
-  fi
+  tail -400000 $file  > $DATADIR/${file##*/}
+  truncate --size=0 $file
+done
+
+for file in $(ls -1 /sys/firmware/opal/msglog 2>/dev/null)
+do
+  tail -400000 $file  > $DATADIR/opal_${file##*/}
+done
+
+for file in $(ls -1 /var/log/kern.log 2>/dev/null)
+do
+  tail -400000 $file  > $DATADIR/${file##*/}
+  truncate --size=0 $file
 done
 
 for file in $(ls -1 /tmp/*.cflash_block_trc 2>/dev/null)
 do
-  lines=$(wc -l $file | awk '{print $1}')
-  if [[ $lines -gt 0 ]]
-  then
-    tail -1000000 $file  > $DATADIR/${file##*/}
-    truncate --size=0 $file
-  fi
+  tail -400000 $file  > $DATADIR/${file##*/}
+  truncate --size=0 $file
 done
 
 for file in $(ls -1 /tmp/*.arkdb.kv.log 2>/dev/null)
 do
-  lines=$(wc -l $file | awk '{print $1}')
-  if [[ $lines -gt 0 ]]
-  then
-    tail -1000000 $file  > $DATADIR/${file##*/}
-    truncate --size=0 $file
-  fi
+  tail -400000 $file  > $DATADIR/${file##*/}
+  truncate --size=0 $file
 done
 
 cd ..

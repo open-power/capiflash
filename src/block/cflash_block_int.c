@@ -58,6 +58,9 @@ void cblk_setup_trace_files(int new_process)
 {
     int i;
     char *env_verbosity = getenv("CFLSH_BLK_TRC_VERBOSITY");
+    char *env_ptrc_verbosity = getenv("PTRC_VERBOSITY");
+    char *env_ptrc_per_cmd   = getenv("PTRC_PER_CMD");
+    char *env_ptrc_per_chunk = getenv("PTRC_PER_CHUNK");
     char *env_use_syslog = getenv("CFLSH_BLK_TRC_SYSLOG");
     char *env_trace_append = getenv("CFLSH_BLK_TRC_APPEND");
     char *log_pid  = getenv("CFLSH_BLK_TRACE_PID");
@@ -144,6 +147,11 @@ void cblk_setup_trace_files(int new_process)
 	}
 
     }
+
+    if (env_ptrc_verbosity) {cblk_ptrc_verbosity = atoi(env_ptrc_verbosity);}
+    if (env_ptrc_per_cmd)   {cblk_ptrc_per_cmd   = atoi(env_ptrc_per_cmd);}
+    if (env_ptrc_per_chunk) {cblk_ptrc_per_chunk = atoi(env_ptrc_per_chunk);}
+
 
     if (env_verbosity) {
 	cblk_log_verbosity = atoi(env_verbosity);
@@ -1471,9 +1479,8 @@ int cblk_alloc_hrrq_afu(cflsh_afu_t *afu, int num_cmds)
 
     if ( posix_memalign((void *)&(afu->p_hrrq_start),CBLK_CACHE_LINE_SIZE,afu->size_rrq)) {
 
-		    
-	CBLK_TRACE_LOG_FILE(1,"Failed posix_memalign for rrq errno= %d, size_rrq = %d",errno,afu->size_rrq);
 
+	CBLK_TRACE_LOG_FILE(1,"Failed posix_memalign for rrq errno= %d, size_rrq = %d",errno,afu->size_rrq);
 	return -1;
 
     }
@@ -2355,20 +2362,22 @@ chunk_id_t cblk_get_chunk(int flags,int max_num_cmds)
 
 
 
-    if (max_num_cmds <= 0) {
-      /*
-       * If max_num_cmds not passed 
-       * then use our default size.
-       */
-      max_num_cmds = NUM_CMDS;
-    } else if (max_num_cmds > MAX_NUM_CMDS) {
-      /*
-       * If max_num_cmds is larger than
-       * our upper limit then fail this request.
-       */
-
-      errno = ENOMEM;
-      return ret_chunk_id;
+    if (max_num_cmds <= 0)
+    {
+        /*
+         * If max_num_cmds not passed
+         * then use our default size.
+         */
+         max_num_cmds = NUM_CMDS;
+    }
+    else if (max_num_cmds > MAX_NUM_CMDS)
+    {
+        /*
+         * If max_num_cmds is larger than
+         * our upper limit then fail this request.
+         */
+         errno = ENOMEM;
+         return ret_chunk_id;
     }
 
     /*
@@ -2458,6 +2467,7 @@ chunk_id_t cblk_get_chunk(int flags,int max_num_cmds)
 	    chunk->cmd_info[j].index = j;
 	    chunk->cmd_info[j].chunk = chunk;
 	    chunk->cmd_info[j].eyec = CFLSH_EYEC_INFO;
+	    PTRC_INIT(&chunk->cmd_info[j].ptrc, cblk_ptrc_per_cmd, cflsh_blk.nspt);
 
 	    CBLK_Q_NODE_TAIL(chunk->head_free,chunk->tail_free,&(chunk->cmd_info[j]),free_prev,free_next);
 	}
@@ -2677,7 +2687,7 @@ cflash_cmd_err_t cblk_process_cmd(cflsh_chunk_t *chunk,int path_index, cflsh_cmd
 
 		cmd->cmdi->retry_count++;
 
-		cmd->cmdi->cmd_time = time(NULL);
+		cmd->cmdi->stime = getticks();
 
 		/*
 		 * Since the caller used CFLASH_BLOCK_AFU_SHARE_LOCK,
@@ -3031,7 +3041,7 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 		    return -1;
 		}
 
-		CBLK_TRACE_LOG_FILE(1,"No free command found num_cmds = %d "
+		CBLK_TRACE_LOG_FILE(5,"No free command found num_cmds = %d "
 		                      "num_active_cmds = %d, num_in_use = %d flags:%x",
 				    chunk->num_cmds, chunk->num_active_cmds, num_in_use, flags);
 		
@@ -3047,7 +3057,7 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 		    errno = EBUSY;
 		    
 		    
-		    CBLK_TRACE_LOG_FILE(1,"No free command found num_active_cmds = %d",chunk->num_active_cmds);
+		    CBLK_TRACE_LOG_FILE(5,"No free command found num_active_cmds = %d",chunk->num_active_cmds);
 		    
 		} else {
 
@@ -3066,7 +3076,7 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 	    
 	    
 		chunk->stats.num_no_cmds_free_fail++;
-		CBLK_TRACE_LOG_FILE(1,"Giving up No free command found num_active_cmds = %d",chunk->num_active_cmds);
+		CBLK_TRACE_LOG_FILE(5,"Giving up No free command found num_active_cmds = %d",chunk->num_active_cmds);
 		return rc;
 	    }
         } else {
@@ -3082,7 +3092,7 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
 	    
 	    chunk->stats.num_no_cmds_free_fail++;
 	    
-	    CBLK_TRACE_LOG_FILE(1,"No free command found num_active_cmds = %d num_in_use = %d",
+	    CBLK_TRACE_LOG_FILE(5,"No free command found num_active_cmds = %d num_in_use = %d",
 				chunk->num_active_cmds,num_in_use);
 	    return rc;
 	}
@@ -3187,7 +3197,7 @@ int cblk_find_free_cmd(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t **cmd,int flags)
     cmdi->user_status = NULL;
 
     
-    cmdi->cmd_time = time(NULL);
+    cmdi->stime  = getticks();
     (*cmd)->cmdi = cmdi;
 
 
@@ -4063,11 +4073,10 @@ void cblk_chunk_open_cleanup(cflsh_chunk_t *chunk, int cleanup_depth)
 	/* Fall through */
     case 20:
 
+        CBLK_PTRC_SAVE_CMDS(chunk,9);
 
 	free(chunk->cmd_start);
-
 	free(chunk->cmd_info);
-
 	chunk->cmd_start = NULL;
 	chunk->cmd_curr = NULL;
 	chunk->cmd_end = NULL;
@@ -5226,7 +5235,7 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 		cmdi = &chunk->cmd_info[cmd->index];
 
 		
-		cmdi->cmd_time = time(NULL);
+		cmdi->stime = getticks();
 
 		if (increment_retries) {
 		    cmdi->retry_count++;
@@ -5428,8 +5437,8 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 
 	    cmdi = &chunk->cmd_info[i];
 
-	    cmdi->cmd_time = time(NULL);
-		    
+	    cmdi->stime = getticks();
+
 	    if (CBLK_UPDATE_PATH_ADAP_CMD(chunk,cmd,0)) {
 
 		CBLK_TRACE_LOG_FILE(1,"CBLK_UPDATE_PATH_ADAP_CMD failed");
@@ -5514,7 +5523,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 
     if (afu->flags & (CFLSH_AFU_HALTED|CFLSH_AFU_RECOV)) {
 
-	CBLK_TRACE_LOG_FILE(5,"skipping context reset, since AFU is halted or recovering is pending");
+	CBLK_TRACE_LOG_FILE(4,"skipping context reset, since AFU is halted or recovering is pending");
 
 	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	CFLASH_BLOCK_UNLOCK(afu->lock);
@@ -5524,7 +5533,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 	
     if (afu->reset_time > timeout) {
 
-	CBLK_TRACE_LOG_FILE(5,"afu reset done in the last second");
+	CBLK_TRACE_LOG_FILE(4,"afu reset done in the last second");
 	CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
 	CFLASH_BLOCK_UNLOCK(afu->lock);
     
@@ -5535,9 +5544,6 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
     
     CFLASH_BLOCK_UNLOCK(afu->lock);
 	
-	
-    CBLK_TRACE_LOG_FILE(9,"resetting context...");
-
     path = afu->head_path;
 
     while (path) {
@@ -5549,6 +5555,8 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 	    CBLK_TRACE_LOG_FILE(1,"chunk is null for path_index of %d",path->path_index);
 	    continue;
 	}
+
+	CBLK_TRACE_LOG_FILE(4,"context_reset:%d path:%d", chunk->index, path->path_index);
 
 	CFLASH_BLOCK_LOCK(chunk->lock);
 
@@ -5580,7 +5588,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 	    
 	    
 
-	    CBLK_TRACE_LOG_FILE(9,"reset context failed for path_index of %d",path_index);
+	    CBLK_TRACE_LOG_FILE(4,"reset context failed for path_index of %d",path_index);
 
 	    /*
 	     * Check for adapter reset 
@@ -5594,7 +5602,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 
 	    CFLASH_BLOCK_UNLOCK(chunk->lock);
 
-	    CBLK_TRACE_LOG_FILE(1,"reset context failed2 for path_index of %d, status = %d",path_index,status);
+	    CBLK_TRACE_LOG_FILE(4,"reset context failed2 for path_index of %d, status = %d",path_index,status);
 
 	    if (status != CFLSH_BLK_CHK_OS_NO_RESET) {
 
@@ -5607,7 +5615,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 		 * chunk.
 		 */
 
-		CBLK_TRACE_LOG_FILE(9,"AFU reset was done assuming context reset is unnecessary");
+		CBLK_TRACE_LOG_FILE(4,"AFU reset was done assuming context reset is unnecessary");
     
 		return;
 
@@ -5644,7 +5652,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
 	
 	if (pthread_rc) {
 	    
-	    CBLK_TRACE_LOG_FILE(5,"pthread_cond_signal failed for AFU resume_event rc = %d,errno = %d",
+	    CBLK_TRACE_LOG_FILE(4,"pthread_cond_signal failed for AFU resume_event rc = %d,errno = %d",
 				pthread_rc,errno);
 	}	
 	
@@ -5725,7 +5733,7 @@ void cblk_reset_context_shared_afu(cflsh_afu_t *afu)
     }
     
 
-    CBLK_TRACE_LOG_FILE(9,"reset context complete");
+    CBLK_TRACE_LOG_FILE(4,"reset context complete");
     
     CFLASH_BLOCK_RWUNLOCK(cflsh_blk.global_lock);
     
@@ -6327,7 +6335,6 @@ void *cblk_intrpt_thread(void *data)
     size_t transfer_size;
     cflsh_cmd_mgm_t *cmd = NULL;
     cflsh_cmd_info_t *cmdi = NULL;
-    time_t timeout;
     int path_reset_index[CFLSH_BLK_MAX_NUM_PATHS];
     int reset_context = FALSE;
 #ifdef BLOCK_FILEMODE_ENABLED
@@ -6495,25 +6502,8 @@ void *cblk_intrpt_thread(void *data)
 		 */
 		    
 
-		/*
-		 * Increase time-out detect to 10 times
-		 * the value we are using in the IOARCB, because
-		 * the recovery process will reset this context 
-		 */
-
-		if (cflsh_blk.timeout_units != CFLSH_G_TO_SEC) {
-
-		    /*
-		     * If the time-out units are not in seconds
-		     * then only give the command only 1 second to complete
-		     */
-		    timeout = time(NULL) - 1;
-		} else {
-		    timeout = time(NULL) - (10 * cflsh_blk.timeout);
-		}
-
-		if (chunk->head_act->cmd_time < timeout) {
-		    
+		if (CBLK_CMD_TIMEOUT(chunk->head_act))
+		{
 		    /*
 		     * At least one command timed out. Let's
 		     * fail all commands that timed out. The longest
@@ -6541,7 +6531,7 @@ void *cblk_intrpt_thread(void *data)
 
 			if ((cmdi->in_use) &&
 			    (cmdi->state == CFLSH_MGM_WAIT_CMP) &&
-			    (cmdi->cmd_time < timeout)) {
+			    (CBLK_CMD_TIMEOUT(cmdi))) {
 
 
 			    cmd = &chunk->cmd_start[cmdi->index];
@@ -6551,7 +6541,6 @@ void *cblk_intrpt_thread(void *data)
 			     */
 			    
 			    
-
 			    if (log_error) {
 
 				/*
@@ -6570,32 +6559,23 @@ void *cblk_intrpt_thread(void *data)
 			    cmdi->status = ETIMEDOUT;
 			    cmdi->transfer_size = 0;
 			    
-			    CBLK_TRACE_LOG_FILE(6,"cmd time-out  lba = 0x%llx flags = 0x%x, chunk->index = %d",
+                            PTRC(&cmdi->ptrc, 1, CBLK_CMD_TIMEDOUT, chunk->index, &(cmd->sisl_cmd.rcb),
+                                            UDELTA(cmdi->orig_stime,cflsh_blk.nspt));
+                            PTRC_PSAVE_TO_SLOT(&cmdi->ptrc, 1, 10000005);
+			    CBLK_TRACE_LOG_FILE(4,"cmd time-out  lba = 0x%llx flags = 0x%x, chunk->index = %d",
 						cmd->cmdi->lba,cmd->cmdi->flags,chunk->index);
 			    
 			    
 			    /*
 			     * Fail command back.
 			     */
-#ifdef REMOVE			    
-			    cmd->cmdi->state = CFLSH_MGM_CMP;
-			    
-			    pthread_rc = pthread_cond_signal(&(cmd->cmdi->thread_event));
-			    
-			    if (pthread_rc) {
-				
-				CBLK_TRACE_LOG_FILE(5,"pthread_cond_signall failed rc = %d,errno = %d, chunk->index = %d",
-						    pthread_rc,errno,chunk->index);
-			    }
-			    
-#endif /* REMOVE */
 			    chunk->stats.num_fail_timeouts++;
 
 			    path_reset_index[cmdi->path_index] = TRUE;
 			    
 			    reset_context = TRUE;
 
-			} else if (cmdi->cmd_time > timeout) {
+			} else if (CBLK_CMD_TIMEOUT(cmdi)) {
 
 			    /*
 			     * Since commands on the active queue are ordered,
@@ -6645,10 +6625,20 @@ void *cblk_intrpt_thread(void *data)
 				     * would have handled recovery/retries.
 				     */
 
-				    CBLK_TRACE_LOG_FILE(5,"AFU Recovery in progress: abandon context reset chunk->index = %d, chunk->flags 0x%x",
+				    CBLK_TRACE_LOG_FILE(4,"AFU Recovery in progress: abandon context reset chunk->index = %d, chunk->flags 0x%x",
 						    chunk->index, chunk->flags);
 				    break;
 				}
+
+				cmdi = chunk->head_act;
+				if (cmdi && i==0)
+				{
+				    cmd = &chunk->cmd_start[cmdi->index];
+				    PTRC(&cmdi->ptrc, 1, CBLK_CTXT_RESET, chunk->index, &(cmd->sisl_cmd.rcb),
+				                    UDELTA(cmdi->stime,cflsh_blk.nspt));
+				    PTRC_PSAVE_TO_SLOT(&cmdi->ptrc, 1, 10000010);
+				}
+
 				CFLASH_BLOCK_UNLOCK(chunk->lock);
 
 				cblk_reset_context_shared_afu(chunk->path[i]->afu);
@@ -7272,8 +7262,12 @@ void  cblk_display_stats(cflsh_chunk_t *chunk, int verbosity)
     CBLK_TRACE_LOG_FILE(verbosity,"max_num_act_threads             0x%llx",chunk->stats.max_num_act_threads);
     CBLK_TRACE_LOG_FILE(verbosity,"Avg latency                     %ld",(chunk->rcmd+chunk->wcmd) ?
                                                                         (chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd) : 0);
-    CBLK_TRACE_LOG_FILE(verbosity,"Read latency                    %ld",(chunk->rcmd) ? chunk->rlat/chunk->rcmd : 0);
-    CBLK_TRACE_LOG_FILE(verbosity,"Write latency                   %ld",(chunk->wcmd) ? chunk->wlat/chunk->wcmd : 0);
+    CBLK_TRACE_LOG_FILE(verbosity,"Read latency                    %ld (%8d:%6d:%5d)",
+                                    (chunk->rcmd) ? chunk->rlat/chunk->rcmd : 0,
+                                    chunk->rlat_avg, chunk->rlat_mid, chunk->rlat_hi);
+    CBLK_TRACE_LOG_FILE(verbosity,"Write latency                   %ld (%8d:%6d:%5d)",
+                                    (chunk->wcmd) ? chunk->wlat/chunk->wcmd : 0,
+                                    chunk->wlat_avg, chunk->wlat_mid, chunk->wlat_hi);
 
     return;
 }
@@ -8539,8 +8533,7 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 	     * Set new time
 	     * in command
 	     */
-
-	    cmdi->cmd_time = time(NULL);
+	    cmdi->stime = getticks();
 
 
 	    

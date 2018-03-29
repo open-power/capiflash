@@ -450,6 +450,74 @@ done:
  * \brief
  * \details
  *
+ * NAME:        cblk_cg_get_attrs
+ *
+ * FUNCTION:    Return chunk attrs for this chunk group.
+ *
+ *
+ * INPUTS:
+ *              chunk_id    - Chunk identifier
+ *
+ * RETURNS:
+ *              <0 fail, >0 good completion
+ ******************************************************************************/
+int cblk_cg_get_attrs(chunk_cg_id_t cgid, chunk_attrs_t *attr, int flags)
+{
+    cflash_block_grp_fd_t *p_cg  = NULL;
+    chunk_attrs_t          ca    = {0};
+    int                    rc    = 0;
+    int                    i     = 0;
+    int                    unmap = 1;
+    uint32_t               np    = 0;
+    uint32_t               bs    = 0;
+    uint64_t               mt    = 0;
+
+    if (!attr) {errno=EINVAL; rc=-1; goto done;}
+    memset(attr,0,sizeof(chunk_attrs_t));
+
+    p_cg = CBLK_GET_CG_HASH(cgid);
+    if (p_cg == NULL) {errno=EINVAL; rc=-1; goto done;}
+
+    flags &= ~CBLK_GROUP_MASK;
+
+    for (i=0; i<p_cg->num_chunks; i++)
+    {
+        if (p_cg->chunk_list[i].id == NULL_CHUNK_ID) {continue;}
+
+        if ((rc=cblk_get_attrs(p_cg->chunk_list[i].id, &ca, flags)) != 0) {break;}
+        else
+        {
+            /* if any do not support, then no unmap */
+            if (!(ca.flags1 & CFLSH_ATTR_UNMAP)) {unmap=0;}
+
+            /* use smallest num_paths */
+            if (!np || np>ca.num_paths) {np=ca.num_paths;}
+
+            /* use smallest block_size */
+            if (!bs || bs>ca.block_size) {bs=ca.block_size;}
+
+            /* use smallest max_transfer_size */
+            if (!mt || mt>ca.max_transfer_size) {mt=ca.max_transfer_size;}
+        }
+    }
+
+    if (rc==0)
+    {
+        if (unmap) {attr->flags1 |= CFLSH_ATTR_UNMAP;}
+        attr->block_size          = bs;
+        attr->max_transfer_size   = mt;
+        attr->num_paths           = np;
+    }
+
+done:
+    return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * \details
+ *
  * NAME:        cblk_cg_get_num_chunks
  *
  * FUNCTION:    Return num_chunks for this chunk group.
@@ -1043,8 +1111,17 @@ int cblk_cg_aresult(chunk_cg_id_t   cgid,
     } while (flags & CBLK_ARESULT_BLOCKING);
 
 done:
-    CBLK_TRACE_LOG_FILE(9, "cgid:%d:%d tag:%d flags:%x rc:%d",
-                        cgid, ptag->id, ptag->tag, flags, rc);
+    if (rc == -1)
+    {
+        /* ptag could be null, so don't dereference */
+        CBLK_TRACE_LOG_FILE(9, "cgid:%d pgrp:%p ptag:%p flags:%x rc:%d",
+                                cgid, pgrp, ptag, flags, rc);
+    }
+    else
+    {
+        CBLK_TRACE_LOG_FILE(9, "cgid:%d:%d tag:%d flags:%x rc:%d",
+                                cgid, ptag->id, ptag->tag, flags, rc);
+    }
     return rc;
 }
 

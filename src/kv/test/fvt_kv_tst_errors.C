@@ -390,6 +390,7 @@ TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
     EXPECT_TRUE(ark != NULL);
 
     arkp = (_ARK*)ark;
+    EXPECT_TRUE(arkp->bl != NULL);
 
     bl_array = bl_chain_blocks(arkp->bl, 0, 1);
     ASSERT_TRUE(NULL != bl_array);

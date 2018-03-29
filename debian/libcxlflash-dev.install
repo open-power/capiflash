@@ -1,0 +1,7 @@
+./pkg/install_root/usr/include/* /usr/include
+./pkg/install_root/usr/lib/libafu.so /usr/lib
+./pkg/install_root/usr/lib/libarkalloc.so /usr/lib
+./pkg/install_root/usr/lib/libarkdb.so /usr/lib
+./pkg/install_root/usr/lib/libcflsh_block.so /usr/lib
+./pkg/install_root/usr/lib/libcflshcom.so /usr/lib
+./pkg/install_root/usr/lib/libprov.so /usr/lib

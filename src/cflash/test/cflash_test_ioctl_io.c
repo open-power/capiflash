@@ -23,6 +23,7 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 #include "cflash_test.h"
+#include <cflash_test_utils.h>
 #include <pthread.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
@@ -891,7 +892,6 @@ int max_ctx_rcvr_except_last_one()
     int msgid;
     struct mymsgbuf msg_buf;
 #ifndef _AIX
-    char tmpBuff[MAXBUFF];
     char cmdToRun[MAXBUFF];
     const char *configCmdP = "echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes";
 
@@ -935,12 +935,16 @@ int max_ctx_rcvr_except_last_one()
     {
         printf("%d:.....MAIN: doing  EEH now .......\n",getpid());
 
+#ifdef _OLD_EEH
+	char tmpBuff[MAXBUFF];
         rc = diskToPCIslotConv(cflash_path, tmpBuff );
         CHECK_RC(rc, "diskToPCIslotConv failed \n");
 
         rc = prepEEHcmd( tmpBuff, cmdToRun);
         CHECK_RC(rc, "prepEEHcmd failed \n");
-
+#else
+	get_inject_EEH_cmd(cflash_path, cmdToRun);
+#endif
         rc = system(configCmdP);
         if (rc)
         {
@@ -1088,7 +1092,6 @@ int max_ctx_rcvr_last_one_no_rcvr()
     int pid=getpid();
     bool do_recover = true;
 #ifndef _AIX
-    char tmpBuff[MAXBUFF];
     char cmdToRun[MAXBUFF];
     const char *configCmdP = "echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes";
 
@@ -1138,11 +1141,17 @@ int max_ctx_rcvr_last_one_no_rcvr()
     else
     {
         printf("%d:.....MAIN: doing  EEH now .......\n",getpid());
+
+#ifdef _OLD_EEH
+	char tmpBuff[MAXBUFF];
         rc = diskToPCIslotConv(cflash_path, tmpBuff );
         CHECK_RC(rc, "diskToPCIslotConv failed \n");
 
         rc = prepEEHcmd( tmpBuff, cmdToRun);
         CHECK_RC(rc, "prepEEHcmd failed \n");
+#else
+        get_inject_EEH_cmd(cflash_path, cmdToRun);
+#endif
 
         rc = system(configCmdP);
         if (rc)
@@ -1486,7 +1495,7 @@ int test_vlun_max_transfer()
     rc = allocate_buf(&rwbuf, buf_size);
     CHECK_RC(rc, "memory allocation failed");
     rc = do_large_io(p_ctx, &rwbuf, buf_size);
-    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    if (!rc) CHECK_RC(1, "max transfer size should fail");
     deallocate_buf(&rwbuf);
 
     //16MB transfer size
@@ -1495,7 +1504,7 @@ int test_vlun_max_transfer()
     rc = allocate_buf(&rwbuf, buf_size);
     CHECK_RC(rc, "memory allocation failed");
     rc = do_large_io(p_ctx, &rwbuf, buf_size);
-    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    if (!rc) CHECK_RC(1, "max transfer size should fail");
     deallocate_buf(&rwbuf);
 
 
@@ -1505,7 +1514,7 @@ int test_vlun_max_transfer()
     rc = allocate_buf(&rwbuf, buf_size);
     CHECK_RC(rc, "memory allocation failed");
     rc = do_large_io(p_ctx, &rwbuf, buf_size);
-    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    if (!rc) CHECK_RC(1, "max transfer size should fail");
     deallocate_buf(&rwbuf);
 
     //8KB transfer size
@@ -1514,7 +1523,7 @@ int test_vlun_max_transfer()
     rc = allocate_buf(&rwbuf, buf_size);
     CHECK_RC(rc, "memory allocation failed");
     rc = do_large_io(p_ctx, &rwbuf, buf_size);
-    if ( 2 != rc ) CHECK_RC(1, "max transfer size should fail");
+    if (!rc) CHECK_RC(1, "max transfer size should fail");
     deallocate_buf(&rwbuf);
 
     //4KB transfer size 

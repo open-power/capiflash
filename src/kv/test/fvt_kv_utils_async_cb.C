@@ -45,7 +45,7 @@ extern "C"
 #define KV_ASYNC_EASY           16
 #define KV_ASYNC_BIG_BLOCKS     64
 #define KV_ASYNC_LOW_STRESS     128
-#define KV_ASYNC_HIGH_STRESS    512
+#define KV_ASYNC_HIGH_STRESS    500
 #define KV_ASYNC_JOB_Q          KV_ASYNC_HIGH_STRESS
 #define KV_ASYNC_MAX_CONTEXTS   500
 
@@ -489,13 +489,13 @@ void kv_async_init_ctxt_perf(uint32_t ctxt, uint32_t npool, uint32_t secs)
     memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
 
     ASSERT_EQ(0, ark_create_verbose(env_FVT, &pCT->ark,
-                                        1048576,
-                                        4096,
-                                        1048576,
-                                        npool,
-                                        256,
-                                        8*1024,
-                                        ARK_KV_VIRTUAL_LUN));
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    npool,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
     ASSERT_TRUE(NULL != pCT->ark);
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;
@@ -517,13 +517,13 @@ void kv_async_init_ctxt(uint32_t ctxt, uint32_t secs)
     memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
 
     ASSERT_EQ(0, ark_create_verbose(env_FVT, &pCT->ark,
-                                    1048576,
-                                    4096,
-                                    1048576,
-                                    1,
-                                    256,
-                                    8*1024,
-                                    ARK_KV_VIRTUAL_LUN));
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
     ASSERT_TRUE(NULL != pCT->ark);
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;
@@ -548,13 +548,13 @@ void kv_async_init_ctxt_starve(uint32_t ctxt,
     memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
 
     ASSERT_EQ(0, ark_create_verbose(env_FVT, &pCT->ark,
-                                    1048576,
-                                    4096,
-                                    1048576,
-                                    1,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_NTHRDS_DEF,
                                     nasync,
                                     basync,
-                                    ARK_KV_VIRTUAL_LUN));
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
     ASSERT_TRUE(NULL != pCT->ark);
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;

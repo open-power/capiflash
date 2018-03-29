@@ -51,11 +51,9 @@ int tag_unbury(tags_t *tags, int32_t *tag)
   int ret = 0;
 
   pthread_mutex_lock(&(tags->l));
-  if (tags->c==0) {ret = EAGAIN;}
-  else            {*tag = tags->s[--(tags->c)];}
+  ret = tag_get(tags,tag);
   pthread_mutex_unlock(&(tags->l));
 
-  KV_TRC_EXT3(pAT, "GETTAG  tags:%p c:%d tag:%d ret:%d", tags,tags->c,*tag,ret);
   return ret;
 }
 
@@ -64,10 +62,8 @@ int tag_bury(tags_t *tags, int32_t tag)
   int ret = 0;
 
   pthread_mutex_lock(&(tags->l));
-  if (tags->c == tags->n) {ret = ENOSPC;}
-  else                    {tags->s[tags->c++] = tag;}
+  ret = tag_put(tags,tag);
   pthread_mutex_unlock(&(tags->l));
 
-  KV_TRC_EXT3(pAT, "PUTTAG  tags:%p c:%d tag:%d ret:%d", tags, tags->c,tag,ret);
   return ret;
 }

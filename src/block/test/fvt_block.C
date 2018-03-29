@@ -32,6 +32,7 @@
 
 extern "C"
 {
+#include <pg.h>
 #include <blk_tst.h>
 uint64_t    block_number = 0;
 int         mode = O_RDWR;
@@ -44,9 +45,11 @@ int         num_threads;
 int         virt_lun_flags=0;
 int         share_cntxt_flags=0;
 int         io_bufcnt = 1;
-int         num_listio = 500;
+int         num_listio = MAX_NUM_CMDS;
 int         test_max_cntx = 0;
 int         host_type = 0;
+int         dev_type  = 0;
+int         max_cntxt = 0;
 chunk_id_t  chunks[MAX_OPENS+15];
 void        *blk_fvt_data_buf = NULL;
 void        *blk_fvt_comp_data_buf = NULL;
@@ -57,7 +60,124 @@ extern char dev_paths[MAX_LUNS][128];
 extern chunk_ext_arg_t ext;
 }
 
-#define MAX_NUM_CMDS 8192
+/**
+ *******************************************************************************
+ * \brief
+ *   test idx_t functions
+ ******************************************************************************/
+TEST(Block_FVT_Suite, SIMPLE_idx)
+{
+    idx_t *p_idx = idx_new(7);
+    IDX    gi    = 0;
+    int    i     = 0;
+
+    for (i=0; i<7; i++)
+    {
+        ASSERT_EQ(0,idx_getl(p_idx,&gi));
+        ASSERT_EQ(i,gi);
+    }
+    ASSERT_EQ(EAGAIN,idx_getl(p_idx,&gi));
+
+    for (i=6; i>=0; i--)
+    {
+        ASSERT_EQ(0,idx_putl(p_idx,i));
+    }
+    ASSERT_EQ(ENOSPC,idx_putl(p_idx,i));
+
+    idx_free(p_idx);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   test pg_t functions
+ ******************************************************************************/
+TEST(Block_FVT_Suite, SIMPLE_pg)
+{
+    int   x    = 4;
+    int   y    = 5;
+    pg_t *p_pg = pg_new(x, y);
+    int   T    = x*y;
+    int   A    = x*2+2;
+    int   B    = x*3+4;
+    int   i    = 0;
+    int   rc   = 0;
+    int  *ret  = 0;
+    int   p[T];
+
+    // fill
+    for (i=0; i<T; i++)
+    {
+        ASSERT_TRUE(0 <= (rc=pg_add(p_pg,p+i)));
+        ASSERT_EQ(p+i,pg_get(p_pg,rc));
+    }
+    // verify full
+    ASSERT_EQ(-1,pg_add(p_pg,p+i));
+
+    // remove some to create a gap
+    for (i=A; i<B; i++)
+    {
+        ASSERT_EQ(0,pg_del(p_pg,i));
+    }
+
+    // traverse beg to end, across the gap
+    i=0;
+    do {if ((ret=(int*)pg_getnext(p_pg,&i))) {ASSERT_EQ(p+(i-1),ret);}}
+    while (ret);
+
+    // do 1 getnext over the gap
+    rc=A;
+    ASSERT_TRUE(p+B == pg_getnext(p_pg,&rc));
+
+    // add back what was deleted
+    for (i=A; i<B; i++)
+    {
+        ASSERT_TRUE(0 <= (rc=pg_add(p_pg,p+i)));
+        ASSERT_EQ(p+i,pg_get(p_pg,rc));
+    }
+    // verify full
+    ASSERT_EQ(-1,pg_add(p_pg,p+i));
+
+    // remove all
+    for (i=T-1; i>=0; i--)
+    {
+        ASSERT_EQ(0,pg_del(p_pg,i));
+    }
+
+    // re-fill
+    for (i=0; i<T; i++)
+    {
+        ASSERT_TRUE(0 <= (rc=pg_add(p_pg,p+i)));
+        ASSERT_EQ(p+i,pg_get(p_pg,rc));
+    }
+    // verify full
+    ASSERT_EQ(-1,pg_add(p_pg,p+i));
+
+    // re-empty
+    for (i=0; i<T; i++)
+    {
+        ASSERT_EQ(0,pg_del(p_pg,i));
+    }
+
+    // verify empty
+    rc=0;
+    ASSERT_EQ((void*)NULL, pg_getnext(p_pg,&rc));
+
+    pg_free(p_pg);
+
+    // alloc/fill/empty/free 1million element list
+    x=200; y=5000;
+    ASSERT_TRUE(NULL != (p_pg=pg_new(x,y)));
+    for (i=0; i<x*y; i++)
+    {
+        ASSERT_EQ(i, pg_add(p_pg,p+i));
+    }
+    for (i=(x*y)-1; i>=0; i--)
+    {
+        ASSERT_EQ(0, pg_del(p_pg,i));
+    }
+    pg_free(p_pg);
+}
 
 /**
 ********************************************************************************
@@ -70,6 +190,30 @@ TEST(Block_FVT_Suite, BLK_API_FVT_CG_FM_plun_open)
     int         max_reqs = 64;
     int         er_no    = 0;
     int         open_cnt = 1;
+    int         ret      = 0;
+
+    ASSERT_EQ(0,blk_fvt_setup(1));
+    ext = 4;
+    if (env_filemode && atoi(env_filemode)==1) {ext=1;}
+
+    blk_open_tst(&id, max_reqs, &er_no, open_cnt, flags, mode);
+    ASSERT_NE(NULL_CHUNK_ID, id);
+
+    blk_open_tst_cleanup(flags, &ret,&er_no);
+    EXPECT_EQ(0, ret);
+}
+
+/**
+********************************************************************************
+** \brief
+*******************************************************************************/
+TEST(Block_FVT_Suite, BLK_API_FVT_CG_FM_plun_opens)
+{
+    chunk_id_t  id       = 0;
+    int         flags    = CBLK_GROUP_ID;
+    int         max_reqs = 64;
+    int         er_no    = 0;
+    int         open_cnt = 16;
     int         ret      = 0;
 
     ASSERT_EQ(0,blk_fvt_setup(1));
@@ -258,7 +402,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_CG_FM_plun_open_exceed_max_reqs)
 {
     chunk_id_t  id       = 0;
     int         flags    = CBLK_GROUP_ID;
-    int         max_reqs = MAX_NUM_CMDS;
+    int         max_reqs = MAX_NUM_REQS;
     int         er_no    = 0;
     int         open_cnt = 1;
     int         ret      = 0;
@@ -277,7 +421,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_CG_FM_plun_open_exceed_max_reqs)
         return;
     }
 
-    max_reqs = MAX_NUM_CMDS + 1;
+    max_reqs = MAX_NUM_REQS + 1;
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, flags, mode);
 
     // expect failure
@@ -297,26 +441,20 @@ TEST(Block_FVT_Suite, BLK_API_FVT_CG_plun_open_Max_context_tst)
     int         max_reqs   = 64;
     int         er_no      = 0;
     int         ret        = 0;
-    int         max_cntxt  = 508;
+    int         cntxts     = 0;
 
     TESTCASE_SKIP_IF_FILEMODE;
 
     ASSERT_EQ(0,blk_fvt_setup(1));
 
-    ext = 4;
+    ext    = 4;
+    cntxts = max_cntxt / ext;
 
- #ifdef _AIX
-     max_cntxt = 494;
- #else
-     if (host_type==HOST_TYPE_VM) {max_cntxt = 502;}
- #endif
+    max_context(&ret, &er_no, max_reqs, cntxts, open_flags,mode);
+    EXPECT_EQ(0, ret);
 
-     max_cntxt /= ext;
-     max_context(&ret, &er_no, max_reqs, max_cntxt, open_flags,mode);
-     EXPECT_EQ(0, ret);
-
-     blk_open_tst_cleanup(open_flags,  &ret,&er_no);
-     EXPECT_EQ(0, ret);
+    blk_open_tst_cleanup(open_flags,  &ret,&er_no);
+    EXPECT_EQ(0, ret);
 }
 
 /*******************************************************************************
@@ -328,27 +466,21 @@ TEST(Block_FVT_Suite, BLK_API_FVT_CG_plun_open_Max_context_tst)
      int         max_reqs   = 64;
      int         er_no      = 0;
      int         ret        = 0;
-     int         max_cntxt  = 508;
+     int         cntxts     = 0;
 
      TESTCASE_SKIP_IF_FILEMODE;
 
      ASSERT_EQ(0,blk_fvt_setup(1));
-     ext = 4;
 
- #ifdef _AIX
-    max_cntxt = 495; /* Should fail on 495 */
- #else
-    if (host_type==HOST_TYPE_VM) {max_cntxt = 503;}
- #endif
+     ext    = 4;
+     cntxts = (max_cntxt / ext) + 1;
 
-    max_cntxt /= ext;
-    max_cntxt += 1;
-    max_context(&ret, &er_no, max_reqs, max_cntxt, open_flags, mode);
+     max_context(&ret, &er_no, max_reqs, cntxts, open_flags, mode);
 
-    EXPECT_NE(0, ret);
+     EXPECT_NE(0, ret);
 
-    blk_open_tst_cleanup(0,  &ret,&er_no);
-    EXPECT_EQ(0, ret);
+     blk_open_tst_cleanup(0,  &ret,&er_no);
+     EXPECT_EQ(0, ret);
 }
 
 /*******************************************************************************
@@ -1065,7 +1197,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_plun_open_exceed_max_reqs)
 {
     chunk_id_t  id       = 0;
     int         flags    = CBLK_GROUP_RAID0;
-    int         max_reqs = MAX_NUM_CMDS;
+    int         max_reqs = MAX_NUM_REQS;
     int         er_no    = 0;
     int         open_cnt = 1;
     int         ret      = 0;
@@ -1085,7 +1217,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_plun_open_exceed_max_reqs)
         return;
     }
 
-    max_reqs = (MAX_NUM_CMDS * cblk_cg_get_num_chunks(id,flags)) + 1;
+    max_reqs = (MAX_NUM_REQS * cblk_cg_get_num_chunks(id,flags)) + 1;
     blk_open_tst(&id, max_reqs, &er_no, open_cnt, flags, mode);
 
     // expect failure
@@ -1689,11 +1821,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_plun_async_polling_perf_test)
     int         open_flags   = CBLK_GROUP_RAID0 | CBLK_OPN_NO_INTRP_THREADS;
     int         rwflags      = CBLK_GROUP_RAID0;
     int         resflags     = CBLK_GROUP_RAID0;
-    int         max_reqs     = 4096;
+    int         max_reqs     = MAX_NUM_CMDS;
     int         er_no        = 0;
     int         open_cnt     = 1;
     int         ret          = 0;
-    int         num_cmds     = 4096;
+    int         num_cmds     = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds));
     blk_fvt_RAID0_setup();
@@ -1719,11 +1851,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_plun_async_blocking_perf_test)
     int         rwflags      = CBLK_GROUP_RAID0;
     int         resflags     = CBLK_GROUP_RAID0      | \
                                CBLK_ARESULT_BLOCKING;
-    int         max_reqs     = 4096;
+    int         max_reqs     = MAX_NUM_CMDS;
     int         er_no        = 0;
     int         open_cnt     = 1;
     int         ret          = 0;
-    int         num_cmds     = 4096;
+    int         num_cmds     = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds));
     blk_fvt_RAID0_setup();
@@ -1746,7 +1878,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_open)
 {
     chunk_id_t  id       = 0;
     int         flags    = CBLK_GROUP_RAID0 | CBLK_OPN_VIRT_LUN;
-    int         max_reqs = 64;
+    int         max_reqs = MAX_NUM_CMDS;
     int         er_no    = 0;
     int         open_cnt = 1;
     int         ret      = 0;
@@ -1773,7 +1905,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_open_READONLY)
     chunk_id_t  id           = 0;
     int         flags        = CBLK_GROUP_RAID0 | CBLK_OPN_VIRT_LUN;
     int         sz_flags     = CBLK_GROUP_RAID0;
-    int         max_reqs     = 64;
+    int         max_reqs     = MAX_NUM_CMDS;
     int         er_no        = 0;
     int         open_cnt     = 1;
     uint64_t    lba;
@@ -1941,7 +2073,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_open_exceed_max_reqs)
 {
     chunk_id_t  id       = 0;
     int         flags    = CBLK_GROUP_RAID0 | CBLK_OPN_VIRT_LUN;
-    int         max_reqs = MAX_NUM_CMDS;
+    int         max_reqs = MAX_NUM_REQS;
     int         er_no    = 0;
     int         open_cnt = 1;
     int         ret      = 0;
@@ -1961,7 +2093,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_open_exceed_max_reqs)
         return;
     }
 
-    max_reqs = (MAX_NUM_CMDS * cblk_cg_get_num_chunks(id,flags)) + 1;
+    max_reqs = (MAX_NUM_REQS * cblk_cg_get_num_chunks(id,flags)) + 1;
     blk_open_tst(&id, max_reqs, &er_no, open_cnt, flags, mode);
 
     // expect failure
@@ -2371,12 +2503,12 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_async_polling_perf_test)
     int         rwflags      = CBLK_GROUP_RAID0;
     int         resflags     = CBLK_GROUP_RAID0;
     int         sz_flags     = CBLK_GROUP_RAID0;
-    int         max_reqs     = 4096;
+    int         max_reqs     = MAX_NUM_CMDS;
     int         er_no        = 0;
     int         open_cnt     = 1;
     int         ret          = 0;
     size_t      lun_sz       = 1;
-    int         num_cmds     = 4096;
+    int         num_cmds     = MAX_NUM_CMDS;
     int         get_set_flag = 0;       // 0 = get phys lun sz
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
@@ -2411,12 +2543,12 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_vlun_async_blocking_perf_test)
     int         resflags     = CBLK_GROUP_RAID0      | \
                                CBLK_ARESULT_BLOCKING;
     int         sz_flags     = CBLK_GROUP_RAID0;
-    int         max_reqs     = 4096;
+    int         max_reqs     = MAX_NUM_CMDS;
     int         er_no        = 0;
     int         open_cnt     = 1;
     int         ret          = 0;
     size_t      lun_sz       = 1;
-    int         num_cmds     = 4096;
+    int         num_cmds     = MAX_NUM_CMDS;
     int         get_set_flag = 0;       // 0 = get phys lun sz
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
@@ -2475,13 +2607,13 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_multi_vlun_perf_test)
     int         rwflags     = CBLK_GROUP_RAID0;
     int         resflags    = CBLK_GROUP_RAID0;
     chunk_id_t  id          = 0;
-    int         num_cmds    = 1024;
+    int         num_cmds    = MAX_NUM_CMDS;
     int         er_no       = 0;
     int         ret         = 0;
     int         i           = 0;
     size_t      psize       = 0;
     size_t      set_size    = 5000;
-    int         MULTI_VLUNS = 128;
+    int         MULTI_VLUNS = 100;
     int         vluns_in    = 0;
     char       *env_vluns   = getenv("FVT_MULTI_VLUNS");
     char       *env_filemode = getenv("BLOCK_FILEMODE_ENABLED");
@@ -2529,13 +2661,13 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_multi_vlun_unmap_perf_test)
     int         rwflags     = CBLK_GROUP_RAID0;
     int         resflags    = CBLK_GROUP_RAID0;
     chunk_id_t  id          = 0;
-    int         num_cmds    = 1024;
+    int         num_cmds    = MAX_NUM_CMDS;
     int         er_no       = 0;
     int         ret         = 0;
     int         i           = 0;
     size_t      psize       = 0;
     size_t      set_size    = 5000;
-    int         MULTI_VLUNS = 128;
+    int         MULTI_VLUNS = 100;
     int         vluns_in    = 0;
     char       *env_vluns   = getenv("FVT_MULTI_VLUNS");
     char       *env_filemode = getenv("BLOCK_FILEMODE_ENABLED");
@@ -2548,7 +2680,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_RAID0_multi_vlun_unmap_perf_test)
     }
     if (env_filemode && atoi(env_filemode)==1) {MULTI_VLUNS=32;}
 
-    ASSERT_EQ(0,blk_fvt_setup(num_cmds));
+    ASSERT_EQ(0,blk_fvt_setup(MULTI_VLUNS*num_cmds));
     blk_open_tst(&id, num_cmds, &er_no, 1, 0, mode);
     ASSERT_NE(NULL_CHUNK_ID, id);
 
@@ -3036,7 +3168,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_open_plun_exceed_max_reqs)
 {
     chunk_id_t  id      = 0;
     int         open_flags   = 0;
-    int         max_reqs    = 8192;
+    int         max_reqs    = MAX_NUM_REQS;
     int         er_no   = 0;
     int         open_cnt = 1;
     int         ret      = 0;
@@ -3058,7 +3190,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_open_plun_exceed_max_reqs)
         return;
     }
 
-    max_reqs   = (8192 +1);
+    max_reqs   = (MAX_NUM_REQS +1);
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
 
     // expect failure
@@ -3079,7 +3211,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_open_vlun_exceed_max_reqs)
 {
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
-    int         max_reqs   = 8192;
+    int         max_reqs   = MAX_NUM_REQS;
     int         er_no   = 0;
     int         open_cnt = 1;
     int         ret      = 0;
@@ -3102,7 +3234,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_open_vlun_exceed_max_reqs)
         return;
     }
 
-    max_reqs   = (8192 +1);
+    max_reqs   = (MAX_NUM_REQS +1);
     blk_open_tst( &id, max_reqs, &er_no, open_cnt, open_flags, mode);
 
     // expect failure
@@ -3118,7 +3250,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_open_vlun_exceed_max_reqs)
 
 }
 
-// verify using physical lun, max_contex 508 succeeds 
+// verify using physical lun, max_contex succeeds
 
 TEST(Block_FVT_Suite, BLK_API_FVT_UMC_Max_context_tst)
 {
@@ -3128,15 +3260,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_UMC_Max_context_tst)
     int         er_no   = 0;
     int         ret   = 0;
 
-    int         max_cntxt = 508;
-
     ASSERT_EQ(0,blk_fvt_setup(1));
-
-#ifdef _AIX
-    max_cntxt = 494;
-#else
-    if (host_type==HOST_TYPE_VM) {max_cntxt = 502;}
-#endif
 
     max_context(&ret, &er_no, max_reqs, max_cntxt, open_flags,mode);
 
@@ -3156,28 +3280,20 @@ TEST(Block_FVT_Suite, BLK_API_FVT_UMC_Max_context_tst)
 TEST(Block_FVT_Suite, BLK_API_FVT_UMC_Exceed_Max_context_tst)
 {
 
-    int         open_flags   = 0;
-    int         max_reqs    = 64;
-    int         er_no   = 0;
-    int         ret   = 0;
-
-    int         max_cntxt = 509;
+    int         open_flags = 0;
+    int         max_reqs   = 64;
+    int         er_no      = 0;
+    int         ret        = 0;
+    int         cntxts     = 0;
 
     TESTCASE_SKIP_IF_FILEMODE;
 
     ASSERT_EQ(0,blk_fvt_setup(1));
 
-#ifdef _AIX
-    max_cntxt = 495; /* Should fail on 495 */
-#else
-    if (host_type==HOST_TYPE_VM) {max_cntxt = 503;}
-#endif
+    if (test_max_cntx) {cntxts = test_max_cntx;}
+    else               {cntxts = max_cntxt + 1;}
 
-    if (test_max_cntx ) {
-            max_cntxt = test_max_cntx;
-    }
-
-    max_context(&ret, &er_no, max_reqs, max_cntxt, open_flags,mode);
+    max_context(&ret, &er_no, max_reqs, cntxts, open_flags,mode);
 
     EXPECT_NE(0,  ret );
     EXPECT_NE(0,  er_no );
@@ -5650,7 +5766,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_aresult_blocking_next_tag)
 
     chunk_id_t  id           = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
-    int         max_reqs     = 1024;
+    int         max_reqs     = MAX_NUM_CMDS;
     int         er_no        = 0;
     int         open_cnt     = 1;
     int         ret          = 0;
@@ -5680,7 +5796,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_aresult_user_tag)
 {
     chunk_id_t id                = 0;
     int        open_flags        = CBLK_OPN_VIRT_LUN;
-    int        max_reqs          = 1024;
+    int        max_reqs          = MAX_NUM_CMDS;
     int        er_no             = 0;
     int        open_cnt          = 1;
     int        ret               = 0;
@@ -5717,7 +5833,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_aresult_user_tag_no_intrp)
 {
     chunk_id_t id                = 0;
     int        open_flags        = CBLK_OPN_VIRT_LUN;
-    int        max_reqs          = 1024;
+    int        max_reqs          = MAX_NUM_CMDS;
     int        er_no             = 0;
     int        open_cnt          = 1;
     int        ret               = 0;
@@ -5760,7 +5876,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_vlun_perf_test)
 
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
-    int         max_reqs= 4096;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -5770,7 +5886,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_vlun_perf_test)
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
     
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
@@ -5798,7 +5914,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_vlun_unmap_perf_test)
 {
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
-    int         max_reqs= 4096;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -5807,7 +5923,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_vlun_unmap_perf_test)
     int         get_set_flag = 0;  // 0 = get phys lun sz
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
     chunk_attrs_t attrs;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds));
@@ -5847,11 +5963,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_plun_unmap_perf_test)
 {
     chunk_id_t  id         = 0;
     int         open_flags = 0;
-    int         max_reqs   = 4096;
+    int         max_reqs   = MAX_NUM_CMDS;
     int         er_no      = 0;
     int         open_cnt   = 1;
     int         ret        = 0;
-    int         num_cmds   = 4096;
+    int         num_cmds   = MAX_NUM_CMDS;
     chunk_attrs_t attrs;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds));
@@ -5925,7 +6041,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_blocking_perf_test)
     chunk_id_t  id          = 0;
     int         open_flags  = CBLK_OPN_VIRT_LUN;
     int         resflags    = CBLK_ARESULT_BLOCKING;
-    int         num_cmds    = 1024;
+    int         num_cmds    = MAX_NUM_CMDS;
     int         er_no       = 0;
     int         ret         = 0;
     int         i           = 0;
@@ -5970,7 +6086,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_polling_perf_test)
 {
     chunk_id_t  id          = 0;
     int         open_flags  = CBLK_OPN_VIRT_LUN | CBLK_OPN_NO_INTRP_THREADS;
-    int         num_cmds    = 1024;
+    int         num_cmds    = MAX_NUM_CMDS;
     int         er_no       = 0;
     int         ret         = 0;
     int         i           = 0;
@@ -6194,7 +6310,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_vlun_unmap_scrub_big)
     int         er_no    = 0;
     int         open_cnt = 1;
     int         ret      = 0;
-    size_t      temp_sz  = 500000;
+    size_t      temp_sz  = 200000;
     chunk_attrs_t attrs;
 
     ASSERT_EQ(0,blk_fvt_setup(1));
@@ -6247,7 +6363,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_plun_blocking_perf_test)
 
     chunk_id_t  id      = 0;
     int         open_flags   = 0;
-    int         max_reqs= 4096;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -6256,7 +6372,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_plun_blocking_perf_test)
     int         get_set_flag = 0;  // 0 = get phys lun sz
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
@@ -6290,7 +6406,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_plun_polling_perf_test)
 
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_NO_INTRP_THREADS;
-    int         max_reqs= 4096;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -6299,7 +6415,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_plun_polling_perf_test)
     int         get_set_flag = 0;  // 0 = get phys lun sz
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds));
 
@@ -7412,7 +7528,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_list_io_args_test)
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 100 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -7465,7 +7581,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test)
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -7481,7 +7597,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test)
     int         i=0;
 
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
 
 
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
@@ -7569,7 +7685,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test_no_intrp)
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN | CBLK_OPN_NO_INTRP_THREADS;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -7588,7 +7704,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test_no_intrp)
     int         i=0;
 
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
 
 
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
@@ -7676,7 +7792,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test)
     chunk_id_t  id      = 0;
     int         open_flags   = 0;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -7691,7 +7807,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test)
     int         cmd ;
 
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
 
@@ -7761,7 +7877,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test_no_intrp)
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_NO_INTRP_THREADS;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -7779,7 +7895,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test_no_intrp)
     int         cmd ;
 
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
 
@@ -7852,7 +7968,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test_1)
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -7868,7 +7984,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test_1)
 
 
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
 
@@ -7944,7 +8060,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test_2)
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -7959,7 +8075,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_UMC_vlun_list_io_test_2)
     int         cmd ;
 
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
 
@@ -8005,7 +8121,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test_1)
     chunk_id_t  id      = 0;
     int         open_flags   = 0;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -8019,7 +8135,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test_1)
     int		uflags = 0;
     int         cmd ;
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
 
@@ -8076,7 +8192,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test_2)
     chunk_id_t  id      = 0;
     int         open_flags   = 0;
     int         sz_flags= 0;
-    int         max_reqs= 1000;  // will be using list with 500 i/o requests
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -8092,7 +8208,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_list_io_test_2)
 
 
     /* Number of 4K bufs */
-    io_bufcnt = 500;
+    io_bufcnt = MAX_NUM_CMDS;
     ASSERT_EQ(0,blk_fvt_setup(num_listio));
 
     // open virtual  lun
@@ -8140,7 +8256,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_Persistence_plun_test)
 {
     chunk_id_t  id      = 0;
     int         open_flags   = 0;
-    int         max_reqs= 64;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -8151,7 +8267,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_Persistence_plun_test)
     int         cmd;
 
     // Setup dev name and allocated test buffers
-    ASSERT_EQ(0,blk_fvt_setup(256));
+    ASSERT_EQ(0,blk_fvt_setup(MAX_NUM_CMDS));
 
     // open physical lun
 
@@ -8392,7 +8508,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phy_mpio_cabl_pull_io)
 
     chunk_id_t  id      = 0;
     int         open_flags   = 0;
-    int         max_reqs= 4096;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -8402,7 +8518,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_phy_mpio_cabl_pull_io)
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
     
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
 
     ASSERT_EQ(0,blk_fvt_setup(num_cmds+1));
 
@@ -8447,7 +8563,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_blocking_EEH)
 {
     chunk_id_t id           = 0;
     int        open_flags   = CBLK_OPN_VIRT_LUN;
-    int        max_reqs     = 4096;
+    int        max_reqs     = MAX_NUM_CMDS;
     int        er_no        = 0;
     int        open_cnt     = 1;
     int        ret          = 0;
@@ -8456,7 +8572,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_blocking_EEH)
     int        get_set_flag = 0;  // 0 = get phys lun sz
                                   // 1 = get chunk sz
                                   // 2 = set chunk sz
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
 
     TESTCASE_SKIP_IF_NO_EEH;
 
@@ -8486,11 +8602,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_async_blocking_EEH)
 {
     chunk_id_t  id         = 0;
     int         open_flags = 0;
-    int         max_reqs   = 4096;
+    int         max_reqs   = MAX_NUM_CMDS;
     int         er_no      = 0;
     int         open_cnt   = 1;
     int         ret        = 0;
-    int         num_cmds   = 4096;
+    int         num_cmds   = MAX_NUM_CMDS;
 
     TESTCASE_SKIP_IF_NO_EEH;
 
@@ -8553,7 +8669,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_async_blocking_EEH)
 {
     chunk_id_t  id          = 0;
     int         open_flags  = CBLK_OPN_VIRT_LUN;
-    int         num_cmds    = 1024;
+    int         num_cmds    = MAX_NUM_CMDS;
     int         er_no       = 0;
     int         ret         = 0;
     int         i           = 0;
@@ -8598,7 +8714,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_polling_EEH)
 {
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_VIRT_LUN | CBLK_OPN_NO_INTRP_THREADS;
-    int         max_reqs= 4096;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
@@ -8607,7 +8723,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_vlun_async_polling_EEH)
     int         get_set_flag = 0;  // 0 = get phys lun sz
                                         // 1 = get chunk sz
                                         // 2 = set chunk sz
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
 
     TESTCASE_SKIP_IF_NO_EEH;
 
@@ -8637,7 +8753,7 @@ TEST(Block_FVT_Suite, BLK_API_FVT_multi_vlun_async_polling_EEH)
 {
     chunk_id_t  id          = 0;
     int         open_flags  = CBLK_OPN_VIRT_LUN | CBLK_OPN_NO_INTRP_THREADS;
-    int         num_cmds    = 1024;
+    int         num_cmds    = MAX_NUM_CMDS;
     int         er_no       = 0;
     int         ret         = 0;
     int         i           = 0;
@@ -8681,11 +8797,11 @@ TEST(Block_FVT_Suite, BLK_API_FVT_FM_plun_async_polling_EEH)
 {
     chunk_id_t  id      = 0;
     int         open_flags   = CBLK_OPN_NO_INTRP_THREADS;
-    int         max_reqs= 4096;
+    int         max_reqs= MAX_NUM_CMDS;
     int         er_no   = 0;
     int         open_cnt= 1;
     int         ret = 0;
-    int num_cmds = 4096;
+    int num_cmds = MAX_NUM_CMDS;
 
     TESTCASE_SKIP_IF_NO_EEH;
 

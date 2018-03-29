@@ -37,6 +37,9 @@ int ioctl_7_1_197( int flag )
     struct ctx *p_ctx = &myctx;
     struct ctx *p_ctx1 = &myctx1, *temp=&myctx2;
     pthread_t thread,thread1;
+
+    memset(&myctx2,0,sizeof(struct ctx));
+
     pid = getpid();
     flag=0;
     // creating first context

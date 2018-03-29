@@ -32,8 +32,8 @@
 void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t            *scbp        = &(_arkp->poolthreads[tid]);
-  rcb_t            *rcbp        = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t           *iocbp       = &(_arkp->iocbs[rcbp->ttag]);
+  rcb_t            *rcbp        = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t           *iocbp       = &(scbp->iocbs[rcbp->ttag]);
   uint64_t          new_vbsize  = 0;
   int32_t           rc          = 0;
   uint8_t           *new_vb     = NULL;
@@ -140,10 +140,11 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
     scbp->poolstats.io_cnt += tcbp->blen;
 
-    if (HTC_HIT(_arkp->htc[rcbp->pos], tcbp->blen))
+    if (HTC_HIT(_arkp, rcbp->pos, tcbp->blen))
     {
-        KV_TRC(pAT,"HTC_HIT tid:%d ttag:%3d pos:%6ld",tid,tcbp->ttag,rcbp->pos);
-        ++_arkp->htc_hits;
+        ++scbp->htc_hits;
+        KV_TRC(pAT,"HTC_HIT tid:%d ttag:%3d pos:%6ld hits:%ld",
+               tid, tcbp->ttag, rcbp->pos, scbp->htc_hits);
         HTC_GET(_arkp->htc[rcbp->pos], tcbp->inb, tcbp->blen*_arkp->bsize);
         ark_set_process(_arkp, tid, tcbp);
         return;
@@ -168,13 +169,6 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     ea_async_io_init(_arkp, iocbp, ARK_EA_READ,
                      (void *)tcbp->inb, tcbp->aiol, tcbp->blen,
                      0, tcbp->ttag, ARK_SET_PROCESS);
-
-    if (MEM_FASTPATH)
-    {
-        ea_async_io_schedule(_arkp, tid, iocbp);
-        ea_async_io_harvest (_arkp, tid, iocbp);
-        ark_set_process     (_arkp, tid, tcbp);
-    }
 }
 
 ark_set_start_err:
@@ -189,8 +183,8 @@ ark_set_start_err:
 void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t           *scbp        = &(_arkp->poolthreads[tid]);
-  rcb_t           *rcbp        = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t          *iocbp       = &(_arkp->iocbs[rcbp->ttag]);
+  rcb_t           *rcbp        = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t          *iocbp       = &(scbp->iocbs[rcbp->ttag]);
   uint64_t         oldvlen     = 0;
   uint64_t         oldvdf      = 0;
   uint64_t         oldvblkcnt  = 0;
@@ -257,7 +251,7 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       /* replace vdf with inline */
       if (exivlen > tcbp->inb->max && rcbp->vlen <= tcbp->inb->max)
       {
-          ark_drop_pool(_arkp, &(scbp->poolstats), oldvdf);
+          ark_drop_pool(_arkp, tid, oldvdf);
           KV_TRC(pAT, "REP_VAL tid:%d ttag:%3d pos:%6ld exivl:%ld vl:%ld "
                       "VDF>INLINE",
                   tid, tcbp->ttag, rcbp->pos, exivlen, rcbp->vlen);
@@ -265,7 +259,7 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       /* replace inline with vdf */
       else if (exivlen <= tcbp->inb->max && rcbp->vlen > tcbp->inb->max)
       {
-          tcbp->vblk = ark_take_pool(_arkp, &(scbp->poolstats), tcbp->vblkcnt);
+          tcbp->vblk = ark_take_pool(_arkp, tid, tcbp->vblkcnt);
           if (-1 == tcbp->vblk)
           {
             rcbp->res   = -1;
@@ -301,8 +295,8 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       /* replace old vdf with different size vdf */
       else
       {
-          ark_drop_pool(_arkp, &(scbp->poolstats), oldvdf);
-          tcbp->vblk = ark_take_pool(_arkp, &(scbp->poolstats), tcbp->vblkcnt);
+          ark_drop_pool(_arkp, tid, oldvdf);
+          tcbp->vblk = ark_take_pool(_arkp, tid, tcbp->vblkcnt);
           if (-1 == tcbp->vblk)
           {
             rcbp->res   = -1;
@@ -323,7 +317,7 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   /* new key with non-inlined value */
   else if (rcbp->vlen > tcbp->inb->max)
   {
-      tcbp->vblk = ark_take_pool(_arkp, &(scbp->poolstats), tcbp->vblkcnt);
+      tcbp->vblk = ark_take_pool(_arkp, tid, tcbp->vblkcnt);
       if (-1 == tcbp->vblk)
       {
         rcbp->res   = -1;
@@ -414,13 +408,6 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
 
     ea_async_io_init(_arkp, iocbp, ARK_EA_WRITE, (void*)tcbp->vb,
                      tcbp->aiol, tcbp->vblkcnt, 0, tcbp->ttag, ARK_SET_WRITE);
-
-    if (MEM_FASTPATH)
-    {
-        ea_async_io_schedule(_arkp, tid, iocbp);
-        ea_async_io_harvest (_arkp, tid, iocbp);
-        if (iocbp->state == ARK_SET_WRITE) {ark_set_write(_arkp, tid, tcbp);}
-    }
   }
   else
   {
@@ -438,9 +425,9 @@ ark_set_process_err:
  ******************************************************************************/
 void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  rcb_t            *rcbp      = &(_arkp->rcbs[tcbp->rtag]);
   scb_t            *scbp      = &(_arkp->poolthreads[tid]);
-  iocb_t           *iocbp     = &(_arkp->iocbs[rcbp->ttag]);
+  rcb_t            *rcbp      = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t           *iocbp     = &(scbp->iocbs[rcbp->ttag]);
   uint64_t          blkcnt    = 0;
 
   // write oub to new blocks
@@ -449,14 +436,14 @@ void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
   /* if a key block chain exists but it isn't the correct size, drop it */
   if (tcbp->hblk && blkcnt != tcbp->blen)
   {
-      ark_drop_pool(_arkp, &(scbp->poolstats), tcbp->hblk);
+      ark_drop_pool(_arkp, tid, tcbp->hblk);
       tcbp->hblk = 0;
   }
 
   /* if a key block chain doesn't exist, take one */
   if (tcbp->hblk == 0)
   {
-      tcbp->nblk = ark_take_pool(_arkp, &(scbp->poolstats), blkcnt);
+      tcbp->nblk = ark_take_pool(_arkp, tid, blkcnt);
       if (tcbp->nblk == -1)
       {
         KV_TRC_FFDC(pAT, "ark_take_pool %ld failed ttag:%3d",
@@ -490,13 +477,6 @@ void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
   ea_async_io_init(_arkp, iocbp, ARK_EA_WRITE, (void *)tcbp->oub,
                    tcbp->aiol, blkcnt, 0, tcbp->ttag, ARK_SET_FINISH);
 
-  if (MEM_FASTPATH)
-  {
-      ea_async_io_schedule(_arkp, tid, iocbp);
-      ea_async_io_harvest (_arkp, tid, iocbp);
-      if (iocbp->state == ARK_SET_FINISH) {ark_set_finish(_arkp, tid, tcbp);}
-  }
-
 ark_set_write_err:
 
   return;
@@ -509,46 +489,45 @@ ark_set_write_err:
 void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t     *scbp     = &(_arkp->poolthreads[tid]);
-  rcb_t     *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t    *iocbp    = &(_arkp->iocbs[rcbp->ttag]);
+  rcb_t     *rcbp     = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t    *iocbp    = &(scbp->iocbs[rcbp->ttag]);
   uint64_t   blkcnt   = 0;
 
   HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, tcbp->ttag, tcbp->nblk));
 
   blkcnt = divceil(tcbp->oub->len, _arkp->bsize);
-  if (blkcnt <= ARK_MAX_HTC_BLKS)
+  if (blkcnt <= _arkp->htc_blks)
   {
       if (HTC_INUSE(_arkp->htc[rcbp->pos]))
       {
-          ++_arkp->htcN;
           KV_TRC(pAT, "HTC_PUT tid:%d ttag:%3d pos:%6ld htcN:%8d sz:%ld",
-                 tid, tcbp->ttag, rcbp->pos, _arkp->htcN, blkcnt);
+                 tid, tcbp->ttag, rcbp->pos, scbp->htcN, blkcnt);
           HTC_PUT(_arkp->htc[rcbp->pos],
                   tcbp->oub,
-                  _arkp->bsize*ARK_MAX_HTC_BLKS);
+                  _arkp->bsize*_arkp->htc_blks);
       }
-      else
+      else if (HTC_AVAIL(_arkp, blkcnt))
       {
-          ++_arkp->htcN;
+          ++scbp->htcN;
           KV_TRC(pAT, "HTC_NEW tid:%d ttag:%3d pos:%6ld htcN:%8d sz:%ld",
-                 tid, tcbp->ttag, rcbp->pos, _arkp->htcN, blkcnt);
+                 tid, tcbp->ttag, rcbp->pos, scbp->htcN, blkcnt);
           HTC_NEW(_arkp->htc[rcbp->pos], tcbp->oub,
-                  _arkp->bsize*ARK_MAX_HTC_BLKS);
+                  _arkp->bsize*_arkp->htc_blks);
       }
   }
   else if (HTC_INUSE(_arkp->htc[rcbp->pos]))
   {
-      --_arkp->htcN;
-      ++_arkp->htc_disc;
-      KV_TRC(pAT, "HTCFREE tid:%d ttag:%3d pos:%6ld htcN:%8d sz:%ld",
-             tid, tcbp->ttag, rcbp->pos, _arkp->htcN, blkcnt);
+      --scbp->htcN;
+      ++scbp->htc_disc;
+      KV_TRC(pAT, "HTCFREE tid:%d ttag:%3d pos:%6ld htcN:%8d disc:%ld",
+                  tid, tcbp->ttag, rcbp->pos, scbp->htcN, scbp->htc_disc);
       HTC_FREE(_arkp->htc[rcbp->pos]);
   }
 
   scbp->poolstats.kv_cnt   += tcbp->new_key;
   scbp->poolstats.byte_cnt += tcbp->bytes;
   rcbp->res                 = rcbp->vlen;
-  iocbp->state               = ARK_CMD_DONE;
+  iocbp->state              = ARK_CMD_DONE;
 
   KV_TRC(pAT, "HASHSET tid:%d ttag:%3d pos:%6ld nblk:%5ld bytes:%ld "
               "byte_cnt:%ld",

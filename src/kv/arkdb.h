@@ -56,6 +56,8 @@ typedef uint64_t ARI;
 // from scratch
 #define ARK_KV_PERSIST_LOAD   0x0000000000000004
 
+// Use a memory cache for some metadata, to increase performance
+#define ARK_KV_HTC            0x0000000000000008
 
 int ark_create_verbose(char *path, ARK **ark,
                        uint64_t size, uint64_t bsize, 

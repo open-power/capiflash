@@ -108,7 +108,7 @@ static inline void CBLK_OUT_MMIO_REG(volatile __u64 *addr, __u64 val)
     out_mmio32 (addr, (__u32)  (val & 0xffffffff));
 #else
     out_mmio64 (addr, val);
-#endif 
+#endif
 #endif /* !BLOCK_FILEMODE_ENABLED */
 }
 
@@ -899,7 +899,6 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
     sisl_ioarcb_t *ioarcb;
     int pthread_rc;
 
-
     ioarcb = &(cmd->sisl_cmd.rcb);
 #ifdef _REMOVE
     if (cblk_log_verbosity >= 9) {
@@ -934,6 +933,7 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	 * we need to check command room before attempting
 	 * to issue IOARCBs.
 	 */
+        ticks wtime=getticks();
 
 	while ((CBLK_GET_CMD_ROOM(chunk,path_index) == 0)  && 
 	       (wait_room_retry < CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES)) {
@@ -996,7 +996,14 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	    wait_room_retry++;
 	}
 
+	ticks w4time = UDELTA(wtime,cflsh_blk.nspt);
+	if (w4time > 200)
+	{
+            PTRC(&chunk->cmd_info[cmd->index].ptrc, 5, CBLK_ISSUE_W4ROOM, chunk->index,
+                  chunk->cmd_info[cmd->index].lba, w4time);
+	}
     }
+
 
     CFLASH_BLOCK_AFU_SHARE_LOCK(chunk->path[path_index]->afu);
 
@@ -1160,7 +1167,6 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
      *         command room?
      */
 
-
     if (wait_rrq_retry >= CFLASH_BLOCK_MAX_WAIT_RRQ_RETRIES) {
 
 
@@ -1189,7 +1195,7 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
      * cause a premature time-out detection error.
      */
 
-    cmd->cmdi->cmd_time = time(NULL);
+    cmd->cmdi->stime = getticks();
 
     if (chunk->path[path_index]->afu->flags & CFLSH_AFU_SQ) {
 	
@@ -1212,9 +1218,12 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 			    ioarcb,chunk->flags, chunk->path[path_index]->afu);
 
     } else {
-	CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET, (uint64_t)ioarcb);
 
-	CBLK_TRACE_LOG_FILE(9,"mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, chunk->flags = 0x%x, afu = %p", 
+        CBLK_SYNC();
+        CBLK_OUT_MMIO_REG(chunk->path[path_index]->afu->mmio + CAPI_IOARRIN_OFFSET, (uint64_t)ioarcb);
+        CBLK_EIEIO();
+
+        CBLK_TRACE_LOG_FILE(9,"mmio = 0x%llx, issued command path_index = %d for ioarcb = %p, chunk->flags = 0x%x, afu = %p",
 			    (uint64_t)chunk->path[path_index]->afu->mmio_mmap,path_index,
 			    ioarcb,chunk->flags, chunk->path[path_index]->afu);
 
@@ -1227,9 +1236,11 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
     CBLK_CLEANUP_BAD_MMIO_SIGNAL(chunk,path_index);
 #endif /* _FOR_DEBUG */
 
+    PTRC(&chunk->cmd_info[cmd->index].ptrc, 5, CBLK_ISSUE_SISL_END, chunk->index,
+          chunk->cmd_info[cmd->index].lba,
+          UDELTA(chunk->cmd_info[cmd->index].stime,cflsh_blk.nspt));
 
     return rc;
-    
 }
 
 /*
@@ -1512,7 +1523,6 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 
 	CBLK_INC_RRQ(chunk,path_index);
 
-
 	if (p_cmd) {
 
 
@@ -1522,7 +1532,6 @@ int cblk_process_sisl_cmd_intrpt(cflsh_chunk_t *chunk,int path_index,cflsh_cmd_m
 	
 		continue;
 	    }
-
 
 	    if (p_cmd->cmdi == NULL) {
 
@@ -1853,13 +1862,13 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
 #endif /* _REMOVE */
 
 
-    CBLK_TRACE_LOG_FILE(5,"cmd error ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, port = 0x%x, path_index = %d",
+    CBLK_TRACE_LOG_FILE(1,"cmd error ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, port = 0x%x, path_index = %d",
 			cmd->sisl_cmd.rcb.ctx_id,ioasa->ioasc,ioasa->resid,ioasa->rc.flags,ioasa->port,path_index);
 
  
     if (ioasa->rc.flags & SISL_RC_FLAGS_UNDERRUN) {
 
-	CBLK_TRACE_LOG_FILE(5,"cmd underrun ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, port = 0x%x",
+	CBLK_TRACE_LOG_FILE(1,"cmd underrun ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, port = 0x%x",
 			cmd->sisl_cmd.rcb.ctx_id,ioasa->ioasc,ioasa->resid,ioasa->rc.flags,ioasa->port);
 	/*
 	 * We encountered a data underrun. Set
@@ -1891,7 +1900,7 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
 
    if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN) {
 
-	CBLK_TRACE_LOG_FILE(5,"cmd overrun ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, port = 0x%x",
+	CBLK_TRACE_LOG_FILE(1,"cmd overrun ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, port = 0x%x",
 			cmd->sisl_cmd.rcb.ctx_id,ioasa->ioasc,ioasa->resid,ioasa->rc.flags,ioasa->port);
 	
 
@@ -1899,10 +1908,10 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
    }
 
 
-    CBLK_TRACE_LOG_FILE(7,"cmd failed ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, scsi_status = 0x%x",
+    CBLK_TRACE_LOG_FILE(1,"cmd failed ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, scsi_status = 0x%x",
 			cmd->sisl_cmd.rcb.ctx_id,ioasa->ioasc,ioasa->resid,ioasa->rc.flags, ioasa->rc.scsi_rc);
 
-    CBLK_TRACE_LOG_FILE(7,"cmd failed port = 0x%x, afu_extra = 0x%x, scsi_entra = 0x%x, fc_extra = 0x%x",
+    CBLK_TRACE_LOG_FILE(1,"cmd failed port = 0x%x, afu_extra = 0x%x, scsi_entra = 0x%x, fc_extra = 0x%x",
 			ioasa->port,ioasa->afu_extra,ioasa->scsi_extra,ioasa->fc_extra);
 
 
@@ -1917,7 +1926,7 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
 
 	if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID) {
 
-	    CBLK_TRACE_LOG_FILE(5,"sense data: error code = 0x%x, sense_key = 0x%x, asc = 0x%x, ascq = 0x%x",
+	    CBLK_TRACE_LOG_FILE(1,"sense data: error code = 0x%x, sense_key = 0x%x, asc = 0x%x, ascq = 0x%x",
 				ioasa->sense_data[0],ioasa->sense_data[2],ioasa->sense_data[12],ioasa->sense_data[13]);
 
 	    chunk->stats.num_cc_errors++;
@@ -2125,13 +2134,12 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
 
     if (ioasa->rc.afu_rc) {
 
-	
+
 	/*
 	 * We have a AFU error
 	 */
-
-	CBLK_TRACE_LOG_FILE(6,"afu error ctx_id = 0x%x, ioasc = 0x%x, resid = 0x%x, flags = 0x%x, afu error = 0x%x",
-			    cmd->sisl_cmd.rcb.ctx_id,ioasa->ioasc,ioasa->resid,ioasa->rc.flags, ioasa->rc.afu_rc);
+	CBLK_TRACE_LOG_FILE(1,"afu_error:0x%x ctx_id:0x%x ioasc:0x%x resid:0x%x flags:0x%x",
+	                ioasa->rc.afu_rc, cmd->sisl_cmd.rcb.ctx_id,ioasa->ioasc,ioasa->resid,ioasa->rc.flags);
 
 	CBLK_TRACE_LOG_FILE(6,"contxt_handle = 0x%x",chunk->path[path_index]->afu->contxt_handle);
 	CBLK_TRACE_LOG_FILE(6,"mmio_map = 0x%llx",(uint64_t)chunk->path[path_index]->afu->mmio_mmap);
@@ -2251,6 +2259,9 @@ cflash_cmd_err_t cblk_process_sisl_cmd_err(cflsh_chunk_t *chunk,int path_index,c
 	errno = cmd->cmdi->status;
     }
 
+
+    PTRC(&cmd->cmdi->ptrc,1,CBLK_AFU_FAILED_CMD,&(cmd->sisl_cmd.rcb),rc,errno);
+    PTRC_PSAVE_TO_SLOT(&cmd->cmdi->ptrc, 1, 10000005);
 
     return rc;
 }

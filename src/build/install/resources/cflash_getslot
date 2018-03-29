@@ -24,8 +24,11 @@
 #
 # IBM_PROLOG_END_TAG
 
-out=$(cat /proc/device-tree$(cat /sys/bus/pci/devices/$1/devspec)/ibm,loc-code)
-if [[ $out =~ Slot ]]
+out=$(tr -d '\0' < /proc/device-tree$(cat /sys/bus/pci/devices/$1/devspec)/ibm,loc-code)
+if [[ $out =~ "UIO Slot" ]]
+then
+  slot=$(echo $out|sed 's/UIO Slot//')
+elif [[ $out =~ Slot ]]
 then
   slot=$(echo $out|sed 's/Slot//')
 else

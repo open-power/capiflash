@@ -55,6 +55,28 @@ if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; f
 if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];          then redhat=1; fi
 if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
 
+findloc()
+{
+    local devspecpath="/sys/bus/pci/devices/$1/devspec"
+    if [[ ! -f "$devspecpath" ]]; then
+        echo "INFO: Unable to find devspec for device %s. Could not find '%s'\n\n" $1 $devspecpath
+        return 3
+    fi
+    local devspec=$(cat $devspecpath)
+    local loccodepath="/proc/device-tree$devspec/ibm,loc-code"
+    if [[ ! -f "$loccodepath" ]]; then
+        printf "INFO: Unable to find device tree special file path for PCI device %s: %s\n\n" $1 $loccodepath
+        return 4
+    fi
+    loccode=$(tr '\000' '\012' <$loccodepath)
+    if [[ -z "$loccode" ]]
+    then
+        printf "       ERROR, Location code is invalid for PCI device %s\n\n" $1
+        return 5
+    fi
+    return 0
+}
+
 ################################################################################
 ################################################################################
 ################################################################################
@@ -96,7 +118,7 @@ then
 
  if [[ $1 =~ mfg && $liclib = no ]]; then force=yes; fi
 
- #remove old
+ #### remove old test packages
  EXISTS_LVL=$(dpkg -l|egrep "i  ibmcapikv-test|i  cxlflash-test")
  if [[ $EXISTS_LVL =~ ibmcapikv-test ]]
  then
@@ -107,6 +129,7 @@ then
    dpkg -r cxlflash-test
  fi
 
+ #### remove old afu packages
  EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  afuimage |i  cxlflashimage ")
  if [[ $EXISTS_LVL =~ afuimage ]]
  then
@@ -117,6 +140,7 @@ then
    dpkg -P cxlflashimage
  fi
 
+ #### remove old cxlflash packages
  EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  ibmcapikv |i  cxlflash ")
  if [[ $EXISTS_LVL =~ ibmcapikv ]]
  then
@@ -127,7 +151,28 @@ then
    dpkg -r cxlflash
  fi
 
- #install new
+ #### remove old lib packages
+ EXISTS_LVL=$(dpkg -l|grep "i  libcxlflash-dev")
+ if [[ $EXISTS_LVL =~ libcxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
+ then
+   dpkg -r $(echo $EXISTS_LVL|awk '{print $2}')
+ fi
+ EXISTS_LVL=$(dpkg -l|grep -v libcxlflash-dev|grep "i  libcxlflash")
+ if [[ $EXISTS_LVL =~ libcxlflash && ! $EXISTS_LVL =~ $CF_VER ]]
+ then
+   dpkg -r $(echo $EXISTS_LVL|awk '{print $2}')
+ fi
+
+ ##### install new libcxlflash pkgs
+ EXISTS_LVL=$(dpkg -l|grep -v libcxlflash-dev|grep "i  libcxlflash")
+ if [[ ! $EXISTS_LVL =~ "i  libcxlflash" || $force =~ yes || \
+        ($EXISTS_LVL =~ "i  libcxlflash" && ! $EXISTS_LVL =~ $CF_VER) ]]
+ then
+    ls libcxlflash*$CF_VER*.deb >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then dpkg -i libcxlflash*$CF_VER*.deb; fi
+ fi
+
+ ##### install new cxlflash pkg
  EXISTS_LVL=$(dpkg -l|grep -v test|egrep "i  cxlflash ")
  if [[ ! $EXISTS_LVL =~ "i  cxlflash " || $force =~ yes || \
         ($EXISTS_LVL =~ "i  cxlflash " && ! $EXISTS_LVL =~ $CF_VER) ]]
@@ -136,6 +181,7 @@ then
     if [[ $? -eq 0 ]]; then dpkg -i cxlflash_*$CF_VER*.deb; fi
  fi
 
+ ##### install new afu pkg
  EXISTS_LVL=$(dpkg -l|grep 'i  cxlflashimage')
  if [[ ! $EXISTS_LVL =~ cxlflashimage || \
         ($EXISTS_LVL =~ cxlflashimage && ! "$EXISTS_LVL" =~ $CF_VER) ]]
@@ -145,6 +191,7 @@ then
    if [[ $? -eq 0 ]]; then dpkg -i cxlflashimage*$CF_VER*.deb; fi
  fi
 
+ ##### install new test pkgs
  EXISTS_LVL=$(dpkg -l|egrep "i  cxlflash-test")
  if [[ ! $EXISTS_LVL =~ "i  cxlflash-test" || \
         ($EXISTS_LVL =~ cxlflash-test && ! $EXISTS_LVL =~ $CF_VER) ]]
@@ -367,20 +414,43 @@ fi
   GT_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GT_IMAGE   |awk '{print $2}'|cut -c26-33)
   GTP_IMAGE=$(cat $SHARE_DIR/afu_versions|grep GTP_IMAGE  |awk '{print $2}'|cut -c26-33)
 
-  for str in $(capi_flash -l|awk '{print $4$9}')
+  lsmod|grep cxlflash 2>&1 >/dev/null
+  if [[ $? -eq 1 ]]
+  then
+    lsmod|grep "cxl " 2>&1 >/dev/null
+    if [[ $? -eq 1 ]]
+    then
+      modprobe cxl; rc=$?;
+      if [[ $rc -ne 0 ]]
+      then
+        echo "ERROR: modprobe cxl failed (rc:$rc), exiting..."
+        exit 32
+      fi
+    fi
+    modprobe cxlflash; rc=$?;
+    if [[ $rc -ne 0 ]]
+    then
+      echo "ERROR: modprobe cxlflash failed (rc:$rc), exiting..."
+      exit 33
+    fi
+  fi
+
+  for str in $(capi_flash -l)
   do
     if [[ $str =~ 04cf && ! $str =~ $CORSA_IMAGE ]]; then do_flash=1; break; fi
     if [[ $str =~ 0601 && ! $str =~ $GT_IMAGE ]];    then do_flash=1; break; fi
-    if [[ $str =~ 0628 && ! $str =~ $GTP_IMAGE ]];   then do_flash=1; break; fi
+    if [[ $str =~ 0628 && ! $str =~ $GTP_IMAGE ]];   then do_flash=0; early_exit=1; break; fi
   done
 
-  adapsGT=$(lspci|egrep "0601|0628"|awk '{print $1}')
+  adapsGTP=$(lspci|grep 0628|awk '{print $1}')
+  adapsGT=$(lspci|grep 0601|awk '{print $1}')
   adapsCorsa=$(lspci|grep 04cf|awk '{print $1}')
-  adapGTN=0; adapCorsaN=0;
+  adapGTPN=0; adapGTN=0; adapCorsaN=0;
+  for adap in $adapsGTP;   do let adapGTPN=$adapGTPN+1;     done
   for adap in $adapsGT;    do let adapGTN=$adapGTN+1;       done
   for adap in $adapsCorsa; do let adapCorsaN=$adapCorsaN+1; done
 
-  if [[ $adapGTN -eq 0 && $adapCorsaN -eq 0 ]]
+  if [[ $adapGTN -eq 0 && $adapGTPN -eq 0 &&$adapCorsaN -eq 0 ]]
   then
     echo "ERROR: no capiflash adapters were found"
     exit 20
@@ -394,12 +464,11 @@ fi
       if [[ $(lsmod |grep cxlflash) =~ cxlflash ]]; then rmmod cxlflash; fi
       flash_all_adapters -reload
       systemctl daemon-reload
+      if [[ ! $(lsmod |grep cxlflash) =~ cxlflash ]]; then modprobe cxlflash; fi
     else
       echo "INFO: unable to download firmware. The firmware is not installed."
     fi
   fi
-
-  if [[ ! $(lsmod |grep cxlflash) =~ cxlflash ]]; then modprobe cxlflash; fi
 
   ##################################
   # Re-check all versions
@@ -414,6 +483,10 @@ fi
   fi
   echo -e "\nINFO: Installed Versions....OK\n"
 
+  #verify location code
+  adaps=$(lspci|egrep "04cf|0601|0628"|awk '{print $1}')
+  for adap in $adaps; do findloc $adap; done
+
   ##################################
   # Check for devices
   echo -e "\n------------------------------"
@@ -421,9 +494,18 @@ fi
 
  if [[ $1 =~ mfg && $liclib = no ]]; then cp /opt/$HD/libcflsh_block* ${LIB_DIR}; fi
 
+  #check GTP devices
+  adapN=0
+  adaps=$(lspci|grep 0628|awk '{print $1}')
+  for adap in $adaps; do let adapN=$adapN+1; done
+  if [[ $adapN -ne $adapGTPN ]]
+  then
+    echo "INFO: there are missing capiflash adapters"
+  fi
+
   #check GT devices
   adapN=0
-  adaps=$(lspci|egrep "0601|0628"|awk '{print $1}')
+  adaps=$(lspci|grep 0601|awk '{print $1}')
   for adap in $adaps; do let adapN=$adapN+1; done
   if [[ $adapN -ne $adapGTN ]]
   then
@@ -451,23 +533,45 @@ fi
     sgsGT=$(for adap in $adapsGT
         do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|awk -F/ '{print $13}' |tr -d '\r'
         done)
+    sgsGTP=$(for adap in $adapsGTP
+        do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|awk -F/ '{print $13}' |tr -d '\r'
+        done)
+    # only save 1 lun per adapter for testing, since Corsa can have so many luns
     sgsCorsa=$(for adap in $adapsCorsa
         do find /sys|grep $adap|grep scsi_generic|grep "sg"|grep subsystem|head -1|awk -F/ '{print $13}' |tr -d '\r'
         done)
   fi
 
-  #ensure each GT has 2 sg devices
+  #ensure each GTP has 4 sg devices
   adapN=0
-  adaps=$(lspci|egrep "0601|0628"|awk '{print $1}')
+  adaps=$(lspci|grep 0628|awk '{print $1}')
   for adap in $adaps; do let adapN=$adapN+1; done
   sgN=0; sglist="";
+  if [[ $adapGTPN -gt 0 ]]
+  then
+    for sg in $sgsGTP; do sgN=$((sgN+1)); sglist="$sglist /dev/$sg "; done
+    sglist=$(echo $sglist|tr -d '\r')
+    if [[ $sgN -eq 0 ]]
+    then
+      echo "ERROR: there are 0 devices"
+      exit 63
+    elif [[ $sgN -ne  $((adapGTPN*4)) ]]
+    then
+      echo "INFO: #adaps($adapN) devtype 0628 may have $((adapGTPN*4)) sg devices, but there are only $sgN devices"
+    fi
+  fi
+
+  #ensure each GT has 2 sg devices
+  adapN=0
+  adaps=$(lspci|grep 0601|awk '{print $1}')
+  for adap in $adaps; do let adapN=$adapN+1; done
   if [[ $adapGTN -gt 0 ]]
   then
     for sg in $sgsGT; do sgN=$((sgN+1)); sglist="$sglist /dev/$sg "; done
     sglist=$(echo $sglist|tr -d '\r')
     if [[ $sgN -ne  $((adapGTN*2)) ]] #FlashGT
     then
-      echo "ERROR: #adaps($adapN) should have $((adapGTN*2)) sg devices, but there are only $sgN devices"
+      echo "ERROR: #adaps($adapN) devtype 0601 should have $((adapGTN*2)) sg devices, but there are only $sgN devices"
       exit 7
     fi
   fi
@@ -478,6 +582,8 @@ fi
     sglist=$(echo $sglist|tr -d '\r')
   fi
 
+  cxlfrefreshluns | egrep -v "Refer|Device Status"
+
   ##################################
   # Check IO
   echo -e "\n------------------------------"
@@ -485,8 +591,6 @@ fi
   unset CFLSH_BLK_TRC_VERBOSITY
   unset KV_TRC_VERBOSITY
   rc=0
-
-  cxlfrefreshluns
 
   if [[ $1 =~ mfg ]]
   then
@@ -507,16 +611,22 @@ fi
       legacy=1
       wwid=$(echo "$fstatus"|grep ${sg:5:6}|awk -F, '{print $4}')
       cxlfsetlunmode $wwid 1 >/dev/null
+      setrc=$?
     fi
-    iops=$(/usr/bin/blockio -d $sg -s$secs 2>&1)
-    if [[ ! $iops =~ err && $(echo $iops|awk -Fiops: '{print $2}') -gt $iopsN ]]
+    if [[ $setrc -eq 0 ]]
     then
-      echo "  $sg OK"
+      iops=$(/usr/bin/blockio -d $sg -s$secs 2>&1)
+      if [[ ! $iops =~ err && $(echo $iops|awk -Fiops: '{print $2}') -gt $iopsN ]]
+      then
+        echo "  $sg OK"
+      else
+        echo "  $sg failed, iops($iops) < expected iops($iopsN)"
+        rc=8
+      fi
+      if [[ $legacy -eq 1 ]]; then cxlfsetlunmode $wwid 0 >/dev/null; fi
     else
-      echo "  $sg failed, iops($iops) < expected iops($iopsN)"
-      rc=8
+      echo   "  $sg SKIP, cannot change it from legacy mode"
     fi
-    if [[ $legacy -eq 1 ]]; then cxlfsetlunmode $wwid 0 >/dev/null; fi
   done
   if [[ $rc -ne 0 ]]; then echo "ERROR: IO Test failed"; exit $rc; fi
 

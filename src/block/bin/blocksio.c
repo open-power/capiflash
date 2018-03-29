@@ -77,6 +77,7 @@
 #define READ       1
 #define WRITE      0
 #define MAX_SGDEVS 8
+#define ALIGN      128
 
 int      id          = 0;
 uint64_t tlat        = 0;
@@ -95,8 +96,6 @@ uint32_t devN        = 0;
 uint32_t DEBUG       = 0;
 uint32_t plun        = 0;
 int      ids[_4K];
-uint8_t  *p_rbuf   = NULL;
-uint8_t  *p_wbuf   = NULL;
 
 pthread_mutex_t lock;
 
@@ -165,8 +164,32 @@ void run_sync(void *p)
     uint32_t  WR     = 0;
     uint32_t  cnt    = 0;
     uint64_t  lat    = 0;
-    uint8_t  *rbuf   = p_rbuf+(tid*_4K);
-    uint8_t  *wbuf   = p_wbuf+(tid*_4K);
+    uint8_t  *rbuf   = NULL;
+    uint8_t  *wbuf   = NULL;
+    uint8_t   rbuffer[_4K+ALIGN];
+    uint8_t   wbuffer[_4K+ALIGN];
+
+    if (nblocks == 1)
+    {
+        /* do byte-alignment on r/w bufs */
+        rbuf = (void *)(((uintptr_t)(rbuffer) + ALIGN-1) & ~(uintptr_t)(ALIGN-1));
+        wbuf = (void *)(((uintptr_t)(wbuffer) + ALIGN-1) & ~(uintptr_t)(ALIGN-1));
+    }
+    else
+    {
+        /*--------------------------------------------------------------------------
+         * alloc r/w buffers for multi-block IO
+         *------------------------------------------------------------------------*/
+        if ((rc=posix_memalign((void**)&rbuf, ALIGN, 2*_4K*nblocks)))
+        {
+                fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
+                                _4K*nblocks, rc);
+                cblk_term(NULL,0);
+                exit(0);
+        }
+        wbuf = rbuf+(_4K*nblocks);
+    }
+    memset(wbuf,0x79,_4K*nblocks);
 
     if (!seq) {lba   = lrand48() % nblks;}
     if (plun) {flags = CBLK_GROUP_ID;}
@@ -217,6 +240,7 @@ void run_sync(void *p)
     tcnt    += cnt;
     pthread_mutex_unlock(&lock);
 
+    if (nblocks > 1) {free(rbuf);}
     debug("exiting cid:%d\n", cid);
     return;
 }
@@ -308,25 +332,6 @@ int main(int argc, char **argv)
     }
 
     pths = (devN*QD > _8K) ? _8K : devN*QD;
-
-    /*--------------------------------------------------------------------------
-     * alloc data for IO
-     *------------------------------------------------------------------------*/
-    if ((rc=posix_memalign((void**)&p_rbuf, 128, _4K*nblocks*pths)))
-    {
-        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                _4K*nblocks, rc);
-        cblk_term(NULL,0);
-        exit(0);
-    }
-    if ((rc=posix_memalign((void**)&p_wbuf, 128, _4K*nblocks*pths)))
-    {
-        fprintf(stderr,"posix_memalign failed, size=%d, rc=%d\n",
-                _4K*nblocks, rc);
-        cblk_term(NULL,0);
-        exit(0);
-    }
-    memset(p_wbuf,0x79,_4K*nblocks*QD);
 
     /*--------------------------------------------------------------------------
      * open device and set lun size

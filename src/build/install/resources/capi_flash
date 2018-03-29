@@ -29,6 +29,7 @@ use warnings;
 use Fcntl;
 use Fcntl ':seek';
 use Getopt::Long;
+use Time::HiRes qw(nanosleep);
 
 #-------------------------------------------------------------------------------
 # Variables
@@ -71,6 +72,7 @@ my $factory_addr=0;
 my $header_addr=0x840000;
 my $user_addr=0x850000;
 my $vpd_addr=0x1FF0000;
+my $pagesize = 256;
 my $wr_user;
 my $cardN;
 my $offset=0;            # Set if PAPR header is present in image
@@ -89,8 +91,8 @@ my $partition1 = "";                     # Programming Partition1
 my $list = "0";
 my $optOK = 0;                           # Options are OK
 my $filename = "";                       # RBF File Name
-my $userselect_hdr="1410000614100006.userselect.hdr";
-my $factoryselect_hdr="1410000614100006.factoryselect.hdr";
+my $userselect_hdr="";
+my $factoryselect_hdr="";
 my $target  = "";                        # pcie target
 my $cfgfile = "";                        # RBF File Name
 my $vpd = "";
@@ -288,9 +290,9 @@ sub write_file_to_flash
   }
 
   #calculate how much to write
-  $n = $fsize / (64 * 1024 * 4);
+  $n = $fsize / ($pagesize * 1024);
   $n = (($n == int($n)) ? $n : int($n + 1));
-  $fwords = 64*1024*$n;
+  $fwords = ($pagesize*1024*$n)/4;
 
   reset_sequence_wait4rdy;
 
@@ -362,7 +364,7 @@ sub write_file_to_flash
     #prepare the data to be written
     $d = pack("V",$dat);
 
-    if (($i % (64*1024)) == 0)
+    if (($i % (($pagesize/4)*1024)) == 0)
     {
       ($_verbose>0) && print "      Write Block: $bc of $n       \r";
       $bc++;
@@ -406,6 +408,7 @@ sub write_file_to_flash
       $d = pack("V",$dat);
       sysseek CFG, $CNTL_REG, SEEK_SET;
       syswrite(CFG,$d,4);
+      nanosleep(10000);
     }
 
     sysseek CFG, $DATA_REG, SEEK_SET;
@@ -423,6 +426,10 @@ sub write_file_to_flash
 
   $bc = 0;
   $ra = $addr;
+  my $cntl_remain;  # number of bytes left to read for this burst
+  my $cntl_ready;
+  my $cntl_retry;
+
   for($i=0; $i<$fwords; $i++)
   {
     $dif  = read(IN,$d,4);
@@ -440,21 +447,42 @@ sub write_file_to_flash
       sysseek CFG, $ADDR_REG, SEEK_SET;
       syswrite(CFG,$d,4);
       $ra += 0x200;
-      $d = pack("V",0x1FF);
+      $cntl_remain = 0x1FF;
+      $d = pack("V",$cntl_remain);
       sysseek CFG, $SIZE_REG, SEEK_SET;
       syswrite(CFG,$d,4);
       $dat = 0x08000000;
       $d = pack("V",$dat);
       sysseek CFG, $CNTL_REG, SEEK_SET;
       syswrite(CFG,$d,4);
+      nanosleep(20000);
     }
 
-    if (($i % (64*1024)) == 0)
+    if (($i % (($pagesize/4)*1024)) == 0)
     {
       ($_verbose>0) && print "      Read Block: $bc        \r";
       $bc++;
     }
 
+    # poll control register until data count matches expected value
+    # if data register is read too soon, previous data value will be
+    # captured and remaining data is then shifted
+    $cntl_remain = ($cntl_remain - 1) & 0x3ff;
+    $cntl_ready = 0;
+    $cntl_retry = 100;
+    while( $cntl_ready == 0 && $cntl_retry>0)
+    {
+      sysseek CFG, $CNTL_REG, SEEK_SET;
+      sysread(CFG,$d,4);
+      $fdat = unpack("V",$d);
+      if( $cntl_remain == ($fdat & 0x3ff) )
+      {
+        $cntl_ready = 1;
+      }
+      $cntl_retry--;
+    }
+
+    # read data register
     sysseek CFG, $DATA_REG, SEEK_SET;
     sysread(CFG,$d,4);
     $fdat = unpack("V",$d);
@@ -614,8 +642,9 @@ else
         if ($ver eq "") {last;}
         if ($ver =~ /AFU Version/) {$afuver=( split ' ', $ver )[ -1 ]; last;}
       }
-      my $devspec=`cat /sys/bus/pci/devices/$adap/devspec`;
+      my $devspec=`cat /sys/bus/pci/devices/$adap/devspec 2>/dev/null`;
       my $loccode=`cat /proc/device-tree$devspec/ibm,loc-code 2>/dev/null`;
+      $loccode=~s/\0//g;
       chomp $loccode;
       $loccode=substr($loccode,0,23);
       $list && print "Found CAPI device $cfg_devid afu$cardN $adap $loccode $serial =>$afuver\n";
@@ -730,6 +759,16 @@ elsif ($cfg_devid eq "10140601" || $cfg_devid eq "10140628")
 {
   $header_addr=0x0800000;
   $user_addr=0x0810000;
+  $userselect_hdr="1410000614100006.userselect.hdr";
+  $factoryselect_hdr="1410000614100006.factoryselect.hdr";
+
+  if ($cfg_devid eq "10140628")
+  {
+    $header_addr=0x1000000;
+    $user_addr=0x1010000;
+    $userselect_hdr="1410000614103306.userselect.hdr";
+    $factoryselect_hdr="1410000614103306.factoryselect.hdr";
+  }
 
   if ( ($vsec & 0x08000000) == 0x08000000 )
   {

@@ -32,8 +32,8 @@
 void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
   scb_t            *scbp     = &(_arkp->poolthreads[tid]);
-  rcb_t            *rcbp     = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t           *iocbp    = &(_arkp->iocbs[rcbp->ttag]);
+  rcb_t            *rcbp     = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t           *iocbp    = &(scbp->iocbs[rcbp->ttag]);
   int32_t           rc       = 0;
 
   scbp->poolstats.ops_cnt+=1;
@@ -88,9 +88,9 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  if (HTC_HIT(_arkp->htc[rcbp->pos], tcbp->blen))
+  if (HTC_HIT(_arkp, rcbp->pos, tcbp->blen))
   {
-      ++_arkp->htc_hits;
+      ++scbp->htc_hits;
       KV_TRC(pAT, "HTC_HIT tid:%d ttag:%3d pos:%6ld blen:%ld",
              tid, tcbp->ttag,rcbp->pos, tcbp->blen);
       HTC_GET(_arkp->htc[rcbp->pos], tcbp->inb, tcbp->blen*_arkp->bsize);
@@ -115,13 +115,6 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
                    tcbp->blen, 0, tcbp->ttag, ARK_GET_PROCESS);
 
-  if (MEM_FASTPATH)
-  {
-      ea_async_io_schedule(_arkp, tid, iocbp);
-      ea_async_io_harvest (_arkp, tid, iocbp);
-      if (iocbp->state == ARK_GET_PROCESS) {ark_get_process(_arkp, tid, tcbp);}
-  }
-
 ark_get_start_err:
   return;
 }
@@ -133,8 +126,8 @@ ark_get_start_err:
 void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
 {
   scb_t            *scbp        = &(_arkp->poolthreads[tid]);
-  rcb_t            *rcbp        = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t           *iocbp       = &(_arkp->iocbs[rcbp->ttag]);
+  rcb_t            *rcbp        = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t           *iocbp       = &(scbp->iocbs[rcbp->ttag]);
   uint8_t          *new_vb      = NULL;
   uint64_t          vblk        = 0;
   uint64_t          new_vbsize  = 0;
@@ -142,12 +135,12 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
   KV_TRC_DBG(pAT, "INB_GET tid:%d ttag:%3d pos:%6ld tot:%ld used:%ld",
              tid, tcbp->ttag, rcbp->pos, tcbp->inb_size, tcbp->inb->len);
 
-  if (!HTC_INUSE(_arkp->htc[rcbp->pos]) && tcbp->blen<=ARK_MAX_HTC_BLKS)
+  if (!HTC_INUSE(_arkp->htc[rcbp->pos]) && HTC_AVAIL(_arkp,tcbp->blen))
   {
-      ++_arkp->htcN;
+      ++scbp->htcN;
       KV_TRC(pAT, "HTC_NEW tid:%d ttag:%3d pos:%6ld htcN:%d blen:%ld",
-             tid, tcbp->ttag,rcbp->pos, _arkp->htcN, tcbp->blen);
-      HTC_NEW(_arkp->htc[rcbp->pos], tcbp->inb, _arkp->bsize*ARK_MAX_HTC_BLKS);
+             tid, tcbp->ttag,rcbp->pos, scbp->htcN, tcbp->blen);
+      HTC_NEW(_arkp->htc[rcbp->pos], tcbp->inb, _arkp->bsize*_arkp->htc_blks);
   }
 
   // Find the key position in the read in bucket
@@ -208,13 +201,6 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
       // variable buffer.
       ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->vb,
                        tcbp->aiol, tcbp->blen, 0, tcbp->ttag, ARK_GET_FINISH);
-
-      if (MEM_FASTPATH)
-      {
-          ea_async_io_schedule(_arkp, tid, iocbp);
-          ea_async_io_harvest (_arkp, tid, iocbp);
-          if (iocbp->state == ARK_GET_FINISH) {ark_get_finish(_arkp,tid,tcbp);}
-      }
     }
     else
     {
@@ -244,8 +230,9 @@ ark_get_process_err:
  ******************************************************************************/
 void ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  rcb_t  *rcbp  = &(_arkp->rcbs[tcbp->rtag]);
-  iocb_t *iocbp = &(_arkp->iocbs[rcbp->ttag]);
+  scb_t  *scbp  = &(_arkp->poolthreads[tid]);
+  rcb_t  *rcbp  = &(_arkp->poolthreads[tid].rcbs[tcbp->rtag]);
+  iocb_t *iocbp = &(scbp->iocbs[rcbp->ttag]);
 
   if (DUMP_KV)
   {

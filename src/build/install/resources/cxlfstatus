@@ -39,4 +39,6 @@ if [ "$#" -ne 0 ]; then
     exit $EINVAL;
 fi
 
+if [[ ! $(lsmod) =~ cxlflash ]]; then echo "The cxlflash module is not loaded"; exit -1; fi
+
 printstatus;

@@ -29,7 +29,7 @@ if [[ $1 =~ version ]]; then echo "v1.0"; exit 0; fi
 
 KERNEL_MOD="cxlflash"
 CAPI_FLASH_PL=capi_flash
-RESET_PL=cflash_reset
+#RESET_PL=cflash_reset
 IMAGES_DIR=/lib/firmware/cxlflash
 FLASH_ROOT=/usr/bin
 MINCAPMASK="0003"
@@ -76,28 +76,6 @@ readvpd()
     return 0
 }
 
-findloc()
-{
-    local devspecpath="/sys/bus/pci/devices/$1/devspec"
-    if [[ ! -f "$devspecpath" ]]; then
-        echo "       ERROR, Unable to find devspec for device %s. Could not find '%s'\n\n" $1 $devspecpath
-        return 3
-    fi
-    local devspec=$(cat $devspecpath)
-    local loccodepath="/proc/device-tree$devspec/ibm,loc-code"
-    if [[ ! -f "$loccodepath" ]]; then
-        printf "       ERROR, Unable to find device tree special file path for PCI device %s: %s\n\n" $1 $loccodepath
-        return 4
-    fi
-    loccode=$(tr '\000' '\012' <$loccodepath)
-    if [[ -z "$loccode" ]]
-    then
-        printf "       ERROR, Location code is invalid for PCI device %s\n\n" $1
-        return 5
-    fi
-    return 0
-}
-
 checkcompat()
 {
     line=$(lspci -s $1| egrep "04cf|0601|0628")
@@ -122,13 +100,10 @@ checkcompat()
 
 flashadapters()
 {
-    $FLASH_ROOT/$CAPI_FLASH_PL -l | while read adapStr
+    while read -r adapStr
     do
         adap=$(echo  $adapStr|awk '{print $6}')
         afu=$(echo $adapStr|awk '{print $5}')
-        #verify location code
-        findloc $adap; rc=$?
-        if [[ $rc -ne 0 ]]; then e_rc=$rc; continue; fi
 
         #get device ID
         devid=$(lspci -s $adap| awk 'BEGIN{FS="IBM Device "}; {print $NF}'|awk -F\( '{print $1}')
@@ -274,12 +249,12 @@ flashadapters()
           e_rc=8
         fi
         echo ""
-    done
+    done <<< "$($FLASH_ROOT/$CAPI_FLASH_PL -l)"
 }
 
 flashadapters_VM()
 {
-  $FLASH_ROOT/$CAPI_FLASH_PL -l | while read adap
+  while read -r adap
   do
     if [[ $adap =~ 04cf ]]; then fw=$CORSA_IMAGE;
     else                         fw=$GT_IMAGE;
@@ -304,7 +279,7 @@ flashadapters_VM()
       e_rc=$rc
       echo "       ERROR: Failed flashing $adap"
     fi
-  done
+    done <<< "$($FLASH_ROOT/$CAPI_FLASH_PL -l)"
 }
 
 #########

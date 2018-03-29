@@ -1,4 +1,4 @@
-libafu-0.so cxlflash #MINVER#
+libafu-0.so libcxlflash0 #MINVER#
  afu_map@Base 4.3~
  afu_mmio_read_dw@Base 4.3~
  afu_mmio_read_sw@Base 4.3~
@@ -9,11 +9,11 @@ libafu-0.so cxlflash #MINVER#
  afu_wait@Base 4.3~
  create_and_open_dev@Base 4.3~
  create_dev@Base 4.3~
-libarkalloc-0.so cxlflash #MINVER#
+libarkalloc-0.so libcxlflash0 #MINVER#
  zfree@Base 4.3~
  zmalloc@Base 4.3~
  zrealloc@Base 4.3~
-libarkdb-0.so cxlflash #MINVER#
+libarkdb-0.so libcxlflash0 #MINVER#
  ARK_MAX_LEN@Base 4.3~
  REVISION_arkdb_gitrev@Base 4.3~
  REVISION_arkdb_timestamp@Base 4.3~
@@ -23,7 +23,6 @@ libarkdb-0.so cxlflash #MINVER#
  ardes@Base 4.3~
  ark_actual@Base 4.3~
  ark_allocated@Base 4.3~
- ark_anyreturn@Base 4.3~
  ark_check_persistence@Base 4.3~
  ark_connect@Base 4.3~
  ark_connect_verbose@Base 4.3~
@@ -51,6 +50,7 @@ libarkdb-0.so cxlflash #MINVER#
  ark_flush@Base 4.3~
  ark_fork@Base 4.3~
  ark_fork_done@Base 4.3~
+ ark_free_resources@Base 5.0~
  ark_get@Base 4.3~
  ark_get_async_cb@Base 4.3~
  ark_get_async_tag@Base 4.3~
@@ -62,7 +62,6 @@ libarkdb-0.so cxlflash #MINVER#
  ark_next_async_tag@Base 4.3~
  ark_next_pool@Base 4.3~
  ark_null_async_cb@Base 4.3~
- ark_null_async_tag@Base 4.3~
  ark_persist@Base 4.3~
  ark_persist_stats@Base 4.3~
  ark_persistence_calc@Base 4.3~
@@ -129,7 +128,6 @@ libarkdb-0.so cxlflash #MINVER#
  cl_parse@Base 4.3~
  cleanup_task_memory@Base 4.3~
  csv_parse@Base 4.3~
- do_mem_fastpath@Base 4.3~
  ea_async_io@Base 4.3~
  ea_async_io_harvest@Base 4.3~
  ea_async_io_schedule@Base 4.3~
@@ -138,6 +136,7 @@ libarkdb-0.so cxlflash #MINVER#
  ea_read@Base 4.3~
  ea_resize@Base 4.3~
  ea_write@Base 4.3~
+ get_task_state@Base 5.0~
  hash_free@Base 4.3~
  hash_hash@Base 4.3~
  hash_new@Base 4.3~
@@ -150,7 +149,6 @@ libarkdb-0.so cxlflash #MINVER#
  ht_pos@Base 4.3~
  ht_set@Base 4.3~
  ht_vldp@Base 4.3~
- init_task_state@Base 4.3~
  iv_delete@Base 4.3~
  iv_get@Base 4.3~
  iv_new@Base 4.3~
@@ -193,7 +191,7 @@ libarkdb-0.so cxlflash #MINVER#
  vi_dec64@Base 4.3~
  vi_enc64@Base 4.3~
  x@Base 4.3~
-libcflsh_block-0.so cxlflash #MINVER#
+libcflsh_block-0.so libcxlflash0 #MINVER#
  cblk_aread@Base 4.3~
  cblk_aresult@Base 4.3~
  cblk_aunmap@Base 4.3~
@@ -233,7 +231,7 @@ libcflsh_block-0.so cxlflash #MINVER#
  cblk_term@Base 4.3~
  cblk_unmap@Base 4.3~
  cblk_write@Base 4.3~
-libcflshcom-0.so cxlflash #MINVER#
+libcflshcom-0.so libcxlflash0 #MINVER#
  cflash_build_scsi_inquiry@Base 4.3~
  cflash_build_scsi_mode_select_10@Base 4.3~
  cflash_build_scsi_mode_sense_10@Base 4.3~
@@ -248,7 +246,7 @@ libcflshcom-0.so cxlflash #MINVER#
  cflash_process_scsi_report_luns@Base 4.3~
  dumppage@Base 4.3~
  hexdump@Base 4.3~
-libprov-0.so cxlflash #MINVER#
+libprov-0.so libcxlflash0 #MINVER#
  g_traceE@Base 4.3~
  g_traceF@Base 4.3~
  g_traceI@Base 4.3~

@@ -57,8 +57,9 @@ extern void *blk_fvt_comp_data_buf;
 #define MAX_OPENS        512
 #define MAX_LUNS         512
 #define MAX_NUM_THREADS  4096
+#define MAX_NUM_CMDS     512   // max cmds to use in various tests
+#define MAX_NUM_REQS     8192  // max according to cflash_block_internal.h
 #define BLK_FVT_BUFSIZE  4096
-#define NUM_LIST_IO      500
 #define TST_SYNC_IO_ONLY 0x0800000
 #define TST_UNMAP        0x0400000
 #define FILESZ           4096*4096*64

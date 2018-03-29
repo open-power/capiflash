@@ -77,10 +77,10 @@ configure:
 installsb: default
 ifneq ($(CXLFLASH_ALL),no)
 	${MAKE} -j10 test_pass
-	${MAKE} install_code
 	${MAKE} install_image
 	${MAKE} install_test
 endif
+	${MAKE} install_code
 	@echo ""
 	@echo "INSTALLing from $(SURELOCKROOT)"
 	@sudo -E $(SURELOCKROOT)/src/build/install/resources/cflash_installsb $(SURELOCKROOT)
@@ -106,8 +106,8 @@ $(shell mkdir -p ${SURELOCKROOT}/obj/tests)
 endif
 
 #setup package version
-VERSIONMAJOR=4
-VERSIONMINOR=3
+VERSIONMAJOR=5
+VERSIONMINOR=0
 SOVER=-0
 
 FS=$(findstring surelock-sw, ${SURELOCKROOT})

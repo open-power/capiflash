@@ -1515,7 +1515,6 @@ int test_dcud_error_ioctl(int flag)  // DK_CAPI_USER_DIRECT  error path
 int test_dcuv_ioctl(int flag)  //  func@DK_CAPI_USER_VIRTUAL
 {
     int rc,i,j;
-    //int max_lun_size;
     struct ctx u_ctx;
     struct ctx *p_ctx = &u_ctx;
     pid = getpid();
@@ -1591,20 +1590,25 @@ int test_dcuv_ioctl(int flag)  //  func@DK_CAPI_USER_VIRTUAL
             rc = compare_size(p_ctx->last_lba, p_ctx->lun_size-1);
             CHECK_RC(rc, "ERROR: last_lba check failed");
 
-            p_ctx->lun_size = p_ctx->last_phys_lba + 1 - NUM_BLOCKS;
+
+            p_ctx->lun_size = p_ctx->last_phys_lba + 1;
             rc= ioctl_dk_capi_uvirtual(p_ctx);
             CHECK_RC(rc, "DK_CAPI_USER_VIRTUAL failed");
-            rc = compare_size(p_ctx->last_lba, p_ctx->lun_size-1);
+            rc = compare_size(p_ctx->last_lba+1, MASK_256MB(p_ctx->lun_size)-NUM_BLOCKS);
             CHECK_RC(rc, "ERROR: last_lba check failed");
 
             break;
         case 5: // TCN@7.1.50
             //TEST_DCUV_VLUN_MAX_SIZE
 
-            p_ctx->lun_size = p_ctx->last_phys_lba + 1;// max. no. block in hdisk
+            p_ctx->lun_size = p_ctx->last_phys_lba + 1;// max block# in hdisk
             rc = ioctl_dk_capi_uvirtual(p_ctx);
             CHECK_RC(rc, "DK_CAPI_USER_VIRTUAL failed");
-            rc = compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
+	    if (isGTPlusDisk( p_ctx->dev ) == TRUE)
+               rc = compare_size(p_ctx->last_lba+1, MASK_256MB(p_ctx->last_phys_lba));
+	    else
+	       rc = compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
+
             CHECK_RC(rc, "ERROR: last_lba check failed");
             break;
         case 6: // TCN@7.1.52
@@ -1664,8 +1668,16 @@ int test_dcuv_ioctl(int flag)  //  func@DK_CAPI_USER_VIRTUAL
                 p_ctx->lun_size = p_ctx->last_phys_lba + 1;
                 rc=ioctl_dk_capi_uvirtual(p_ctx);
                 CHECK_RC(rc, "DK_CAPI_USER_VIRTUAL failed");
-                rc = compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
-                CHECK_RC(rc, "ERROR: last_lba check failed");
+		if ( TRUE == isGTPlusDisk( p_ctx->dev ))
+		{
+                   rc = compare_size(p_ctx->last_lba+1, MASK_256MB(p_ctx->last_phys_lba));
+                   CHECK_RC(rc, "ERROR: last_lba check failed");
+		}
+		else
+		{	
+                   rc = compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
+		   CHECK_RC(rc, "ERROR: last_lba check failed");
+		}
                 rc = ioctl_dk_capi_release(p_ctx);
                 CHECK_RC(rc, "DK_CAPI_RELEASE failed");
 
@@ -2346,7 +2358,10 @@ int test_dcvr_ioctl( int flag ) // func@DK_CAPI_VLUN_RESIZE
             new_nlba = p_ctx->last_phys_lba; //total no. of blocks in hdisk
             rc = vlun_resize(p_ctx, new_nlba);
             CHECK_RC(rc, "vlun_resize failed");
-            rc=compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
+	    if ( TRUE == isGTPlusDisk( p_ctx->dev ))
+               rc=compare_size(p_ctx->last_lba+1, MASK_256MB(p_ctx->last_phys_lba));
+	    else
+	       rc=compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
             break;
 
         case 6: //TCN@7.1.70
@@ -2364,15 +2379,18 @@ int test_dcvr_ioctl( int flag ) // func@DK_CAPI_VLUN_RESIZE
 
         case 7: //TCN@7.1.71
             new_nlba = p_ctx->last_phys_lba + 1; //total size of disk
+            new_nlba = MASK_256MB(new_nlba);
             rc=create_resource(p_ctx, new_nlba, DK_UVF_ALL_PATHS, LUN_VIRTUAL);
             CHECK_RC(rc, "create LUN_VIRTUAL failed");
-            rc=compare_size(p_ctx->last_lba, new_nlba-1);
+            rc=compare_size(p_ctx->last_lba+1, new_nlba);
             CHECK_RC(rc, "size compare failed");
+
+            new_nlba -= p_ctx->chunk_size; //decreasing in mutliples of 256 Mb
             while ( new_nlba >= p_ctx->chunk_size)
             {
                 rc = vlun_resize(p_ctx, new_nlba);
                 CHECK_RC(rc, "vlun_resize failed");
-                rc=compare_size(p_ctx->last_lba, new_nlba-1);
+                rc=compare_size(p_ctx->last_lba+1, new_nlba);
                 new_nlba -= p_ctx->chunk_size; //decreasing in mutliples of 256 Mb
                 if (rc)break;
             }
@@ -2404,7 +2422,10 @@ int test_dcvr_ioctl( int flag ) // func@DK_CAPI_VLUN_RESIZE
             CHECK_RC(rc, "create LUN_VIRTUAL failed");
             rc = vlun_resize(p_ctx, p_ctx->last_phys_lba+1);
             CHECK_RC(rc, "vlun_resize failed");
-            rc=compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
+	    if ( isGTPlusDisk( p_ctx->dev ) == TRUE )
+               rc=compare_size(p_ctx->last_lba+1, MASK_256MB(p_ctx->last_phys_lba));
+	    else
+	       rc=compare_size(p_ctx->last_lba,p_ctx->last_phys_lba);
             CHECK_RC(rc, "size compare failed");
             chunk = p_ctx->last_lba/p_ctx->chunk_size;
             for (i=0; i<100; i++)
@@ -2420,7 +2441,12 @@ int test_dcvr_ioctl( int flag ) // func@DK_CAPI_VLUN_RESIZE
             nlba = p_ctx->last_phys_lba+1;
             rc=create_resource(p_ctx, nlba, DK_UVF_ALL_PATHS, LUN_VIRTUAL);
             CHECK_RC(rc, "create LUN_VIRTUAL failed");
-            rc=compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
+
+	    if ( isGTPlusDisk( p_ctx->dev ) == TRUE )
+               rc=compare_size(p_ctx->last_lba+1, MASK_256MB(p_ctx->last_phys_lba));
+	    else
+	       rc=compare_size(p_ctx->last_lba,p_ctx->last_phys_lba);
+
             CHECK_RC(rc, "size compare failed");
             rc = vlun_resize(p_ctx,0);
             CHECK_RC(rc, "vlun_resize failed");
@@ -2500,8 +2526,12 @@ int test_dcvr_error_ioctl( int flag ) // func@DK_CAPI_VLUN_RESIZE error path
                 CHECK_RC(1, "vlun_resize did not fail");
 #else
             CHECK_RC(rc, "vlun_resize failed");
-            rc=compare_size(p_ctx->last_lba, p_ctx->last_phys_lba);
-            CHECK_RC(rc, "size compare failed");
+	    if ( isGTPlusDisk( p_ctx->dev ) == TRUE )
+
+                rc=compare_size(p_ctx->last_lba+1, MASK_256MB(p_ctx->last_phys_lba));
+	    else 
+	        rc=compare_size(p_ctx->last_lba, p_ctx->last_phys_lba); 
+                CHECK_RC(rc, "size compare failed");
 #endif
             break;
         case 7: //TCN@7.1.69
@@ -2523,7 +2553,7 @@ int test_dcvr_error_ioctl( int flag ) // func@DK_CAPI_VLUN_RESIZE error path
                 CHECK_RC(1, "create LUN_VIRTUAL failed");
 #endif
             // 4*nlba is used up already in 4 vLuns
-            new_nlba = p_ctx->last_phys_lba + 1 - 4*nlba ;
+            new_nlba = MASK_256MB(p_ctx->last_phys_lba) - 4*nlba ;
             rc = vlun_resize(p_ctx, new_nlba);
             CHECK_RC(rc, "create LUN_VIRTUAL failed");
 

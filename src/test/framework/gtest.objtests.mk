@@ -35,7 +35,7 @@ else ifneq ($(wildcard /usr/src/gtest),)
   GTESTDIR=/usr/src/gtest
   GTESTINC=/usr/include
 endif
-CPPFLAGS += -isystem $(GTESTINC) -fPIE
+CPPFLAGS += -isystem -I$(GTESTINC) -fPIE
 
 else
 
@@ -52,19 +52,15 @@ else ifneq ($(wildcard ${ROOTPATH}/src/test/framework/googletest/googletest),)
   GTESTDIR=${ROOTPATH}/src/test/framework/googletest/googletest
   GTESTINC=${GTESTDIR}/include
 endif
-CPPFLAGS += -DOLD_ANSIC_AIX_VERSION -I $(GTEST_DIR)/include
+CPPFLAGS += -DOLD_ANSIC_AIX_VERSION -I$(GTEST_DIR)/include
 
 endif
-
-# All Google Test headers.  Usually you shouldn't change this
-# definition.
-GTEST_HEADERS = $(GTESTINC)/gtest/internal/*.h
 
 # Builds gtest.a and gtest_main.a.
 
 # Usually you shouldn't tweak such internal variables, indicated by a
 # trailing _.
-GTEST_SRCS_ = $(GTEST_DIR)/src/*.cc $(GTEST_DIR)/src/*.h $(GTEST_HEADERS)
+GTEST_SRCS_ = $(GTEST_DIR)/src/*.cc $(GTEST_DIR)/src/*.h
 
 # For simplicity and to avoid depending on Google Test's
 # implementation details, the dependencies specified below are

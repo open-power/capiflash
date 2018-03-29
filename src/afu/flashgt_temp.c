@@ -66,13 +66,14 @@ int main (int argc, char *argv[])
     exit(-1);
   }
 
-  int temp,vendor,device;
+  int vendor,device;
+  uint32_t temp;
   lseek(CFG, 0, SEEK_SET);
   read(CFG, &temp, 4);
   vendor = temp & 0xFFFF;
   device = (temp >> 16) & 0xFFFF;  
   // printf("Device ID: %04X\n", device);
-  //printf("Vendor ID: %04X\n", vendor);
+  // printf("Vendor ID: %04X\n", vendor);
 
   if ( (vendor != 0x1014) || (( device != 0x0477) && (device != 0x04cf) && (device != 0x0601) && (device != 0x0628))) {
 	printf("Unknown Vendor or Device ID\n");
@@ -82,31 +83,64 @@ int main (int argc, char *argv[])
   uint64_t mmio_ptmon_addr = 0x0000000000000138;
   lseek(CFG, 0x404, SEEK_SET);
   read(CFG, &temp,4);
-  //printf("  VSEC Length/VSEC Rev/VSEC ID: 0x%08X\n", temp);
+  // printf("  VSEC Length/VSEC Rev/VSEC ID: 0x%08X\n", temp);
  
   // Set stdout to autoflush
   setvbuf(stdout, NULL, _IONBF, 0);
 
-// -------------------------------------------------------------------------------
-// MMIOs to UCD
-// -------------------------------------------------------------------------------
-uint64_t mmio_write_data = 0xFFFFFFFFFFFFFFFF;
-uint64_t mmio_read_data = 0x0;
-uint8_t temperature = 0x00;
-float temperature2 = 0;
+  uint64_t mmio_write_data = 0xFFFFFFFFFFFFFFFF;
+  uint64_t mmio_read_data = 0x0;
+  uint8_t temperature = 0x00;
+  float temperature2 = 0;
 
-  //printf("Enabling Temperature Monitor\n");
-  mmio_write(bar2,mmio_ptmon_addr,mmio_write_data);
+  // PSL temperature monitor is implementation specific
+  // PSL8 uses an mmio register
+  // PSL9 does not define this register.  For FlashGT+ only
+  // this register is implemented as a vsec reserved register
+  // using the same format as the PSL8 mmio register
+  // offset 0x30: bytes 4-7 = power_trip(8b), reserved (6b), monitor_enable, power_trip_enable, power measurement 8.8fmt (16b)
+  // offset 0x34: bytes 0-3 = temp_trip(8b), reserved (7b), temp_trip_enable, temperature measurement (16b)
+  if( device == 0x0628 ) {
+    // enable temp monitor
+    temp = 0xFFFFFFFF;
+    lseek(CFG,0x434,SEEK_SET);  
+    write(CFG,&temp,4);
+    lseek(CFG,0x430,SEEK_SET);
+    write(CFG,&temp,4);
+  
+    lseek(CFG,0x430,SEEK_SET);
+    read(CFG,&temp,4);
+    // printf("read VSEC.0x30.L = %0x\n",temp);
+    mmio_read_data = (uint64_t)temp;
 
-  mmio_read_data = mmio_read(bar2,mmio_ptmon_addr);
-  //printf("PTMON data is %016llx \n", mmio_read_data);
+    lseek(CFG,0x434,SEEK_SET);
+    read(CFG,&temp,4);
+    // printf("read VSEC.0x34.L = %0x\n",temp);
+    mmio_read_data |= ((uint64_t)temp)<<32;
+  
+  } else {
+    //printf("Enabling Temperature Monitor\n");
+    mmio_write(bar2,mmio_ptmon_addr,mmio_write_data);
+    mmio_read_data = mmio_read(bar2,mmio_ptmon_addr);
+  }
+
+  // printf("PTMON data is %016llx \n", mmio_read_data);
   temperature = (mmio_read_data >> 40);//16 bit mmio field is 8.8 format. Get 8 bit integer portion here.
   temperature2 = temperature + ((mmio_read_data << 24) >> 56)/256.00;//Add 8 bit unsigned integer portion to 8 bit decimal portion.
   printf("FPGA Temperature is %8.8f degrees Celsius\n", temperature2);
 
-  //printf("Disabling Temperature Monitor\n");
-  mmio_write_data = 0x0000000000000000;
-  mmio_write(bar2,mmio_ptmon_addr,mmio_write_data);
+  if( device == 0x0628 ) {
+   // disable temp monitor
+   temp = 0x00000000;
+   lseek(CFG,0x430,SEEK_SET);
+   write(CFG,&temp,4);
+   lseek(CFG,0x434,SEEK_SET);
+   write(CFG,&temp,4);
+  } else {
+    //printf("Disabling Temperature Monitor\n");
+    mmio_write_data = 0x0000000000000000;
+    mmio_write(bar2,mmio_ptmon_addr,mmio_write_data);
+  }
 
   close(CFG);
   return 0;

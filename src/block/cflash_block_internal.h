@@ -74,6 +74,8 @@
 #include <cflash_mmio.h>
 #include <cflash_scsi_user.h>
 #include <trace_log.h>
+#include <perf_trace.h>
+#include <cflash_ptrc_ids.h>
 #include <cflash_eras.h>
 #ifdef _OS_INTERNAL
 #include <sys/capiblock.h>
@@ -93,6 +95,7 @@ typedef uint64_t dev64_t;
 #define TRUE 1
 #endif
 
+#define CBLK_PTRC_SLOTS 16
 
 /************************************************************************/
 /* Ifdefs for different block library usage models                      */
@@ -191,9 +194,9 @@ typedef uint64_t dev64_t;
 
 #define CBLK_DCBZ_CACHE_LINE_SZ       128   /* Size of cacheline assumed by dcbz */
 
-#define CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES 50000 /* Number of times to check for */
+#define CFLASH_BLOCK_MAX_WAIT_ROOM_RETRIES 50000 /* Number of times to check for   */
 					      /* command room before giving up   */
-#define CFLASH_BLOCK_DELAY_ROOM   100         /* Number of microseconds to delay */
+#define CFLASH_BLOCK_DELAY_ROOM   100        /* Number of microseconds to delay */
 					      /* while waiting for command room  */
 
 #define CFLASH_BLOCK_MAX_WAIT_RRQ_RETRIES 10  /* Number of times to check for    */
@@ -285,6 +288,10 @@ extern uint64_t cblk_lun_id;
 /************************************************************************/
 extern char  *cblk_log_filename;
 extern int cblk_log_verbosity;
+extern int cblk_latency_verbosity;
+extern int cblk_ptrc_verbosity;
+extern int cblk_ptrc_per_chunk;
+extern int cblk_ptrc_per_cmd;
 extern FILE *cblk_logfp;
 extern FILE *cblk_dumpfp;
 extern int cblk_dump_level;
@@ -328,6 +335,7 @@ inline int pthread_getthreadid_np(void)
 #define CFLSH_BLK_GETTID     (pthread_getthreadid_np()) 
 #else
 #define CFLSH_BLK_GETTID     (syscall(SYS_gettid))
+#define CFLSH_BLK_CPUID      (syscall(SYS_getcpu))
 #endif /* ! AIX */
 
 /*
@@ -416,13 +424,21 @@ do {                                                                    \
 
 #ifdef _AIX
 #define CBLK_LWSYNC()        asm volatile ("lwsync")
+#define CBLK_SYNC()          asm volatile ("sync")
+#define CBLK_EIEIO()         asm volatile ("eieio")
 #elif _MACOSX
 #define CBLK_LWSYNC()        asm volatile ("mfence")
+#define CBLK_SYNC()
+#define CBLK_EIEIO()
 #else
 #ifndef TARGET_ARCH_x86_64
 #define CBLK_LWSYNC()        __asm__ __volatile__ ("lwsync")
+#define CBLK_SYNC()          __asm__ __volatile__ ("sync")
+#define CBLK_EIEIO()         __asm__ __volatile__ ("eieio")
 #else
 #define CBLK_LWSYNC()
+#define CBLK_SYNC()
+#define CBLK_EIEIO()
 #endif
 #endif 
 
@@ -892,8 +908,6 @@ do {                                                            \
 
 #endif /* !_ERROR_INTR_MODE */
 
-#define CFLASH_DELAY_LOOP_CNT 50000000
-
 #define CFLASH_DELAY_NO_CMD_INTRPT  1  /* Time in microseconds to delay */
 					/* between checking RRQ when     */
 					/* running without command       */
@@ -1082,9 +1096,10 @@ typedef struct cflsh_cmd_info_s {
 				 /* processed this command     */
 #define CFLSH_CMD_INFO_UTAG 0x40   /* user_tag field is valid.   */
 #define CFLSH_CMD_INFO_USTAT 0x80  /* User status field is valid */
-    time_t cmd_time;             /* Time this command was      */
-				 /* created                    */
-    uint64_t stime;              /* ticks of cmd start         */
+    uint64_t orig_stime;         /* ticks this cmd was created */
+    uint64_t stime;              /* ticks of last cmd start    */
+    uint64_t spolltime;          /* ticks since poll start     */
+    uint64_t lpolltime;          /* ticks since last poll      */
     int    user_tag;             /* User defined tag for this  */
 				 /* command.                   */
     int    index;                /* index of command           */
@@ -1130,7 +1145,8 @@ typedef struct cflsh_cmd_info_s {
     struct cflsh_cmd_info_s *complete_next;/* Next completed command    */
     struct cflsh_cmd_info_s *complete_prev;/* Prevous completed command */
     struct cflsh_chunk_s    *chunk;/* Chunk associated with    */
-				   /* command.                 */
+				 /* command.                   */
+    PerfTrace_t ptrc;            /* anchor for perf trace      */
     eye_catch4b_t  eyec;         /* Eye catcher                */
 
 } cflsh_cmd_info_t;
@@ -1497,11 +1513,20 @@ typedef struct cflsh_chunk_s {
 
     uint32_t  recov_thread_id;   /* Unique thread id doing     */
 				 /* AFU recovery               */
-    uint64_t ptime;              /* track when to trace lat    */
+    uint64_t ktime;              /* ticks since last kernel poll*/
+    uint64_t ltime;              /* track when to trace lat    */
     uint64_t rcmd;               /* #cmds in read lat calc     */
     uint64_t wcmd;               /* #cmds in write lat calc    */
     uint64_t rlat;               /* total rd latency in ticks  */
     uint64_t wlat;               /* total wr latency in ticks  */
+    uint32_t rlat_avg;           /* #rd cmds with avg lat      */
+    uint32_t rlat_mid;           /* #rd cmds with mid lat      */
+    uint32_t rlat_hi;            /* #rd cmds with high lat     */
+    uint32_t wlat_avg;           /* #wr cmds with avg lat      */
+    uint32_t wlat_mid;           /* #wr cmds with mid lat      */
+    uint32_t wlat_hi;            /* #wr cmds with high lat     */
+
+    PerfTrace_t ptrc;            /* anchor for latency ptrc    */
 
     eye_catch4b_t  eyec;         /* Eye catcher                */
 
@@ -1562,8 +1587,10 @@ typedef struct cflsh_block_s {
 				      /* milliseconds.               */
 #define CFLSH_G_TO_USEC      0x2      /* Time out is expressed in    */
 				      /* microseconds.               */
+    int timeout_secs;                 /* Used for host-side command  */
+                                      /* timeout detection, in secs  */
     int timeout;                      /* Time out for IOARCBs using  */
-				      /* this library.               */
+                                      /* this library.               */
     int num_active_chunks;            /* Number of active chunks     */
     int num_max_active_chunks;        /* Maximum number of active    */
 				      /* chunks seen at a time.      */
@@ -1609,7 +1636,10 @@ typedef struct cflsh_block_s {
 
 } cflsh_block_t;
 
-extern cflsh_block_t cflsh_blk;
+extern cflsh_block_t    cflsh_blk;
+extern pthread_mutex_t  cblk_ptrc_slock;
+extern PerfTrace_t      cblk_ptrc_save[];
+extern int              cblk_ptrc_high_latency;
 
 #define CFLASH_WAIT_FREE_CMD  1     /* Wait for a free command      */
 

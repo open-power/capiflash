@@ -40,6 +40,10 @@ static int cflsh_blk_lib_init = 0;
 #endif /* !_AIX */
 
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 EA *ea_new(const char *path, uint64_t bsize, int basyncs,
            uint64_t *size, uint64_t *bcount, uint64_t vlun)
 {
@@ -100,7 +104,9 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         ea->st_memory = store;
         if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}
         else                                 goto error_exit;
-        ea->unmap     = 1;
+#ifdef MEM_UNMAP
+        ea->unmap=1;
+#endif
     }
     else
     {
@@ -202,6 +208,9 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         ea->unmap = attrs.flags1 & CFLSH_ATTR_UNMAP;
     }
 
+    /* disable unmap */
+    ea->unmap=0;
+
     KV_TRC(pAT, "path(%s) id:%d bsize:%ld size:%ld bcount:%ld unmap:%ld",
            path, ea->st_flash, bsize, *size, *bcount, ea->unmap);
     goto done;
@@ -215,6 +224,10 @@ done:
     return ea;
 }
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
 {
   uint64_t size = bcount * bsize;
@@ -267,7 +280,12 @@ int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
   return rc;
 }
 
-int ea_read(EA *ea, uint64_t lba, void *dst) {
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int ea_read(EA *ea, uint64_t lba, void *dst)
+{
   uint8_t *src = NULL;
   int      rc  = 0;
 
@@ -286,7 +304,12 @@ int ea_read(EA *ea, uint64_t lba, void *dst) {
   return rc;
 }
 
-int ea_write(EA *ea, uint64_t lba, void *src) {
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int ea_write(EA *ea, uint64_t lba, void *src)
+{
   uint8_t *dst = NULL;
   int      rc  = 0;
 
@@ -305,6 +328,10 @@ int ea_write(EA *ea, uint64_t lba, void *src) {
   return rc;
 }
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, int nthrs)
 {
   int64_t  i       = 0;
@@ -355,7 +382,7 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
   {
     // divide up the cmd slots among
     // the threads and go 3 less
-    max_ops = (ARK_EA_BLK_ASYNC_CMDS / nthrs) - 3;
+    max_ops = (ARK_MAX_BASYNCS / nthrs) - 3;
 
     // Loop through the block list to issue the IO
     while ((comps < len) && (rc == 0))
@@ -458,11 +485,17 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
   return rc;
 }
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
 int ea_delete(EA *ea)
 {
     int rc = 0;
 
-    if ( ea->st_type == EA_STORE_TYPE_MEMORY )
+    if (!ea) {return 0;}
+
+    if (ea->st_type == EA_STORE_TYPE_MEMORY)
     {
         KV_TRC(pAT, "free ea %p ea->st_memory %p", ea, ea->st_memory);
         // Simple free the block of store
@@ -486,4 +519,3 @@ int ea_delete(EA *ea)
 
     return rc;
 }
-

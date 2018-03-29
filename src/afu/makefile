@@ -44,7 +44,8 @@ ifneq ($(UNAME),AIX)
 ifneq ($(TARGET_PLATFORM),x86_64)
 MODULE    = afu
 OBJS      = afu.o capi_dev_nodes.o
-BTESTS   += cxl_afu_dump cxl_afu_status cxl_afu_inject flashgt_vpd_access flashgt_temp
+BTESTS   += cxl_afu_dump cxl_afu_status cxl_afu_inject flashgt_vpd_access \
+flashgt_temp flashgtp_vpd_dump flashgtp_vpd_write
 endif
 endif
 

@@ -41,6 +41,8 @@ my $cfg_devid;
 my @stime;
 my $time;
 my $sleep=2;
+my $nlines=0;
+my $cline=0;
 my $secs;
 my $long;
 my $prthelp;
@@ -50,6 +52,7 @@ my $tiops;
 my $rd_iops;
 my $t_rd_iops;
 my $ratio;
+my $stop;
 
 #-------------------------------------------------------------------------------
 # print usage
@@ -60,6 +63,7 @@ sub usage()
   print "Usage: [-l] [-s secs]\n";
   print "    -l             : histogram format           \n";
   print "    -s             : update interval seconds    \n";
+  print "    -n             : number of histogram lines  \n";
   print "    -h or --help   : Help - Print this message  \n\n";
   exit 0;
 }
@@ -77,6 +81,7 @@ if (@ARGV==0) {usage();}
 
 if (! GetOptions ("long"       => \$long,
                   "s=i"        => \$sleep,
+                  "n=i"        => \$nlines,
                   "h|help!"    => \$prthelp,
                   ))
 {
@@ -118,6 +123,8 @@ while (1)
 
     if (($vendor eq "0x1014") && ($device eq "0x0601" || $device eq "0x0628"))
     {
+      my $rds=0;
+      my $wrs=0;
       my @dds = split /\//, $file;
       $adap = pop @dds;
 
@@ -125,11 +132,17 @@ while (1)
       {
         my $devstr=`ls -d /sys/devices/*/*/$adap/*/*/host*/target*:$i:*/*:*:*:*/scsi_generic/* 2>/dev/null`;
         if ($? != 0) {next;}
+        chomp $devstr;
         my @sdev=split /\//, $devstr;
-        $devs[$di]=$sdev[12];
+        $devs[$di]=$sdev[-1];
         chomp $devs[$di];
-        my $rds=`sg_logs /dev/$devs[$di] -a|grep "read commands ="|awk '{print \$6}'`;
-        my $wrs=`sg_logs /dev/$devs[$di] -a|grep "write commands ="|grep -v plus|awk '{print \$6}'`;
+        my $output=`sg_logs /dev/$devs[$di] -a 2>/dev/null`;
+        if ($? != 0) {next;}
+        foreach my $line (split /\n/ ,$output)
+        {
+          if ($line =~ /of read commands = /)  {$rds=(split " = ",$line)[-1]; next;}
+          if ($line =~ /of write commands = /) {$wrs=(split " = ",$line)[-1]; next;}
+        }
         chomp $rds;
         chomp $wrs;
         $last[$di]=$rds+$wrs;
@@ -146,6 +159,10 @@ while (1)
   while (1)
   {
     my $cnt;
+    my $str;
+    my $tstr;
+    my $rds=0;
+    my $wrs=0;
 
     sleep $sleep;
 
@@ -155,10 +172,13 @@ while (1)
     $tiops=0; $t_rd_iops=0; $ratio=0;
     for (my $i=0; $i<$di; $i++)
     {
-      `sg_logs /dev/$devs[$i] -a >/dev/null 2>&1`;
-      if ($? !=0) {next;}
-      my $rds=`sg_logs /dev/$devs[$i] -a|grep "read commands ="|awk '{print \$6}'`;
-      my $wrs=`sg_logs /dev/$devs[$i] -a|grep "write commands ="|grep -v plus|awk '{print \$6}'`;
+      my $output=`sg_logs /dev/$devs[$i] -a 2>/dev/null`;
+      if ($? != 0) {next;}
+      foreach my $line (split /\n/ ,$output)
+      {
+        if ($line =~ /of read commands = /)  {$rds=(split " = ",$line)[-1]; next;}
+        if ($line =~ /of write commands = /) {$wrs=(split " = ",$line)[-1]; next;}
+      }
       $secs=time-$stime[$i];
       $stime[$i]=time;
       chomp $rds;
@@ -170,17 +190,37 @@ while (1)
       $t_rd_iops+=$rd_iops;
       $last[$i]=$cnt;
       $last_rds[$i]=$rds;
-      my $str=sprintf(" %s:%-7d", $devs[$i], $iops);
+      if ($iops > 1024)
+      {
+        $iops /= 1024;
+        $str=sprintf(" %s:%4dk", $devs[$i], $iops);
+      }
+      else
+      {
+        $str=sprintf(" %s:%4d ", $devs[$i], $iops);
+      }
       $pstr.=$str;
+      if ($i < $di-1) {$pstr .= " | ";}
     }
     if ($t_rd_iops>0) {$ratio=$t_rd_iops/$tiops;}
     if ($tiops>0) {$ratio+=0.005;}
     $ratio*=100;
     $ratio=$ratio > 100 ? 100 : $ratio;
-    if ($long) {printf("%s   total:%-8d rds:%d%%\n",                   $pstr, $tiops, $ratio);}
-    else       {printf("%s   total:%-8d rds:%d%%                  \r", $pstr, $tiops, $ratio);}
+    if ($tiops > 1024)
+    {
+      $tiops /= 1024;
+      $tstr=sprintf("%4dk", $tiops);
+    }
+    else
+    {
+      $tstr=sprintf("%4d ", $tiops);
+    }
+    if ($long) {printf("$pstr | $tstr | rds:%d%%\n",                   $ratio);}
+    else       {printf("$pstr | $tstr | rds:%d%%                  \r", $ratio);}
 
     if ($di == 0) {last;}
+    if ($nlines && ++$cline == $nlines) {$stop=1; last;}
   }
+  if ($stop) {last;}
 }
 

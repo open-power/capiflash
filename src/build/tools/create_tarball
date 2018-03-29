@@ -35,6 +35,20 @@ if [[ ! $PWD =~ surelock-sw &&-z $SURELOCKROOT ]]; then echo "source env.bash"; 
 source env.bash >/dev/null 2>&1
 cd $SURELOCKROOT
 
+distro_scrub()
+{
+  if [[ $CXLFLASH_ALL != yes ]]
+  then
+    rm src/build/install/resources/cxl_flash_vm
+    rm src/build/install/resources/flashgt_nvme_nsq
+    rm src/build/install/resources/flashgt_nvme_override
+    rm src/build/install/resources/psl_trace_dump*
+    rm src/build/install/resources/*.gz
+    rm src/build/install/resources/license/*.txt
+    rm -R src/test/framework
+  fi
+}
+
 if [[ $1 =~ rpm ]]; then rpm=1; else deb=1; fi
 
 ITER=1
@@ -76,12 +90,15 @@ then
   cp -R debian ${BDIR}/$pkg
   cd ${BDIR}/$pkg
   if [[ -e debian/changelog ]]; then rm -f debian/changelog; fi
-  dch --create --distribution xenial --package cxlflash -v $ver-${ITER} "latest update"
+  distro=$(cat /etc/os-release 2>/dev/null | grep VERSION_CODENAME|awk -F= '{print $2}')
+  dch --create --distribution $distro --package cxlflash -v $ver-${ITER} "latest update"
   if [[ $? -ne 0 ]]; then echo "create changelog failed"; exit -1; fi
   if [[ $CXLFLASH_ALL = yes ]]
   then
     cat debian/control.add >> debian/control
     sed -i '/SURELOCKROOT/a export CXLFLASH_ALL=yes' debian/rules
+  else
+    distro_scrub
   fi
 elif [[ $rpm ]]
 then

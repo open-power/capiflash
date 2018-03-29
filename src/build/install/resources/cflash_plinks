@@ -33,10 +33,14 @@ if [[ $1 =~ help || $1 = "-h" ]]
 then
   echo "cflash_plinks  [<prefix>] [-v] [-vv] [-r <parm>] [-unused] [-rmunused] [-rmall]"
   exit 0
-elif [[ $1 =~ unused ]]
+fi
+
+if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
+
+if [[ $1 =~ unused ]]
 then
   udevadm control --reload-rules && udevadm trigger
-  devs="$(cat $rules|grep KERNEL|grep KERNELS|grep SLOT|grep wwid|grep SYMLINK|awk '{print $5}'|grep SYMLINK|awk -F"SYMLINK" '{print $2}'|sed 's/+=//;s/"//g')"
+  devs="$(cat $rules 2>/dev/null|grep KERNEL|grep KERNELS|grep SLOT|grep wwid|grep SYMLINK|awk '{print $5}'|grep SYMLINK|awk -F"SYMLINK" '{print $2}'|sed 's/+=//;s/"//g')"
   for d in $devs
   do
     sdev=$(readlink /dev/$d)
@@ -78,7 +82,7 @@ fi
 
 udevadm control --reload-rules && udevadm trigger
 
-if [[ -z $(grep DRIVERS $rules|grep cxl|grep PROGRAM|grep SLOT) ]]
+if [[ -z $(grep DRIVERS $rules 2>/dev/null|grep cxl|grep PROGRAM|grep SLOT) ]]
 then
   echo 'DRIVERS=="cxl-pci", PROGRAM="/usr/bin/cflash_getslot %b", ENV{SLOT}="%c"' > $rules
 fi
@@ -93,6 +97,7 @@ do
   if [[ $vv ]]; then echo "Process Card $card"; fi
 
   out=$(echo "$fstatus" | grep $card| awk '{print $NF}')
+  if [[ ! $out =~ Slot && ! $out =~ -C ]]; then continue; fi
   if [[ $out =~ Slot ]]
   then
     slot=$(echo $out| sed 's/Slot//'| sed 's/^ *//;s/ *$//')
@@ -106,6 +111,7 @@ do
     if [[ $vv ]]; then echo "Process $dev"; fi
     fs=$(echo "$fstatus"|grep "$dev:")
 
+    unset wwid
     port=$(echo $fs|awk -F: '{print $3}'| sed 's/^ *//;s/ *$//')
     wwid=$(udevadm info --attribute-walk --name /dev/${dev} |grep "wwid")
     if [[ -z $wwid ]]; then continue; fi

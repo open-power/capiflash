@@ -24,33 +24,46 @@
 #
 # IBM_PROLOG_END_TAG
 
+usage()
+{
+  echo "Usage: /dev/sgX [/dev/sgX:/dev/sgY]";
+  exit 0;
+}
+
+if [[ -z $1 || $1 = "-h" || $1 =~ help ]]; then usage; fi
+
 dev=$1
+if [[ ! -z $2 ]]; then r0dev=$2; fi
 
 if [[ ! -e $dev || ! -e /dev/cxl ]]
 then
   echo "No capi-flash adapter found";
-  echo "  Usage: run_regression /dev/sgX"
-  exit -1;
+  usage;
 fi
+
+if [[ $(id -u) != 0 ]]; then echo "use sudo"; exit 1; fi
 
 set -o pipefail
 export PATH=$PATH:/usr/bin
-echo 10000000  > /sys/kernel/debug/powerpc/eeh_max_freezes
+echo 1000000  > /sys/kernel/debug/powerpc/eeh_max_freezes
 echo "module cxlflash +p" > /sys/kernel/debug/dynamic_debug/control
 unset FVT_EEH
 success=1
 
-#######################################################################################
-#determine distro
-#######################################################################################
-if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
-if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
-if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];          then redhat=1; fi
-if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]]; then VM=1;     fi
+if [[ $(cflash_devices -t 0628) =~ $dev ]]; then gtp=1; fi
+if [[ $(cflash_devices -t 0601) =~ $dev ]]; then gt=1;  fi
 
-#######################################################################################
+################################################################################
+# determine distro
+################################################################################
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];         then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];            then redhat=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Fedora ]];         then redhat=1; fi
+if [[ $(grep platform /proc/cpuinfo 2>/dev/null) =~ pSeries ]];then VM=1;     fi
+
+################################################################################
 # setup output dir/filename
-#######################################################################################
+################################################################################
 start=$(date +"%Y%m%d_%H%M")
 out=$start
 if [[ ! -z $USER ]]; then out+=_$USER; fi
@@ -59,67 +72,131 @@ dir=/var/log/cflash/regr
 if [[ ! -e /var/log/cflash/regr ]]; then mkdir -p $dir; fi
 out=$dir/$out
 
-#######################################################################################
-#run Block/KV to $dev
-#######################################################################################
-export FVT_DEV=$dev
-export FVT_DEV_PERSIST=$dev
+################################################################################
+do_block_fvt()
+{
+  unset parms
+  export FVT_DEV=$1
 
-run_block_fvt $parms | tee -a $out
-[[ $? -ne 0 ]] && success=0
+  if [[ -z $2 ]]; then parms=""; fi
+  run_block_fvt --gtest_filter=-*RAID0* | tee -a $out
 
-run_fvt_kv | tee -a $out
-[[ $? -ne 0 ]] && success=0
+  [[ $? -ne 0 ]] && success=0
 
-#######################################################################################
-#run KV to RAID0
-#######################################################################################
-export FVT_DEV=RAID0
-export FVT_DEV_PERSIST=RAID0
-run_fvt_kv | tee -a $out
-[[ $? -ne 0 ]] && success=0
+  export FVT_DEV_RAID0=$2
+  run_block_fvt --gtest_filter=*RAID0*
 
-#######################################################################################
-#run cflash to $dev
-#######################################################################################
-export FVT_DEV=$dev
-parms="--gtest_filter=-*ioarcb_invalid_flags:*E_test_vlun_max_transfer:*ioarcb_ea_null:*bad_ioasa_address"
-run_cflash_fvt $parms | tee -a $out
-[[ $? -ne 0 ]] && success=0
+  [[ $? -ne 0 ]] && success=0
+}
 
-#######################################################################################
-#run EEH tests for Block/KV
-#######################################################################################
-export FVT_EEH=1
-export FVT_DEV=$dev
-export FVT_DEV_PERSIST=$dev
-if [[ $redhat ]]
-then
-  parms="--gtest_filter=*multi*EEH"
-else
+################################################################################
+do_kv_fvt()
+{
+  unset parms
+  export FVT_DEV=$1
+  export FVT_DEV_PERSIST=$1
+
+  [[ $gtp ]] && parms="--gtest_filter=-*_fork_*"
+  run_fvt_kv $parms | tee -a $out
+  [[ $? -ne 0 ]] && success=0
+}
+
+################################################################################
+do_kv_raid0_fvt()
+{
+  unset parms
+  if [[ ! -z $1 ]]
+  then
+    export FVT_DEV=$1
+    export FVT_DEV_PERSIST=$1
+
+    [[ $gtp ]] && parms="--gtest_filter=-*_fork_*"
+    run_fvt_kv $parms | tee -a $out
+    [[ $? -ne 0 ]] && success=0
+  fi
+}
+
+################################################################################
+do_cflash_fvt()
+{
+  unset parms
+  export FVT_DEV=$1
+  if [[ $gtp ]]
+  then
+
+    parms="--gtest_filter=-*EEH*:*port_offonline_GT_plun:*spio_exit:*E_test_SPIO_RLS_DET"
+
+  elif [[ $gt ]]; then
+
+    parms="--gtest_filter=-*ioarcb_ea_null"
+
+  fi
+
+  run_cflash_fvt $parms | tee -a $out
+  [[ $? -ne 0 ]] && success=0
+}
+
+################################################################################
+do_eeh_fvt()
+{
+  unset parms
+  export FVT_EEH=1
+  export FVT_DEV=$1
+  export FVT_DEV_PERSIST=$1
+
   parms="--gtest_filter=*EEH"
-fi
-run_block_fvt $parms | tee -a $out
-[[ $? -ne 0 ]] && success=0
 
-run_fvt_kv --gtest_filter=*EEH* | tee -a $out
-[[ $? -ne 0 ]] && success=0
-unset FVT_EEH
+  run_fvt $parms | tee -a $out
+  [[ $? -ne 0 ]] && success=0
 
-#######################################################################################
-#run scripts to $dev
-#######################################################################################
-if [[ $(cflash_version) =~ missing ]]; then parms="--gtest_filter=-*CFLVER*"; fi
-run_fvt_scripts $parms | tee -a $out
-[[ $? -ne 0 ]] && success=0
+  unset FVT_EEH
 
-#######################################################################################
-#do an extended run of Block multi-vlun IO
-#######################################################################################
-export FVT_NUM_LOOPS=20
-export FVT_DEV=RAID0
-run_block_fvt --gtest_filter=*BLK_API_FVT_RAID0_multi_vlun_perf_test | tee -a $out
-[[ $? -ne 0 ]] && success=0
+  run_fvt_scripts --gtest_filter=*PERST* | tee -a $out
+  [[ $? -ne 0 ]] && success=0
+}
+
+################################################################################
+do_scripts_fvt()
+{
+  unset parms
+  export FVT_DEV=$1
+
+  parms="--gtest_filter=-*PERST*"
+
+  if [[ $(cflash_version) =~ missing ]]
+  then
+    parms="$parms:*CFLVER*"
+  fi
+
+  run_fvt_scripts $parms | tee -a $out
+  [[ $? -ne 0 ]] && success=0
+}
+
+################################################################################
+do_multi_vlun_io()
+{
+  unset parms
+  if [[ ! -z $1 ]]
+  then
+    export FVT_DEV=$1
+    export FVT_DEV_RAID0=$2
+    export FVT_NUM_LOOPS=20
+    parms="--gtest_filter=*BLK_API_FVT_RAID0_multi_vlun_perf_test"
+    run_block_fvt $parms | tee -a $out
+    [[ $? -ne 0 ]] && success=0
+  fi
+}
+
+################################################################################
+# M A I N
+################################################################################
+                   do_block_fvt     $dev $r0dev
+[[ -z $r0dev ]] && do_kv_fvt        $dev
+                   do_multi_vlun_io $dev $r0dev
+[[ $r0dev ]]    && do_kv_raid0_fvt  $r0dev
+                   do_cflash_fvt    $dev
+                   do_scripts_fvt   $dev
+                   do_eeh_fvt       $dev
 
 if [[ $success -eq 1 ]]
 then

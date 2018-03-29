@@ -26,7 +26,11 @@
 #define __EA_H__
 
 #include <stdint.h>
-#include <bl.h>
+#ifdef _OS_INTERNAL
+#include <sys/capiblock.h>
+#else
+#include <capiblock.h>
+#endif
 
 #define ARK_EA_READ  0
 #define ARK_EA_WRITE 1
@@ -42,12 +46,11 @@ typedef struct flash_cntrl
   char      *device;
 } flash_cntrl_t;
 
-typedef union _store_id {
+typedef union _store_id
+{
   uint8_t        *memory;
   flash_cntrl_t   flash;
 } store_id_t;
-
-#define ARK_EA_BLK_ASYNC_CMDS 4096
 
 typedef struct _ea
 {

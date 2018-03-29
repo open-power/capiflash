@@ -245,14 +245,14 @@ int cflash_process_scsi_inquiry_dev_id_page(void *inq_data,int inq_data_len,char
      * with the LUN.
      */
 
-    DEBUG_PRNT("%s:  at start of walk id desc, first at 0x%08X\n",
+    DEBUG_PRNT("%s:  at start of walk id desc, first at 0x%p\n",
         "sas_get_wwid",ucp);
-    DEBUG_PRNT("    and end_of_page is 0x%08X\n", end_of_page);
+    DEBUG_PRNT("    and end_of_page is 0x%p\n", end_of_page);
 
 
     while (!iddesc_p && (ucp < end_of_page)) {
 
-        DEBUG_PRNT("%s:  Looking at id_descriptor at 0x%08X\n",
+        DEBUG_PRNT("%s:  Looking at id_descriptor at 0x%p\n",
             "sas_get_wwid",
             ucp);
 
@@ -300,9 +300,6 @@ int cflash_process_scsi_inquiry_dev_id_page(void *inq_data,int inq_data_len,char
     
     if (iddesc_p) {
         /* Found a valid iddesc_p, update ww_id attribute with value */
-
-        DEBUG_PRNT("%s: updating %llx,%llx \n",
-                "sas_get_wwid", sid, lun);
 
         /*
          * Grab the id length.
@@ -425,7 +422,7 @@ int cflash_process_scsi_inquiry_dev_id_page(void *inq_data,int inq_data_len,char
                     memcpy((void *) &serial_no_64,
                         (void *) (iddesc_p +
                            CFLASH_INQ_DEVICEID_IDDESC_IDENT_OFFSET),
-                        (size_t) id_len);
+                        (size_t) sizeof(serial_no_64));
 
                     sprintf(wwid,"%016llx",serial_no_64);
                 }

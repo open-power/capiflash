@@ -33,3 +33,13 @@ unexport CUSTOMFLAGS
 
 %:
 	dh $@ --with=systemd
+
+override_dh_auto_install:
+	dh_auto_install
+	# We need to create symlinks for all the libraries we export for use
+	# in the -dev package, making sure developers by default build against
+	# the newest SOVER.
+	(cd $(CURDIR)/pkg/install_root/usr/lib/ && for i in *-*.so; do \
+		ln -sf $$i $${i%-*.so}.so; \
+	done)
+

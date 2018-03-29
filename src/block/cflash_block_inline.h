@@ -30,10 +30,93 @@
 
 #include "cflash_block_internal.h"
 #include "cflash_block_protos.h"
-#include <ticks.h>
 
+/*
+ * NAME:        PTRC_PSAVE_TO_SLOT
+ *
+ * FUNCTION: find a slot and save if unused or higher priority
+ *
+ */
+static inline void PTRC_PSAVE_TO_SLOT(PerfTrace_t *ptrc,
+                                      uint32_t     verbosity,
+                                      uint64_t     priority)
+{
+    int i=0;
+    pthread_mutex_lock(&cblk_ptrc_slock);
 
+    for (i=0; i<CBLK_PTRC_SLOTS; i++)
+    {
+        if (PTRC_PCOPY(ptrc,&cblk_ptrc_save[i],verbosity,priority)) {break;}
+    }
+    pthread_mutex_unlock(&cblk_ptrc_slock);
+}
 
+/*
+ * NAME:        CBLK_PTRC_SAVE_CMDS
+ *
+ * FUNCTION: write all cmd traces to a file, if they have trace data
+ *
+ */
+static inline void CBLK_PTRC_SAVE_CMDS(cflsh_chunk_t *chunk, uint32_t verbosity)
+{
+    int   i       = 0;
+    char  fn[128] = {0};
+
+    /* save all slots to a file */
+    for (i=0; i<chunk->num_cmds; i++)
+    {
+        sprintf(fn,"/tmp/ptrc.cnk%d.cmd%d", chunk->index, i);
+        PTRC_SAVE(&chunk->cmd_info[i].ptrc, verbosity, fn);
+    }
+}
+
+/*
+ * NAME:        CBLK_PTRC_SAVE_GLBS
+ *
+ * FUNCTION: write all save slots to a file, if they have trace data
+ *
+ */
+static inline void CBLK_PTRC_SAVE_GLBS(uint32_t verbosity)
+{
+    int   i       = 0;
+    char  fn[128] = {0};
+
+    for (i=0; i<CBLK_PTRC_SLOTS; i++)
+    {
+        if (cblk_ptrc_verbosity >= 9)
+        {
+            /* add ticks to fn so previously saved traces are not clobbered */
+            sprintf(fn, "/tmp/ptrc.glb%d.%ld", i,getticks());
+        }
+        else
+            {sprintf(fn, "/tmp/ptrc.glb%d", i);}
+        PTRC_SAVE(&cblk_ptrc_save[i], verbosity, fn);
+    }
+}
+
+/*
+ * NAME:        CBLK_CMD_TIMEOUT
+ *
+ * FUNCTION:    calcs if a command timed out
+ *
+ * INPUTS:
+ *              cmd
+ *
+ * RETURNS:
+ *             1 - cmd has timed out
+ *             0 - no timeout
+ */
+static inline int CBLK_CMD_TIMEOUT(cflsh_cmd_info_t *pcmd)
+{
+    uint32_t to = SDELTA(pcmd->stime, cflsh_blk.nspt);
+
+    if (to > cflsh_blk.timeout_secs)
+    {
+        PTRC(&pcmd->ptrc, 1, CBLK_CMD_TIMEDOUT, pcmd->chunk->index, pcmd->lba, to);
+        return 1;
+    }
+    return 0;
+}
 
 
 /*
@@ -2414,33 +2497,83 @@ static inline int CBLK_ISSUE_CMD(cflsh_chunk_t *chunk,
  *
  * RETURNS:
  */
-static inline void CBLK_IO_LATENCY(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd)
+static inline void CBLK_IO_LATENCY(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, int lat)
 {
-    /* calc and save r/w latency */
+    uint64_t          high = 0;
+    uint32_t          avg  = 0;
+
+    /* calc and save r/w latency stats */
     if (cmd->cmdi->flags & CFLSH_MODE_READ)
     {
         chunk->rcmd += 1;
-        chunk->rlat += UDELTA(cmd->cmdi->stime,cflsh_blk.nspt);
+        chunk->rlat += lat;
+        if (chunk->rcmd > 10)
+        {
+            avg          = chunk->rlat/chunk->rcmd;
+            avg          = avg<25 ? 25 : avg;
+            if      (lat < 2*avg)          {++chunk->rlat_avg;}
+            else if (lat < 6*avg)          {++chunk->rlat_mid;}
+            else if (lat > chunk->rlat_hi) {chunk->rlat_hi=lat;}
+        }
     }
     else if (cmd->cmdi->flags & CFLSH_MODE_WRITE)
     {
         chunk->wcmd += 1;
-        chunk->wlat += UDELTA(cmd->cmdi->stime,cflsh_blk.nspt);
+        chunk->wlat += lat;
+        if (chunk->wcmd > 10)
+        {
+            avg          = chunk->wlat/chunk->wcmd;
+            avg          = avg<25 ? 25 : avg;
+            if      (lat < 2*avg)          {++chunk->wlat_avg;}
+            else if (lat < 6*avg)          {++chunk->wlat_mid;}
+            else if (lat > chunk->wlat_hi) {chunk->wlat_hi=lat;}
+        }
     }
 
-    /* trace latency */
+    /* save the cmd ptrc if this command had high latency */
+    if (cblk_ptrc_verbosity >= 9)
+    {
+        if (cblk_ptrc_high_latency)
+            {high = cblk_ptrc_high_latency;}
+        else
+            {high = (chunk->rcmd>1000) ? (chunk->rlat/chunk->rcmd)*10 : 50000;}
+
+        if (lat > high) {PTRC_PSAVE_TO_SLOT(&cmd->cmdi->ptrc, 9, lat);}
+    }
+
     if (cblk_log_verbosity >= 4)
     {
-        if (SDELTA(chunk->ptime,cflsh_blk.nspt) > 1)
+        if (MDELTA(chunk->ltime,cflsh_blk.nspt) > 1000)
         {
-            chunk->ptime = getticks();
-            CBLK_TRACE_LOG_FILE(4, "id:%4ld tlat:%6ld rlat:%6ld wlat:%6ld",
-                    chunk->index,
-                    (chunk->rcmd+chunk->wcmd) ?
-                        (chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd) : 0,
-                    (chunk->rcmd) ? chunk->rlat/chunk->rcmd : 0,
-                    (chunk->wcmd) ? chunk->wlat/chunk->wcmd : 0);
+            if (chunk->rcmd+chunk->wcmd > 100)
+            {
+                /* trace latency averages once a second */
+                CBLK_TRACE_LOG_FILE(4,
+                            "id:%4ld iops:%7ld tlat:%6ld rlat:%6ld wlat:%6ld "
+                            "rd(%8d:%6d:%7d) wr(%8d:%6d:%7d)",
+                            chunk->index,
+                            (chunk->rcmd+chunk->wcmd),
+                            (chunk->rcmd+chunk->wcmd) ?
+                            (chunk->rlat+chunk->wlat)/(chunk->rcmd+chunk->wcmd) : 0,
+                            (chunk->rcmd) ? chunk->rlat/chunk->rcmd : 0,
+                            (chunk->wcmd) ? chunk->wlat/chunk->wcmd : 0,
+                            chunk->rlat_avg, chunk->rlat_mid, chunk->rlat_hi,
+                            chunk->wlat_avg, chunk->wlat_mid, chunk->wlat_hi);
+            }
+            chunk->ltime    = getticks();
+            chunk->rcmd     = 0;
+            chunk->wcmd     = 0;
+            chunk->rlat     = 0;
+            chunk->wlat     = 0;
+            chunk->rlat_avg = 0;
+            chunk->rlat_mid = 0;
+            chunk->rlat_hi  = 0;
+            chunk->wlat_avg = 0;
+            chunk->wlat_mid = 0;
+            chunk->wlat_hi  = 0;
         }
+        /* save glb ptrc slots, if any are inuse */
+        if (cblk_ptrc_verbosity) {CBLK_PTRC_SAVE_GLBS(1);}
     }
 }
 
@@ -2471,7 +2604,6 @@ static inline int CBLK_COMPLETE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, 
 
     int rc = 0;
     cflsh_cmd_info_t *cmdi;
-
 
 
     if (transfer_size == NULL) {
@@ -2511,13 +2643,19 @@ static inline int CBLK_COMPLETE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, 
 	rc = -1;
     }
 
-    CBLK_IO_LATENCY(chunk, cmd);
+    int lat = UDELTA(cmdi->orig_stime, cflsh_blk.nspt);
+
+    if (rc < 0)
+    {
+        PTRC(&cmdi->ptrc, 1, CBLK_CMP_CMD, chunk->index, rc, lat);
+        PTRC_PSAVE_TO_SLOT(&cmdi->ptrc, 1, 10000005);
+    }
+    else {PTRC(&cmdi->ptrc, 5, CBLK_CMP_CMD, chunk->index, rc, lat);}
 
     /*
      * This command completed,
      * clean it up.
      */
-
     if ((!(cmdi->flags & CFLSH_ASYNC_IO)) ||
 	(cmdi->flags & CFLSH_CMD_INFO_USTAT)) {
 		
@@ -2579,6 +2717,22 @@ static inline int CBLK_COMPLETE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, 
 	    
 
 	} else {
+
+            PTRC(&chunk->ptrc, 6, CBLK_LAT, rc, cmd->cmdi->lba, lat);
+
+            CBLK_IO_LATENCY(chunk, cmd, lat);
+
+            if (cblk_log_verbosity >= cblk_latency_verbosity)
+            {
+                CBLK_TRACE_LOG_FILE(cblk_latency_verbosity,
+                                      "in_use:0x%x lba:%8llx rc:%d lat:%6ld "
+                                      "flags:0x%x id:%2d rd:%d",
+                                      cmdi->in_use,cmdi->lba,rc,
+                                      UDELTA(cmdi->orig_stime,cflsh_blk.nspt),
+                                      cmdi->flags, chunk->index,
+                                      ((cmdi->flags & CFLSH_MODE_READ)!=0));
+            }
+
 	    if (cmdi->flags & CFLSH_MODE_READ) {
 			
 
@@ -2607,13 +2761,6 @@ static inline int CBLK_COMPLETE_CMD(cflsh_chunk_t *chunk, cflsh_cmd_mgm_t *cmd, 
 	CBLK_FREE_CMD(chunk,cmd);
     }
 
-
-    CBLK_TRACE_LOG_FILE(5,"in_use:0x%x lba:%8llx rc:%d lat:%6ld "
-                          "flags:0x%x id:%2d rd:%d",
-                           cmdi->in_use,cmdi->lba,rc,
-                           UDELTA(cmdi->stime,cflsh_blk.nspt),
-                           cmdi->flags, chunk->index,
-                           ((cmdi->flags & CFLSH_MODE_READ)!=0));
 
     return (rc);
 }
@@ -2647,7 +2794,6 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
     cflsh_cmd_mgm_t *p_cmd;
     int rc = 0;
     int cmd_rc = 0;
-    time_t timeout; 
     cflash_block_check_os_status_t reset_status = CFLSH_BLK_CHK_OS_NO_RESET;
     
 
@@ -2715,28 +2861,13 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
 
 	    if (cmdi) {
 
-		
-		/*
-		 * TODO: This code is duplicated in cblk_intrpt_thread. We
-		 *       need to modularize this.
-		 */
+		if (CBLK_CMD_TIMEOUT(cmdi)) {
 
-		if (cflsh_blk.timeout_units != CFLSH_G_TO_SEC) {
-
-		    /*
-		     * If the time-out units are not in seconds
-		     * then only give the command only 1 second to complete
-		     */
-		    timeout = time(NULL) - 1;
-		} else {
-		    timeout = time(NULL) - (10 * cflsh_blk.timeout);
-		}
-
-		if (cmdi->cmd_time < timeout) {
-
-		    CBLK_TRACE_LOG_FILE(1,"Timeout for  cmd  lba = 0x%llx, cmd = 0x%llx cmd_index = %d, chunk->index = %d",
+		    CBLK_TRACE_LOG_FILE(4,"Timeout for  cmd  lba = 0x%llx, cmd = 0x%llx cmd_index = %d, chunk->index = %d",
 				cmdi->lba,(uint64_t)cmd,cmd->index,chunk->index);
-
+		    PTRC(&cmdi->ptrc, 1, CBLK_CMD_TIMEDOUT, chunk->index, &(cmd->sisl_cmd.rcb),
+		                    UDELTA(cmdi->orig_stime,cflsh_blk.nspt));
+		    PTRC_PSAVE_TO_SLOT(&cmdi->ptrc, 1, 10000005);
 		    cmdi->status = 0;
 		    cmdi->transfer_size = 0;
 
@@ -2759,6 +2890,10 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
 			
 			CFLASH_BLOCK_UNLOCK(chunk->lock);
 			
+			PTRC(&cmdi->ptrc, 1, CBLK_CTXT_RESET, chunk->index, &(cmd->sisl_cmd.rcb),
+			                UDELTA(cmdi->stime,cflsh_blk.nspt));
+			PTRC_PSAVE_TO_SLOT(&cmdi->ptrc, 1, 10000010);
+
 			cblk_reset_context_shared_afu(chunk->path[path_index]->afu);
 			
 			CFLASH_BLOCK_LOCK(chunk->lock);
@@ -2775,7 +2910,7 @@ static inline int  CBLK_CHECK_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_index
 			     * and calling reset_context.  
 			     */
 			    
-			    CBLK_TRACE_LOG_FILE(1,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
+			    CBLK_TRACE_LOG_FILE(4,"Timeout for exceeded retries for  cmd  lba = 0x%llx, cmd = 0x%llx cmdi->retry_count = %d, cmdi->status = 0x%x",
 						cmdi->lba,(uint64_t)cmd,cmdi->retry_count,cmdi->status);
 			    
 			    cmdi->status = ETIMEDOUT;
@@ -2939,15 +3074,15 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 #endif
  
 #ifndef _SKIP_POLL_CALL
-    time_t timeout;
     cflsh_cmd_info_t *cmdi = NULL;
-    int poll_ret; 
+    int poll_ret=0;
     CFLASH_POLL_LIST_INIT(chunk,(chunk->path[path_index]),poll_list);
 #endif /* _SKIP_POLL_CALL */
     cflash_block_check_os_status_t reset_status = CFLSH_BLK_CHK_OS_NO_RESET;
 
 
-    
+    ticks b4polls=getticks();
+
 
     if (CBLK_INVALID_CHUNK_PATH_AFU(chunk,path_index,"CBLK_WAIT_FOR_IO_COMPLETE_PATH")) {
 
@@ -3046,23 +3181,41 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 
 #ifndef _SKIP_POLL_CALL
 
-    if (wait) {
+    if (wait)
+    {
+        /* if not 1st time here, and elapse time < 250us, skip poll */
+        if (chunk->ktime && UDELTA(chunk->ktime, cflsh_blk.nspt) > 250)
+        {
+            chunk->ktime = getticks();
+            CFLASH_CLR_POLL_REVENTS(chunk,(chunk->path[path_index]),poll_list);
 
-	CFLASH_CLR_POLL_REVENTS(chunk,(chunk->path[path_index]),poll_list);
-	CFLASH_BLOCK_UNLOCK(chunk->lock);
+            CFLASH_BLOCK_UNLOCK(chunk->lock);
 
-	if (cmd) {
-	    CBLK_TRACE_LOG_FILE(8,"poll for cmd  lba = 0x%llx",cmd->cmdi->lba);
-	}
+            if (cmd) {
+                CBLK_TRACE_LOG_FILE(8,"poll for cmd  lba = 0x%llx",cmd->cmdi->lba);
+            }
 
-	poll_ret = CFLASH_POLL(poll_list,CAPI_POLL_IO_TIME_OUT);
+            poll_ret = CFLASH_POLL(poll_list,CAPI_POLL_IO_TIME_OUT);
 
-	CFLASH_BLOCK_LOCK(chunk->lock);
+            CFLASH_BLOCK_LOCK(chunk->lock);
 
-	CBLK_TRACE_LOG_FILE(8,"poll_ret = 0x%x, chunk->index = %d, path_index = %d",poll_ret,chunk->index,path_index);
+            if (cmd)
+            {
+                PTRC(&cmd->cmdi->ptrc, 5, CBLK_CFLASH_POLL, chunk->index,
+                      cmd->cmdi->lba, UDELTA(chunk->ktime, cflsh_blk.nspt));
+            }
+            chunk->ktime = getticks();
 
-
-
+            CBLK_TRACE_LOG_FILE(8,"poll_ret = 0x%x, chunk->index = %d, path_index = %d",poll_ret,chunk->index,path_index);
+        }
+        else
+        {
+            /*
+             * Simulate POLLIN event
+             */
+            CFLASH_SET_POLLIN(chunk,(chunk->path[path_index]),poll_list);
+            poll_ret = 1;
+        }
 
 	/*
 	 * Check if our command has already been
@@ -3390,24 +3543,7 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
 
 		if (cmdi) {
 
-		
-		    /*
-		     * TODO: This code is duplicated in cblk_intrpt_thread. We
-		     *       need to modularize this.
-		     */
-
-		    if (cflsh_blk.timeout_units != CFLSH_G_TO_SEC) {
-
-			/*
-			 * If the time-out units are not in seconds
-			 * then only give the command only 1 second to complete
-			 */
-			timeout = time(NULL) - 1;
-		    } else {
-			timeout = time(NULL) - (10 * cflsh_blk.timeout);
-		    }
-
-		    if (cmdi->cmd_time < timeout) {
+		    if (CBLK_CMD_TIMEOUT(cmdi)) {
 
 			/*
 			 * Don't fail yet, until all retries have
@@ -3553,145 +3689,24 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE_PATH(cflsh_chunk_t *chunk, int path_
     CFLASH_BLOCK_UNLOCK(chunk->lock);
 
 
-    if (cmd) {
+    if (cmd && cmd->cmdi && cmd->cmdi->in_use==1)
+    {
+        CBLK_TRACE_LOG_FILE(5,"waiting returned for cmd with lba = 0x%llx, with rc = %d, errno = %d in_use = %d, chunk->index = %d",
+                            cmd->cmdi->lba, rc, errno,cmd->cmdi->in_use,chunk->index);
 
-	CBLK_TRACE_LOG_FILE(5,"waiting returned for cmd with lba = 0x%llx, with rc = %d, errno = %d in_use = %d, chunk->index = %d",
-			    cmd->cmdi->lba, rc, errno,cmd->cmdi->in_use,chunk->index);
+        PTRC(&cmd->cmdi->ptrc, 5, CBLK_W4CMP_PATH,
+             chunk->index, cmd->cmdi->lba, UDELTA(b4polls,cflsh_blk.nspt));
     }
-
+    else
+    {
+        CBLK_TRACE_LOG_FILE(5,"waiting returned cmd:0x%llx rc:%d errno:%d chunk:%d",
+                            cmd, rc, errno, chunk->index);
+    }
 
 
     return rc;
 }
 
-
-
-/*
- * NAME:        CBLK_ERROR_INTR_MODE_DELAY_WAIT
- *
- * FUNCTION:    Ensures that we wait long enough for 
- *              to allow a command to commplete or time-out
- *              based on the environment it is invoked.
- *
- *
- * INPUTS:
- *              chunk - Chunk the cmd is associated.
- *
- *              cmd   - Cmd this routine will wait for completion.
- *
- * RETURNS:
- *              0 - Good completion, otherwise error.
- *              
- *              
- */
-static inline int CBLK_INTR_DELAY_WAIT(cflsh_chunk_t *chunk, int lib_flags, int rc, int loop_cnt)
-{
-
-
-
-#ifdef _ERROR_INTR_MODE
-
-    /*
-     * If we are operating in error interrupt
-     * mode (i.e. block library is doing a poll
-     * to return immediately and block library
-     * does not expect poll to notify it about
-     * command completions), then we need special
-     * handling to avoid spinning too quickly
-     * on waiting for completions. 
-     *
-     * When no back ground thread exists
-     * for a synchronous command we need to ensure 
-     * we do not fail as a time-out too soon.
-     *
-     * When using a back ground thread, we do not want to spin
-     * too frequently either.
-     *
-     * The non-error interrupt case did not have this
-     * issue since it did a poll with a 1 millisecond
-     * time-out and we waited until the accumulation
-     * of all these before giving up.
-     */
-
-    if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
-
-
-	/*
-	 * If there is a back ground thread for
-	 * processing interrupts.
-	 */
-	 usleep(CFLASH_DELAY_NO_CMD_INTRPT);
-
-	if ( (rc) && (loop_cnt > CFLASH_MAX_POLL_RETRIES)) {
-			
-	    /*
-	     * Give up if we have looped too many
-	     * times and are seeing errors.
-	     */
-			
-			
-	    return 1;
-	}
-		    
-
-
-    } else {
-
-	/*
-	 * If there is no background thread for processing
-	 * interrupts (i.e. each caller into the library
-	 * must do the polling either implicitly (for synchronous
-	 * I/O) or explicitly for asynchronous I/O).
-	 */
-
-	if (!(lib_flags & CFLASH_ASYNC_OP)) {
-
-
-	    /*
-	     * If this is a synchronous I/O request,
-	     * then we need to delay for the caller
-	     * until a command completes or we time-out.
-	     */
-
-		usleep(CFLASH_DELAY_NO_CMD_INTRPT);
-
-
-	} else if ( (rc) && (loop_cnt > CFLASH_MAX_POLL_RETRIES)) {
-			
-	    /*
-	     * Give up if we have looped too many
-	     * times and are seeing errors.
-	     */
-			
-			
-	    return 1;
-	}
-    }
-
-#else
-
-
-
-
-    if ( (rc) && (loop_cnt > CFLASH_MAX_POLL_RETRIES)) {
-
-	/*
-	 * Give up if we have looped too many
-	 * times and are seeing errors.
-	 */
-
-		
-	return 1;
-    }
-
-
-
-#endif /* !_ERROR_INTR_MODE */
-
-
-
-    return 0;
-}
 
 /*
  * NAME:        CBLK_WAIT_FOR_IO_COMPLETE
@@ -3716,7 +3731,6 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE(cflsh_chunk_t *chunk,
 					    int wait, int lib_flags)
 {
     int rc = 0;
-    int loop_cnt = 0;
     int cmd_complete = FALSE;
     cflsh_cmd_mgm_t *cmd = NULL;
     int path_index = -1;
@@ -3791,154 +3805,101 @@ static inline int CBLK_WAIT_FOR_IO_COMPLETE(cflsh_chunk_t *chunk,
 			    cmd->cmdi->lba,cmd->cmdi->flags,chunk->index);
     }
 
-
-    if (path_index >= 0) {
-   
-	poll_retry = 0;
-	poll_fail_retries = 0;
-
-	while ((!cmd_complete) &&
-	       (loop_cnt < CFLASH_DELAY_LOOP_CNT)) {
-	
-
-	    rc = CBLK_WAIT_FOR_IO_COMPLETE_PATH(chunk, path_index,cmd,cmd_index, transfer_size,wait,
-						&cmd_complete,&poll_retry,&poll_fail_retries);
-
-	    if (lib_flags & CFLASH_SHORT_POLL) 
-	    {
-
-		/*
-		 * Caller is requesting we don't retry
-		 * this check for completed I/O.
-		 */
-
-		break;
-	    }
-
-	    loop_cnt++;
-
-
-
-	    if (chunk->num_active_cmds == 0) {
-
-		/*
-		 * If there are no commands active, then let's give up.
-		 */
-
-		break;
-	    }
-
-
-
-	    if (CBLK_INTR_DELAY_WAIT(chunk,lib_flags,rc,loop_cnt)) {
-
-		break;
-	    }
-
-
-
-#ifdef BLOCK_FILEMODE_ENABLED
-#ifdef _COMMON_INTRPT_THREAD
-
-	    if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
-		/*
-		 * TODO ?? Is this the right loop count
-		 */
-
-		if (loop_cnt > 5) {
-
-		    break;
-		}
-	    }
-
-#endif /* _COMMON_INTRPT_THREAD */
-#endif /* BLOCK_FILEMODE_ENABLED */
-
-	} /* while */
-
-    } else {
-
-	CBLK_TRACE_LOG_FILE(9,"chunk->index = %d, num_paths = %d",
-			    chunk->index,chunk->num_paths);
-
-	for (path_index=0;path_index < chunk->num_paths;path_index++) {
-
-
-
-	    if (chunk->path[path_index]->afu->num_issued_cmds) {
-
-		/*
-		 * If there are commands for this path then check for completion.
-		 */
-
-		poll_retry = 0;
-		poll_fail_retries = 0;
-
-		
-		
-		while ((!cmd_complete) &&
-		       (loop_cnt < CFLASH_DELAY_LOOP_CNT)) {
-	
-		    rc = CBLK_WAIT_FOR_IO_COMPLETE_PATH(chunk, path_index,cmd,cmd_index, transfer_size,wait,
-							&cmd_complete,&poll_retry,&poll_fail_retries);
-
-		    if (lib_flags & CFLASH_SHORT_POLL) 
-		    {
-
-			/*
-			 * Caller is requesting we don't retry
-			 * this check for completed I/O.
-			 */
-
-			break;
-		    }
-
-		    loop_cnt++;
-		    
-
-		    if (chunk->num_active_cmds == 0) {
-
-			/*
-			 * If there are no commands active, then let's give up.
-			 */
-
-			break;
-		    }
-
-
-
-		    if (CBLK_INTR_DELAY_WAIT(chunk,lib_flags,rc,loop_cnt)) {
-
-			break;
-		    }
-
-
-
-#ifdef BLOCK_FILEMODE_ENABLED
-#ifdef _COMMON_INTRPT_THREAD
-
-		    if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
-			/*
-			 * TODO ?? Is this the right loop count
-			 */
-
-			if (loop_cnt > 5) {
-
-			    break;
-			}
-		    }
-
-#endif /* _COMMON_INTRPT_THREAD */
-#endif /* BLOCK_FILEMODE_ENABLED */
-		}
-
-	    }
-
-	}
-
+    if (cmd)
+    {
+        if (chunk->cmd_info[cmd->index].spolltime)
+        {
+            PTRC(&cmd->cmdi->ptrc, 5, CBLK_POLLN,
+                            UDELTA(cmd->cmdi->lpolltime,cflsh_blk.nspt),
+                            cmd->cmdi->lba,
+                            UDELTA(cmd->cmdi->spolltime,cflsh_blk.nspt));
+        }
+        else
+        {
+            chunk->cmd_info[cmd->index].spolltime = getticks();
+            PTRC(&cmd->cmdi->ptrc, 5, CBLK_POLL1, chunk->index, cmd->cmdi->lba,
+                 UDELTA(cmd->cmdi->orig_stime,cflsh_blk.nspt));
+        }
+        chunk->cmd_info[cmd->index].lpolltime = getticks();
     }
 
-    if (cmd) {
+    if (path_index >= 0)
+    {
+        cflsh_cmd_info_t *pcmd = NULL;
+
+        poll_retry        = 0;
+        poll_fail_retries = 0;
+
+        /*
+         * If there are commands for this path then check for completion.
+         */
+        while (!cmd_complete && chunk->num_active_cmds)
+        {
+            /* set pcmd for timeout check */
+            if (cmd) {pcmd = cmd->cmdi;}
+            else     {pcmd = chunk->head_act;}
+
+            rc = CBLK_WAIT_FOR_IO_COMPLETE_PATH(chunk, path_index,cmd,cmd_index, transfer_size,wait,
+                            &cmd_complete,&poll_retry,&poll_fail_retries);
+
+            if (rc != 0 && CBLK_CMD_TIMEOUT(pcmd)) {break;}
+
+            /* if caller is requesting we don't retry */
+            if (lib_flags & CFLASH_SHORT_POLL) {break;}
+
+            /* if this is the intrpt thd, dont wait until cmd timeout */
+            if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {break;}
+
+#ifdef _AIX
+            usleep(5);
+#endif
+        }
+    }
+    else
+    {
+        CBLK_TRACE_LOG_FILE(9,"chunk->index = %d, num_paths = %d",
+                        chunk->index,chunk->num_paths);
+
+        for (path_index=0;path_index < chunk->num_paths;path_index++)
+        {
+            if (chunk->path[path_index]->afu->num_issued_cmds)
+            {
+                cflsh_cmd_info_t *pcmd = NULL;
+
+                poll_retry        = 0;
+                poll_fail_retries = 0;
+
+                /*
+                 * If there are commands for this path then check for completion.
+                 */
+                while (!cmd_complete && chunk->num_active_cmds)
+                {
+                    /* set pcmd for timeout check */
+                    if (cmd) {pcmd = cmd->cmdi;}
+                    else     {pcmd = chunk->head_act;}
+
+                    rc = CBLK_WAIT_FOR_IO_COMPLETE_PATH(chunk, path_index,cmd,
+                                    cmd_index, transfer_size,wait,
+                                    &cmd_complete,&poll_retry,&poll_fail_retries);
+
+                    if (rc != 0 && CBLK_CMD_TIMEOUT(pcmd)) {break;}
+
+                    /* if caller is requesting we don't retry */
+                    if (lib_flags & CFLASH_SHORT_POLL) {break;}
+
+                    /* if this is the intrpt thd, dont wait until cmd timeout */
+                    if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {break;}
+
+#ifdef _AIX
+                    usleep(5);
+#endif
+                }
+            }
+        }
+    }
+
+    if (cmd && cmd->cmdi)
+    {
         if (rc==0) {errno=0;}
 
 	CBLK_TRACE_LOG_FILE(5,"waiting returned for cmd with lba = 0x%llx, with rc = %d, errno = %d in_use = %d, chunk->index = %d",

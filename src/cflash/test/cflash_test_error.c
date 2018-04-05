@@ -995,7 +995,7 @@ int test_port_offline_online_GTplus()
 
     char cmdToRun[MAXBUFF];
 
-    __u64 stride= 0x100;
+    __u64 stride= 0x1000;
 
     pid = getpid();
 

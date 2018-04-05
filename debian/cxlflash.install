@@ -1,3 +1,0 @@
-./pkg/install_root/lib/* /lib
-./pkg/install_root/usr/bin/* /usr/bin
-./pkg/install_root/usr/share/* /usr/share

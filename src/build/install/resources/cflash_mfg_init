@@ -94,7 +94,7 @@ if (defined $target)
   chomp $card;
   my $cardN=substr $card,-1;
 
-  if (defined $correct && $out =~ /0628/)
+  if ($correct == 1 && $out =~ /0628/)
   {
     my $opt="";
     if (defined $serial)

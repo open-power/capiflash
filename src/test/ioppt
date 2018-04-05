@@ -53,8 +53,11 @@ my $i=0;
 my @pids;
 my $pids_in="";
 my $npid=0;
+my $tmbps=0;
 my $iops=0;
 my $ioppt=0;
+my $avglat=0;
+my $tlat=0;
 my $tstart;
 my $tstop;
 my $tdiff;
@@ -317,7 +320,18 @@ foreach my $line (<FDATA>)
           my @ss=split(/iops:/,$str);
           if ($verbose) {print "iops=$ss[1]\n";}
           $iops+=$ss[1];
-          last;
+        }
+        if ($str =~ /lat/)
+        {
+          my @ss=split(/lat:/,$str);
+          if ($verbose) {print "lat=$ss[1]\n";}
+          $tlat+=$ss[1];
+        }
+        if ($str =~ /mbps/)
+        {
+          my @ss=split(/mbps:/,$str);
+          if ($verbose) {print "mbps=$ss[1]\n";}
+          $tmbps+=$ss[1];
         }
       }
     }
@@ -371,8 +385,9 @@ unlink $outfn;
 # print results
 #-------------------------------------------------------------------------------
 if ($iops > 0) {$ioppt=$iops/$tps;}
+if ($tlat > 0) {$avglat=$tlat/$ncmds;}
 
-printf "usr:%4.1f%%  ptps:%5d  iops:%7d  ioppt:%5d\n",
-       ($ut/$tt)*100, $tps, $iops, $ioppt;
+printf "usr:%4.1f%% lat:%-4d mbps:%-5d ptps:%-5d  iops:%-7d  ioppt:%-5d\n",
+       ($ut/$tt)*100, $avglat, $tmbps, $tps, $iops, $ioppt;
 exit 0;
 

@@ -77,7 +77,6 @@ configure:
 installsb: default
 ifneq ($(CXLFLASH_ALL),no)
 	${MAKE} -j10 test_pass
-	${MAKE} install_image
 	${MAKE} install_test
 endif
 	${MAKE} install_code

@@ -124,7 +124,7 @@ do_cflash_fvt()
   if [[ $gtp ]]
   then
 
-    parms="--gtest_filter=-*EEH*:*port_offonline_GT_plun:*spio_exit:*E_test_SPIO_RLS_DET"
+    parms="--gtest_filter=-*EEH*:*E_test_SPIO_RLS_DET:*ioarcb_ea_null"
 
   elif [[ $gt ]]; then
 

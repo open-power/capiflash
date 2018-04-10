@@ -39,13 +39,12 @@ distro_scrub()
 {
   if [[ $CXLFLASH_ALL != yes ]]
   then
-    rm src/build/install/resources/cxl_flash_vm
-    rm src/build/install/resources/flashgt_nvme_nsq
-    rm src/build/install/resources/flashgt_nvme_override
-    rm src/build/install/resources/psl_trace_dump*
-    rm src/build/install/resources/*.gz
-    rm src/build/install/resources/license/*.txt
-    rm -R src/test/framework
+    rm src/build/install/resources/cxl_flash_vm          2>/dev/null
+    rm src/build/install/resources/flashgt_nvme_nsq      2>/dev/null
+    rm src/build/install/resources/flashgt_nvme_override 2>/dev/null
+    rm src/build/install/resources/psl_trace_dump*       2>/dev/null
+    rm src/build/install/resources/*.gz                  2>/dev/null
+    rm -R src/test/framework                             2>/dev/null
   fi
 }
 

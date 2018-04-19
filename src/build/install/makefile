@@ -159,6 +159,7 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${TESTDIR}/blockr0sio64 ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/blocklistio64 ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/blockplistio64 ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blk_eras64 ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/blockio ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/blocksio ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/blockcache ${BIN_DIR}
@@ -166,6 +167,7 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${TESTDIR}/blockr0sio ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/blocklistio ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/blockplistio ${BIN_DIR}
+	${INSTALL} ${TESTDIR}/blk_eras ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/run_kv_async64 ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/run_kv_sync64 ${BIN_DIR}
 	${INSTALL} ${TESTDIR}/run_kv_persist64 ${BIN_DIR}
@@ -206,6 +208,7 @@ endif
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockr0sio ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blocklistio ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockplistio ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blk_eras ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_sync ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_async ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_persist ${BIN_DIR}

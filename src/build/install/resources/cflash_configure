@@ -298,14 +298,43 @@ then
     rpm -e -v cxlflash
   fi
 
+  EXISTS_LVL=$(rpm -qa|grep "libcxlflash-dev")
+  if [[ $EXISTS_LVL =~ libcxlflash-dev && ! $EXISTS_LVL =~ $CF_VER ]]
+  then
+    rpm -e -v libcxlflash-dev
+  fi
+
+  EXISTS_LVL=$(rpm -qa|grep "libcxlflash0")
+  if [[ $EXISTS_LVL =~ libcxlflash0 && ! $EXISTS_LVL =~ $CF_VER ]]
+  then
+    rpm -e -v libcxlflash0
+  fi
+
   #################
   #install new pkgs
-  EXISTS_LVL=$(rpm -qa|grep -v test|egrep "cxlflash")
+  EXISTS_LVL=$(rpm -qa|grep "libcxlflash0")
+  if [[ ! $EXISTS_LVL =~ "libcxlflash0" || $force = yes || \
+         ($EXISTS_LVL =~ "libcxlflash0" && ! $EXISTS_LVL =~ $CF_VER) ]]
+  then
+    ls libcxlflash0-$CF_VER*.rpm >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then rpm -i -v libcxlflash0-$CF_VER*.rpm; fi
+  fi
+
+  EXISTS_LVL=$(rpm -qa|egrep -v "libcxlflash|test"|grep "cxlflash")
   if [[ ! $EXISTS_LVL =~ "cxlflash" || $force = yes || \
          ($EXISTS_LVL =~ "cxlflash" && ! $EXISTS_LVL =~ $CF_VER) ]]
   then
     ls cxlflash-$CF_VER*.rpm >/dev/null 2>&1
     if [[ $? -eq 0 ]]; then rpm -i -v cxlflash-$CF_VER*.rpm; fi
+  fi
+
+  EXISTS_LVL=$(rpm -qa|grep "libcxlflash-dev")
+  if [[ ! $EXISTS_LVL =~ "libcxlflash-dev" || \
+         ($EXISTS_LVL =~ "libcxlflash-dev" && ! $EXISTS_LVL =~ $CF_VER) ]]
+  then
+    #pkg is not required, only install if it exists
+    ls libcxlflash-dev-$CF_VER*.rpm >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then rpm -i -v libcxlflash-dev-$CF_VER*.rpm; fi
   fi
 
   EXISTS_LVL=$(rpm -qa|grep 'cxlflashimage')

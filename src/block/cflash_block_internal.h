@@ -1096,6 +1096,9 @@ typedef struct cflsh_cmd_info_s {
 				 /* processed this command     */
 #define CFLSH_CMD_INFO_UTAG 0x40   /* user_tag field is valid.   */
 #define CFLSH_CMD_INFO_USTAT 0x80  /* User status field is valid */
+#define CFLSH_CMD_INFO_RE_SIGNAL 0x100 /* When issuing this command */
+                                 /* we may need to re-signal the*/
+                                 /* background interrupt thread */
     uint64_t orig_stime;         /* ticks this cmd was created */
     uint64_t stime;              /* ticks of last cmd start    */
     uint64_t spolltime;          /* ticks since poll start     */

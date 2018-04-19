@@ -2460,6 +2460,45 @@ static inline int CBLK_ISSUE_CMD(cflsh_chunk_t *chunk,
 
     cmdi->state = CFLSH_MGM_WAIT_CMP;
 
+#ifdef _COMMON_INTRPT_THREAD
+
+    if (cmdi->flags & CFLSH_CMD_INFO_RE_SIGNAL) {
+	cmdi->flags &= ~CFLSH_CMD_INFO_RE_SIGNAL;
+
+	/*
+	 * The routine CLBK_ISSUE_ADAP_CMD unlocked
+	 * the chunk->lock. Thus if we are using
+	 * background threads, we need to re-signal
+	 * the back ground threat to ensure this
+	 * I/O does not hang.
+	 */
+
+	if (!(chunk->flags & CFLSH_CHNK_NO_BG_TD)) {
+		    
+	    /*
+	     * Notify common async interrupt thread, that it
+	     * needs to wait for this command's completion.
+	     */
+
+	    chunk->thread_flags |= CFLSH_CHNK_POLL_INTRPT;
+
+	    pthread_rc = pthread_cond_signal(&(chunk->thread_event));
+	
+	    if (pthread_rc) {
+	    
+		/*
+		 * Do not fail here. Just trace the error.
+		 */
+	
+		CBLK_TRACE_LOG_FILE(1,"pthread_cond_signall failed rc = %d,errno = %d",
+				    pthread_rc,errno);
+
+
+	    }
+	}
+    }
+
+#endif /* COMMON_INTRPT_THREAD */
 
 
     if (!(flags & CFLASH_ISSUE_RETRY)) {

@@ -898,6 +898,7 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
     int wait_rrq_retry = 0;
     sisl_ioarcb_t *ioarcb;
     int pthread_rc;
+    int unlocked = FALSE;
 
     ioarcb = &(cmd->sisl_cmd.rcb);
 #ifdef _REMOVE
@@ -971,15 +972,16 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 					pthread_rc,errno);
 
 		    /*
-		     * So delay instead
+		     * So delay instead.
 		     */
-
+		    unlocked = TRUE;
 		    CFLASH_BLOCK_UNLOCK(chunk->lock);
 		    usleep(CFLASH_BLOCK_DELAY_ROOM);
 		    CFLASH_BLOCK_LOCK(chunk->lock);
 		}
 
 	    } else {
+		unlocked = TRUE;
 		CFLASH_BLOCK_UNLOCK(chunk->lock);
 		usleep(CFLASH_BLOCK_DELAY_ROOM);
 		CFLASH_BLOCK_LOCK(chunk->lock);
@@ -1028,6 +1030,7 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 
 	CFLASH_BLOCK_AFU_SHARE_UNLOCK(chunk->path[path_index]->afu);
 
+	unlocked = TRUE;
 	CFLASH_BLOCK_UNLOCK(chunk->lock);
 
 	CFLASH_BLOCK_LOCK(chunk->path[path_index]->afu->lock);
@@ -1142,6 +1145,7 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
 	 */
 
 
+	unlocked = TRUE;
         CFLASH_BLOCK_UNLOCK(chunk->lock);
 
         usleep(CFLASH_BLOCK_DELAY_RRQ);
@@ -1240,6 +1244,29 @@ int cblk_issue_sisl_cmd(cflsh_chunk_t *chunk, int path_index,cflsh_cmd_mgm_t *cm
           chunk->cmd_info[cmd->index].lba,
           UDELTA(chunk->cmd_info[cmd->index].stime,cflsh_blk.nspt));
 
+
+    if (unlocked) {
+	/*
+	 * NOTE: If the interrupt back ground thread is being
+	 *       used, the caller (prior to invoking this routine),
+	 *       would have signaled the back ground that a new command
+	 *       has been issued. The back ground thread will see that
+	 *       signal and also check num_active_cmds. However the caller
+	 *       of this routine does not increment num_active_cmds until
+	 *       this routine successfully returns. In the typical case
+	 *       the caller has the the chunk->lock held across the
+	 *       signaling (of the background thread), the invocation
+	 *       of this routine, and the incrementing of chunk->num_active_cmds.
+	 *       Thus for the typical case this works fine.
+	 *       However if this routine unlocked the chunk->lock
+	 *       for any reason, then it is possible the back ground
+	 *       thread processed the signal and found no active commands
+	 *       and went back to sleep. In this case the I/O would hang.
+	 *       So we need to set the CFLSH_CMD_INFO_RE_SIGNAL in this cmd_info
+	 *       to let caller know to re-signal.
+	 */
+	chunk->cmd_info[cmd->index].flags |= CFLSH_CMD_INFO_RE_SIGNAL;
+    }
     return rc;
 }
 

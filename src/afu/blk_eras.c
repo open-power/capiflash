@@ -110,16 +110,16 @@ static void
 usage(void)
 {
 
-    fprintf(stderr,"\n");
+    printf("\n");
     
-    fprintf(stderr,"Usage: blk_eras -P pid [ -D live_dump_reason] [ -F trace_filename] [ -G disk_name] [-V trace_verbosity] \n\n");
-    fprintf(stderr,"      where:\n");
-    fprintf(stderr,"              -D  Live Dump reason string\n");
-    fprintf(stderr,"              -F  trace filename\n");
-    fprintf(stderr,"              -G  disk name for get statistics\n");
-    fprintf(stderr,"              -h  help (this usage)\n");
-    fprintf(stderr,"              -P  PID of process to change trace information\n");
-    fprintf(stderr,"              -V  trace verbosity\n");
+    printf("Usage: blk_eras -P pid [ -D live_dump_reason] [ -F trace_filename] [ -G disk_name] [-V trace_verbosity] \n\n");
+    printf("      where:\n");
+    printf("              -D  Live Dump reason string\n");
+    printf("              -F  trace filename\n");
+    printf("              -G  disk name for get statistics\n");
+    printf("              -h  help (this usage)\n");
+    printf("              -P  PID of process to change trace information\n");
+    printf("              -V  trace verbosity\n");
 
 
     
@@ -244,7 +244,7 @@ parse_args(int argc, char **argv)
     }/*while*/
 
 
-    if (!pid_flag) {
+    if (!hflag && !pid_flag) {
 	fprintf(stderr,"The -P flag is required to specify a process id (PID)\n");
 	usage();
 	rc = EINVAL;

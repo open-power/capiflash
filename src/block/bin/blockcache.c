@@ -31,9 +31,7 @@
  *                                                                            \n
  *   Example:                                                                 \n
  *                                                                            \n
- * blockcache -d /dev/sg2:/dev/sg3 -e100 -q10                                 \n
- * r:100 q:50 s:4 p:1 n:2 S:2980 lat:367 mbps:2087 iops:267150 4k-iops:534300 \n
- *                                                                            \n
+ * blockcache -d /dev/sg2:/dev/sg3 -P10000 -q400 -i                           \n
  *
  *******************************************************************************
  */
@@ -61,26 +59,25 @@
 
 #define _8K        (8*1024)
 #define _4K        (4*1024)
-#define NBUFS      _8K
 #define _1MSEC     1000
 #define _1SEC      1000000
 #define _10SEC     10000000
 #define READ       1
 #define WRITE      0
 #define MAX_SGDEVS 8
-#define PAGESIZE   _8K
-#define PAGES      2048
+#define PAGESIZE   (_4K*73)
 #define INUSE      0x1111
 #define GOOD       0x1001
+#define PRE_CHK    0x0010
+#define ALIGN      16
 
 int      id          = 0;
-uint32_t seq         = 0;
 size_t   nblks       = 0;
 uint32_t nblocks     = (PAGESIZE/_4K);
 uint32_t nRD         = 100;
 uint64_t start_ticks = 0;
 double   ns_per_tick = 0;
-uint32_t nsecs       = 20;
+uint32_t nsecs       = 10;
 char     devStrs[MAX_SGDEVS][64];
 char    *devStr      = NULL;
 char    *pstr        = NULL;
@@ -91,114 +88,54 @@ int      ids[_4K];
 
 typedef struct
 {
-    uint64_t inuse;
-    uint64_t state;
-} state_t;
-
-typedef struct
-{
-    union
-    {
-        uint64_t lba;
-        uint8_t  pad1[128];
-    };
-} cmpdata_t;
-
-typedef struct
-{
-    union
-    {
-        state_t s;
-        uint8_t pad[128];
-    };
-    cmpdata_t cd;
-} save_t;
-
-typedef struct
-{
-    union
-    {
-        save_t  data;
-        uint8_t pad1[PAGESIZE];
-    };
-    union
-    {
-        save_t  save;
-        uint8_t pad2[PAGESIZE];
-    };
-} page_t;
-
-typedef struct
-{
     pthread_mutex_t lock;
-    uint32_t        cid;
-    uint64_t        next;
+    uint64_t        inuse;
+    uint64_t        state;
+    uint64_t        lba;
+    uint32_t        cid;           // chunk id
+    uint64_t        next;          // next page to try
     uint32_t        rdN;
     uint32_t        wrN;
     uint64_t        rlat;
     uint64_t        wlat;
-    uint32_t        idx;
-} extdata_t;
+} page_state_t;
 
 typedef struct
 {
-    union
-    {
-        extdata_t ed;
-        uint8_t   pad[128];
-    };
-    page_t        page[PAGES];
-} extent_t;
+    uint8_t d[PAGESIZE];
+} page_t;
 
-extent_t *cache   = NULL;
-uint32_t extN     = 300;
-uint32_t MEMCMP   = 0;
+int           PAGES  = 10000;
+page_t       *page   = NULL;       // r/w  page for this extent
+page_t       *data   = NULL;       // data page for this extent
+page_state_t *pstate = NULL;       // state for each page
 
 #define debug(fmt, ...) \
    do {if (DEBUG) {fprintf(stdout,fmt,##__VA_ARGS__); fflush(stdout);}} while(0)
 
-/**
-********************************************************************************
-** \brief print the usage
-** \details
-**   -d device     *the device name to run Block IO                           \n
-**   -r %rd        *the percentage of reads to issue (0..100)                 \n
-**   -q queuedepth *the number of outstanding ops to maintain per device      \n
-**   -s secs       *the number of seconds to run the I/O                      \n
-**   -i            *run with interrupt threads enabled                        \n
-**   -M            *do a memcmp of the entire read buf                        \n
-**   -e            *number of cache extents                                   \n
-*******************************************************************************/
-void usage(void)
-{
-    printf("Usage:\n");
-    printf("  [-d device] [-r %%rd] [-q queuedepth] [-e extents] [-s secs] "
-           "[-i] [-M]\n");
-    exit(0);
-}
+#define NEXT_PAGE(_pI,_pN) _pI=(_pI+1)%_pN;
 
 /**
 ********************************************************************************
 ** \brief run sync IO in a thread
 *******************************************************************************/
-void run_sync(void *ptr)
+void run_sync(void *d)
 {
-    int       tid     = (uint32_t)(uint64_t)ptr;
-    int       rc      = 0;
-    int       flags   = 0;
-    int       i       = 0;
-    int       rd      = 0;
-    uint32_t  lba     = 0;
-    uint64_t  stime   = 0;
-    uint64_t  sticks  = 0;
-    uint64_t  cticks  = 0;
-    uint32_t  extI    = tid%extN;
-    uint64_t *p       = NULL;
-    uint64_t *p2      = NULL;
-    extent_t *extent  = NULL;
-    page_t   *page    = NULL;
-    uint32_t  CMPSIZE = (uint8_t*)(&cache->page[0].save) -
-                        (uint8_t*)(&cache->page[0].data.cd);
+    int           tid     = (uint32_t)(uint64_t)d;
+    int           rc      = 0;
+    int           flags   = 0;
+    int           i       = 0;
+    int           rd      = 0;
+    uint64_t      stime   = 0;
+    uint64_t      sticks  = 0;
+    uint64_t      cticks  = 0;
+    uint32_t      pI      = 0;
+    uint64_t     *p       = NULL;
+    uint64_t     *p2      = NULL;
+    page_t       *P       = NULL;
+    page_t       *D       = NULL;
+    page_state_t *S       = NULL;
+    uint64_t      miss    = 0;
 
     if (plun) {flags = CBLK_GROUP_ID;}
 
@@ -210,54 +147,55 @@ void run_sync(void *ptr)
     stime = getticks();
     do
     {
-        extent = &cache[extI];
+        P = &page[pI];
+        D = &data[pI];
+        S = &pstate[pI];
 
-        /* get a cache page and mark it INUSE */
-        pthread_mutex_lock(&extent->ed.lock);
-        page = &extent->page[extent->ed.next];
-        while (page->save.s.inuse == INUSE)
+        if (S->inuse || pthread_mutex_trylock(&S->lock) != 0)
         {
-            extent->ed.next = (extent->ed.next+1) % PAGES;
-            page            = &extent->page[extent->ed.next];
-        };
-        page->save.s.inuse = INUSE;
-        pthread_mutex_unlock(&extent->ed.lock);
+            ++miss;
+            NEXT_PAGE(pI,PAGES);
+            continue;
+        }
+        S->inuse = INUSE;
 
         /* read and compare */
-        if (page->save.s.state == GOOD)
+        if (S->state & GOOD)
         {
             rd=1;
-            debug("read  tid:%4d cid:%d ext:%d page:%ld:%p lba:%ld\n",
-                            tid, extent->ed.cid, extI, page-extent->page,
-                            &page->data, page->save.cd.lba);
+            /* pre-check if all cmpdata matches */
+            if (S->state & PRE_CHK && memcmp(P, D, PAGESIZE) != 0)
+            {
+                printf("PRE-MISCOMPARE tid:%d lba:%ld\n", tid, S->lba);
+            }
+            else
+            {
+                S->state |= PRE_CHK;
+            }
+            debug("RD_BEG tid:%4d cid:%d page:%ld:%p lba:%ld\n",
+                            tid, S->cid, P-page, P, S->lba);
             /* clobber read buf before reading data */
-            memset(&page->data.cd,0x94,CMPSIZE);
+            memset(P,0x94,PAGESIZE);
             sticks = getticks();
-            rc     = cblk_read(extent->ed.cid, &page->data, page->save.cd.lba,
-                            nblocks, flags);
+            rc     = cblk_read(S->cid, P, S->lba, nblocks, flags);
             cticks = getticks()-sticks;
             if (nblocks == rc)
             {
-                /* check if lbas match */
-                if (page->data.cd.lba != page->save.cd.lba)
-                {
-                    printf("miscomp: lba:   data:%ld save:%ld\n",
-                                    page->data.cd.lba, page->save.cd.lba);
-                }
                 /* check if all cmpdata matches */
-                if (MEMCMP && memcmp(&page->data.cd, &page->save.cd, CMPSIZE) != 0)
+                if (memcmp(P, D, PAGESIZE) != 0)
                 {
-                    printf("memcmp   tid:%d  lba:%ld\n", tid, page->save.cd.lba);
-                    if (0)
+                    printf("MISCOMPARE tid:%d lba:%ld\n", tid, S->lba);
+                    if (1)
                     {
                         /* show which 64-bit word(s) miscompare */
-                        p  = (uint64_t*)(&page->data.cd);
-                        p2 = (uint64_t*)(&page->save.cd);
-                        for (i=0; i<CMPSIZE/8; i++,p++,p2++)
+                        p  = (uint64_t*)P;
+                        p2 = (uint64_t*)D;
+                        for (i=0; i<PAGESIZE/8; i++,p++,p2++)
                         {
                             if (*p != *p2) {printf("u64cmp: tid:%d i:%d\n",tid,i);}
                         }
                     }
+                    exit(0);
                 }
             }
             else if (EBUSY != errno) {printf("read err rc:%d errno:%d\n", rc, errno);}
@@ -266,54 +204,66 @@ void run_sync(void *ptr)
         {
             rd=0;
             sticks = getticks();
-            p      = (uint64_t*)(&page->data.cd);
+            p      = (uint64_t*)D;
             /* assign a unique value to each uint64_t in the write buf */
-            for (i=0; i<CMPSIZE/8; i++,p++) {*p=sticks+i;}
-            lba = ((page-extent->page)*nblocks) + (PAGES*extent->ed.idx*nblocks);
-            page->save.cd.lba = lba;
-            debug("write tid:%4d cid:%d n:%d ext:%d page:%ld:%p lba:%ld\n",
-                            tid, extent->ed.cid, nblocks, extI,
-                            page-extent->page, &page->save, page->save.cd.lba);
+            for (i=0; i<PAGESIZE/8; i++,p++) {*p=sticks+i;}
+            debug("WR_BEG tid:%4d cid:%d page:%ld:%p lba:%ld\n",
+                            tid, S->cid, P-page, D, S->lba);
             sticks = getticks();
-            rc     = cblk_write(extent->ed.cid, &page->save, lba, nblocks, flags);
+            rc     = cblk_write(S->cid, D, S->lba, nblocks, flags);
             cticks = getticks()-sticks;
             if (nblocks == rc)
             {
-                page->save.s.state = GOOD;
+                S->state = GOOD;
             }
             else if (EBUSY != errno)
             {
-                page->save.s.state = 0;
+                S->state = 0;
                 printf("write err rc:%d errno:%d\n", rc, errno);
             }
         }
 
         /* free page */
-        pthread_mutex_lock(&extent->ed.lock);
-        page->save.s.inuse = 0;
-        extent->ed.next    = (extent->ed.next+1) % PAGES;
+        S->inuse = 0;
         if (nblocks == rc)
         {
             if (rd)
             {
-                extent->ed.rdN  += 1;
-                extent->ed.rlat += cticks;
+                S->rdN  += 1;
+                S->rlat += cticks;
             }
             else
             {
-                extent->ed.wrN  += 1;
-                extent->ed.wlat += cticks;
+                S->wrN  += 1;
+                S->wlat += cticks;
             }
         }
-        pthread_mutex_unlock(&extent->ed.lock);
+        pthread_mutex_unlock(&S->lock);
 
-        /* move to next extent */
-        extI = (extI+1)%extN;
+        NEXT_PAGE(pI,PAGES);
 
     } while (SDELTA(stime,ns_per_tick) < nsecs);
 
-    debug("exiting tid:%d\n", tid);
+    debug("exiting tid:%d miss:%ld\n", tid, miss);
     return;
+}
+
+/**
+********************************************************************************
+** \brief print the usage
+** \details
+**   -d device     *the device name to run Block IO                           \n
+**   -r %rd        *the percentage of reads to issue (0..100)                 \n
+**   -q queuedepth *the number of outstanding ops to maintain per device      \n
+**   -s secs       *the number of seconds to run the I/O                      \n
+**   -i            *run with interrupt threads enabled                        \n
+**   -P            *number of cache pages                                     \n
+*******************************************************************************/
+void usage(void)
+{
+    printf("Usage:\n");
+    printf("  [-d device] [-q queuedepth] [-P pages] [-s secs] [-i]\n");
+    exit(0);
 }
 
 /**
@@ -338,16 +288,16 @@ int main(int argc, char **argv)
     char           *_secs       = NULL;
     char           *_QD         = NULL;
     char           *_RD         = NULL;
-    char           *_e          = NULL;
+    char           *_P          = NULL;
     uint32_t        intrp_thds  = 0;
     uint32_t        pths        = 0;
-    uint32_t        QD          = 100;
+    uint32_t        QD          = 200;
     uint32_t        esecs       = 0;
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:r:q:s:e:hiMD")))
+    while (FF != (c=getopt(argc, argv, "d:r:q:s:P:hiD")))
     {
         switch (c)
         {
@@ -355,9 +305,8 @@ int main(int argc, char **argv)
             case 'r': _RD        = optarg; break;
             case 'q': _QD        = optarg; break;
             case 's': _secs      = optarg; break;
-            case 'e': _e         = optarg; break;
+            case 'P': _P         = optarg; break;
             case 'i': intrp_thds = 1;      break;
-            case 'M': MEMCMP     = 1;      break;
             case 'D': DEBUG      = 1;      break;
             case 'h':
             case '?': usage();             break;
@@ -366,7 +315,7 @@ int main(int argc, char **argv)
     if (_secs)      nsecs    = atoi(_secs);
     if (_QD)        QD       = atoi(_QD);
     if (_RD)        nRD      = atoi(_RD);
-    if (_e)         extN     = atoi(_e);
+    if (_P)         PAGES    = atoi(_P);
 
     if (QD > _8K)   QD  = _8K;
     if (nRD > 100)  nRD = 100;
@@ -382,6 +331,7 @@ int main(int argc, char **argv)
         sprintf(devStrs[devN++],"%s",pstr);
     }
 
+    PAGES   = devN * ((PAGES / devN)+1);
     nblocks = PAGESIZE/_4K;
     pths    = (devN*QD > _8K) ? _8K : devN*QD;
 
@@ -395,7 +345,7 @@ int main(int argc, char **argv)
                 rc,errno);
         exit(1);
     }
-    flags = CBLK_OPN_GROUP; ext=9;
+    flags = CBLK_OPN_GROUP; ext=16;
     if (!intrp_thds) {flags |= CBLK_OPN_NO_INTRP_THREADS;}
 
     for (i=0; i<devN; i++)
@@ -424,35 +374,46 @@ int main(int argc, char **argv)
     /*--------------------------------------------------------------------------
      * create threads to run sync IO
      *------------------------------------------------------------------------*/
-    if ((rc=posix_memalign((void**)&cache, 128, sizeof(extent_t)*extN)))
+    page_t *cache=NULL;
+    if (!(cache=malloc(sizeof(page_t)*(PAGES+1))))
     {
         fprintf(stderr,"posix_memalign size:%ld rc:%d\n",
-                        sizeof(extent_t)*extN, rc);
+                        sizeof(page_t)*PAGES, rc);
+        exit(0);
+    }
+    page = (page_t*)((char*)cache + 16);
+    if ((rc=posix_memalign((void**)&data, 128, sizeof(page_t)*PAGES)))
+    {
+        fprintf(stderr,"posix_memalign size:%ld rc:%d\n",
+                        sizeof(page_t)*PAGES, rc);
+        exit(0);
+    }
+    if (!(pstate=malloc(sizeof(page_state_t)*PAGES)))
+    {
+        fprintf(stderr,"posix_memalign size:%ld rc:%d\n",
+                        sizeof(page_state_t)*PAGES, rc);
         exit(0);
     }
 
-    extent_t *e = cache;
-
-    debug("page_t:%ld save_t:%ld\n", sizeof(page_t), sizeof(save_t));
-    start_ticks = getticks();
-
-    for (i=0; i<extN; i++)
+    for (i=0; i<PAGES; i++)
     {
-        pthread_mutex_init(&e->ed.lock, NULL);
-        e->ed.rdN  = 0;
-        e->ed.wrN  = 0;
-        e->ed.rlat = 0;
-        e->ed.wlat = 0;
-        e->ed.next = 0;
-        e->ed.cid  = ids[i%devN];
-        e->ed.idx  = i/devN;
-        debug("extent %d cid:%d idx:%d\n", i, e->ed.cid, e->ed.idx);
-        ++e;
+        memset(pstate+i, 0, sizeof(page_state_t));
+        pthread_mutex_init(&pstate[i].lock, NULL);
+        pstate[i].rdN  = 0;
+        pstate[i].wrN  = 0;
+        pstate[i].rlat = 0;
+        pstate[i].wlat = 0;
+        pstate[i].next = 0;
+        pstate[i].cid  = ids[i%devN];
+        pstate[i].lba  = (i/devN) * nblocks;
+        debug("page:%d cid:%d lba:%ld page:%p\n",
+              i, pstate[i].cid, pstate[i].lba, page+i);
     }
 
     pthread_t pth[_8K];
     void* (*fp)(void*) = (void*(*)(void*))run_sync;
 
+    start_ticks = getticks();
     for (i=0; i<pths; i++)
     {
         debug("pthread_create %d\n", i);
@@ -474,13 +435,12 @@ int main(int argc, char **argv)
     uint32_t wrT   = 0;
     uint32_t tcnt  = 0;
 
-    e = cache;
-    for (i=0; i<extN; i++)
+    for (i=0; i<PAGES; i++)
     {
-        rdT   += e->ed.rdN;
-        wrT   += e->ed.wrN;
-        rlatT += e->ed.rlat;
-        wlatT += e->ed.wlat;
+        rdT   += pstate[i].rdN;
+        wrT   += pstate[i].wrN;
+        rlatT += pstate[i].rlat;
+        wlatT += pstate[i].wlat;
     }
     tcnt = rdT + wrT;
 
@@ -497,7 +457,11 @@ int main(int argc, char **argv)
     if (plun) {flags=CBLK_GROUP_ID;}
     for (i=0; i<devN; i++)
         {debug("close %d\n", ids[i]); cblk_close(ids[i], flags);}
+
 cleanup:
+    free(cache);
+    free(data);
+    free(pstate);
     cblk_term(NULL,0);
     return 0;
 }

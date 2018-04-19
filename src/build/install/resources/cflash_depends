@@ -88,7 +88,7 @@ then
   # install dependencies
   echo "------------------------------"
   echo -e "INFO: Checking other depencencies\n"
-  if [[ $(rpm -qa | egrep -c -e "libgudev1-devel|libcxl|sg3_utils-1|systemd-devel|make|cscope|doxygen|git-|help2man|gcc-c\+\+|ksh|ctags") -ne 13 ]]
+  if [[ $(rpm -qa | egrep -c -e "libgudev1-devel|libcxl-devel|sg3_utils-1|systemd-devel|make|cscope|doxygen|git-|help2man|gcc-c\+\+|ksh|ctags") -ne 12 ]]
   then
     if [[ $internet -ne 0 ]]
     then

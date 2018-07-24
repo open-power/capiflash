@@ -94,7 +94,10 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->inb_size = tcbp->blen*_arkp->bsize;
   }
 
-  if (kv_inject_flags) {HTC_FREE(_arkp->htc[rcbp->pos]);}
+  if (kv_inject_flags && HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
+  {
+      HTC_FREE(_arkp->htc[rcbp->pos]);
+  }
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
@@ -121,8 +124,8 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d pos:%6ld", tid, tcbp->ttag, rcbp->pos);
 
   // Schedule the IO to read the hash entry from storage
-  ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
-                   tcbp->blen, 0, tcbp->ttag, ARK_DEL_PROCESS);
+  ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_READ, (void *)tcbp->inb,
+                   tcbp->aiol, tcbp->blen, 0, tcbp->ttag, ARK_DEL_PROCESS);
 
 ark_del_start_err:
 
@@ -228,7 +231,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
                   tid, tcbp->ttag, rcbp->pos, tcbp->bytes);
 
       // Schedule the WRITE IO of the updated hash entry.
-      ea_async_io_init(_arkp, iocbp, ARK_EA_WRITE, (void *)tcbp->oub,
+      ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_WRITE, (void *)tcbp->oub,
                        tcbp->aiol, blkcnt, 0, tcbp->ttag, ARK_DEL_FINISH);
     }
     else
@@ -278,7 +281,7 @@ void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
     KV_TRC(pAT, "HASHSET tid:%d ttag:%3d pos:%6ld bytes:%ld byte_cnt:%ld",
            tid, tcbp->ttag, rcbp->pos, tcbp->bytes, scbp->poolstats.byte_cnt);
 
-    if (HTC_INUSE(_arkp->htc[rcbp->pos]))
+    if (HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
     {
         HTC_PUT(_arkp->htc[rcbp->pos], tcbp->oub, tcbp->blen*_arkp->bsize);
     }
@@ -289,7 +292,7 @@ void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
                   "NO_WRITE_REQD",
              tid, tcbp->ttag, rcbp->pos, tcbp->bytes, scbp->poolstats.byte_cnt);
 
-      if (HTC_INUSE(_arkp->htc[rcbp->pos]))
+      if (HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
       {
           --scbp->htcN;
           ++scbp->htc_disc;

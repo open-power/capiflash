@@ -5208,7 +5208,7 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
     if (chunk->num_active_cmds) {
 	
 
-	CBLK_TRACE_LOG_FILE(9,"resuming %d active commands",chunk->num_active_cmds);
+	CBLK_TRACE_LOG_FILE(5,"resuming %d active commands",chunk->num_active_cmds);
 
 	for (i=0; i < chunk->num_cmds; i++) {
 	    if ((chunk->cmd_info[i].in_use) &&
@@ -5292,8 +5292,10 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 		  
 		    if (!rc) {
 
-			rc = CBLK_ISSUE_CMD(chunk,cmd,cmdi->buf,
-					cmd->cmdi->lba,cmd->cmdi->nblocks,CFLASH_ISSUE_RETRY);
+		        CBLK_TRACE_LOG_FILE(1,"REISSUE cmd:%p lba:0x%llx", cmd, cmd->cmdi->lba);
+
+		        rc = CBLK_ISSUE_CMD(chunk,cmd,cmdi->buf,
+		                 cmd->cmdi->lba,cmd->cmdi->nblocks,CFLASH_ISSUE_RETRY);
 		    }
 
 		    if (rc) {
@@ -5302,7 +5304,7 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 			 * If we failed to issue this command, then fail it
 			 */
 
-			CBLK_TRACE_LOG_FILE(8,"resume issue failed with rc = 0x%x cmd->cmdi->lba = 0x%llx chunk->index = %d",
+			CBLK_TRACE_LOG_FILE(1,"resume issue failed with rc = 0x%x cmd->cmdi->lba = 0x%llx chunk->index = %d",
 					    rc,cmd->cmdi->lba,chunk->index);
 			cmd->cmdi->status = EIO;
 
@@ -5476,7 +5478,7 @@ void cblk_resume_all_halted_cmds(cflsh_chunk_t *chunk, int increment_retries,
 
 
 
-    CBLK_TRACE_LOG_FILE(9,"finished resuming %d active commands",chunk->num_active_cmds);
+    CBLK_TRACE_LOG_FILE(5,"finished resuming %d active commands",chunk->num_active_cmds);
     return;
 }
 
@@ -8061,7 +8063,7 @@ void cblk_dcbz_buffer(void *buf, size_t len)
 
     if (end_addr & (CBLK_DCBZ_CACHE_LINE_SZ-1)) {
 
-	end_addr = ((ulong)end_addr+CBLK_DCBZ_CACHE_LINE_SZ) & ~(CBLK_DCBZ_CACHE_LINE_SZ-1);
+	end_addr = ((ulong)end_addr) & ~(CBLK_DCBZ_CACHE_LINE_SZ-1);
 
     }
 
@@ -8486,8 +8488,8 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 
 				    cblk_clear_poison_bits((void *)cmdi2_start_addr,CBLK_DCBZ_CACHE_LINE_SZ);
 
-				    CBLK_TRACE_LOG_FILE(1,"non-aligned Read command found other command with UE  lba = 0x%llx flags = 0x%x, chunk->index = %d",
-                                        cmdi->lba,cmd->cmdi->flags,chunk->index);
+				    CBLK_TRACE_LOG_FILE(1,"non-aligned Read command found other command with UE  cmd:%p lba:0x%llx cmd2:%p lba2:0x%llx flags = 0x%x, chunk->index = %d",
+				          cmd,cmdi->lba,&chunk->cmd_start[j],cmdi2->lba,cmd->cmdi->flags,chunk->index);
 
 
 
@@ -8502,8 +8504,8 @@ void cblk_clear_poison_bits_chunk(cflsh_chunk_t *chunk, int path_index, int all_
 
 				    cblk_clear_poison_bits((void *)cmdi_start_addr,CBLK_DCBZ_CACHE_LINE_SZ);
 
-				    CBLK_TRACE_LOG_FILE(1,"non-aligned Read command found other command with UE  lba = 0x%llx flags = 0x%x, chunk->index = %d",
-                                        cmdi->lba,cmd->cmdi->flags,chunk->index);
+                                    CBLK_TRACE_LOG_FILE(1,"non-aligned Read command found other command with UE  cmd:%p lba:0x%llx cmd2:%p lba2:0x%llx flags = 0x%x, chunk->index = %d",
+                                          cmd,cmdi->lba,&chunk->cmd_start[j],cmdi2->lba,cmd->cmdi->flags,chunk->index);
 				}
 			    }
 			}

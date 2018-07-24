@@ -119,7 +119,10 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     // for this hash bucket.
     tcbp->blen = bl_len(_arkp->bl, tcbp->hblk);
 
-    if (kv_inject_flags) {HTC_FREE(_arkp->htc[rcbp->pos]);}
+    if (kv_inject_flags && HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
+    {
+        HTC_FREE(_arkp->htc[rcbp->pos]);
+    }
 
     if (tcbp->blen*_arkp->bsize > tcbp->inb_size)
     {
@@ -128,8 +131,8 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
         rc = bt_realloc(&tcbp->inb, &tcbp->inb_orig, tcbp->blen*_arkp->bsize);
         if (0 != rc)
         {
-          rcbp->res   = -1;
-          rcbp->rc    = rc;
+          rcbp->res    = -1;
+          rcbp->rc     = rc;
           iocbp->state = ARK_CMD_DONE;
           KV_TRC_FFDC(pAT, "bt_reallocif failed, ttag:%3d rc:%d errno:%d",
                   tcbp->ttag, rc, errno);
@@ -138,7 +141,9 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
         tcbp->inb_size = tcbp->blen*_arkp->bsize;
     }
 
-    scbp->poolstats.io_cnt += tcbp->blen;
+    scbp->poolstats.io_cnt  += tcbp->blen;
+    scbp->poolstats.hcl_cnt += 1;
+    scbp->poolstats.hcl_tot += tcbp->blen;
 
     if (HTC_HIT(_arkp, rcbp->pos, tcbp->blen))
     {
@@ -155,8 +160,8 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     // list once.
     if (bl_rechain(&tcbp->aiol, _arkp->bl, tcbp->hblk, tcbp->blen, tcbp->aiolN))
     {
-      rcbp->res   = -1;
-      rcbp->rc    = ENOMEM;
+      rcbp->res    = -1;
+      rcbp->rc     = ENOMEM;
       iocbp->state = ARK_CMD_DONE;
       KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
       goto ark_set_start_err;
@@ -166,7 +171,7 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d pos:%6ld hblk:%6ld nblks:%ld",
            tid, tcbp->ttag, rcbp->pos, tcbp->hblk, tcbp->blen);
 
-    ea_async_io_init(_arkp, iocbp, ARK_EA_READ,
+    ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_READ,
                      (void *)tcbp->inb, tcbp->aiol, tcbp->blen,
                      0, tcbp->ttag, ARK_SET_PROCESS);
 }
@@ -396,8 +401,8 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
 
     if (bl_rechain(&tcbp->aiol,_arkp->bl,tcbp->vblk,tcbp->vblkcnt, tcbp->aiolN))
     {
-      rcbp->res   = -1;
-      rcbp->rc    = ENOMEM;
+      rcbp->res    = -1;
+      rcbp->rc     = ENOMEM;
       iocbp->state = ARK_CMD_DONE;
       KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
       goto ark_set_process_err;
@@ -406,7 +411,7 @@ void ark_set_process(_ARK *_arkp, int tid, tcb_t *tcbp)
 
     scbp->poolstats.io_cnt += tcbp->vblkcnt;
 
-    ea_async_io_init(_arkp, iocbp, ARK_EA_WRITE, (void*)tcbp->vb,
+    ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_WRITE, (void*)tcbp->vb,
                      tcbp->aiol, tcbp->vblkcnt, 0, tcbp->ttag, ARK_SET_WRITE);
   }
   else
@@ -474,7 +479,7 @@ void ark_set_write(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   scbp->poolstats.io_cnt += blkcnt;
 
-  ea_async_io_init(_arkp, iocbp, ARK_EA_WRITE, (void *)tcbp->oub,
+  ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_WRITE, (void *)tcbp->oub,
                    tcbp->aiol, blkcnt, 0, tcbp->ttag, ARK_SET_FINISH);
 
 ark_set_write_err:
@@ -498,7 +503,7 @@ void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
   blkcnt = divceil(tcbp->oub->len, _arkp->bsize);
   if (blkcnt <= _arkp->htc_blks)
   {
-      if (HTC_INUSE(_arkp->htc[rcbp->pos]))
+      if (HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
       {
           KV_TRC(pAT, "HTC_PUT tid:%d ttag:%3d pos:%6ld htcN:%8d sz:%ld",
                  tid, tcbp->ttag, rcbp->pos, scbp->htcN, blkcnt);
@@ -515,7 +520,7 @@ void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
                   _arkp->bsize*_arkp->htc_blks);
       }
   }
-  else if (HTC_INUSE(_arkp->htc[rcbp->pos]))
+  else if (HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
   {
       --scbp->htcN;
       ++scbp->htc_disc;

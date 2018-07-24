@@ -35,7 +35,7 @@ IV *iv_new(uint64_t n, uint64_t m)
 {
   uint64_t bits  = n * m;
   uint64_t words = divup(bits, 64);
-  uint64_t bytes = sizeof(IV) + words * sizeof(uint64_t);
+  uint64_t bytes = sizeof(IV) + (words * sizeof(uint64_t));
 
   IV *iv = am_malloc(bytes);
   if (iv == NULL)
@@ -46,7 +46,7 @@ IV *iv_new(uint64_t n, uint64_t m)
   else
   {
     memset(iv,0x00, bytes);
-    iv->n      =  n;
+    iv->n      = n;
     iv->m      = m;
     iv->bits   = bits;
     iv->words  = words;
@@ -55,7 +55,7 @@ IV *iv_new(uint64_t n, uint64_t m)
     iv->mask  -= 1;
     iv->bar    = 64 - m;
   }
-  KV_TRC(pAT, "iv:%p n:%ld m:%ld", iv, n, m);
+  KV_TRC(pAT, "iv:%p n:%ld m:%ld bits:%ld words:%ld", iv, n, m, bits, words);
   return iv;
 }
 

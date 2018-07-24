@@ -477,6 +477,14 @@ void ark_free_resources(_ARK  *_arkp)
 
       pthread_mutex_destroy(&(scbp->lock));
       KV_TRC(pAT, "thread %d joined", i);
+
+      /* if vlun and thread 0   OR  if plun */
+      if ((i==0 && _arkp->flags & ARK_KV_VIRTUAL_LUN) ||
+                 !(_arkp->flags & ARK_KV_VIRTUAL_LUN))
+      {
+          KV_TRC_DBG(pAT, "ea_delete");
+          (void)ea_delete(scbp->ea);
+      }
   }
 
   KV_TRC_DBG(pAT, "free arkp->poolthreads");
@@ -487,9 +495,6 @@ void ark_free_resources(_ARK  *_arkp)
 
   KV_TRC_DBG(pAT, "destroy mainmutex");
   pthread_mutex_destroy(&_arkp->mainmutex);
-
-  KV_TRC_DBG(pAT, "ea_delete");
-  (void)ea_delete(_arkp->ea);
 
   KV_TRC_DBG(pAT, "free ht");
   hash_free(_arkp->ht);
@@ -502,10 +507,10 @@ void ark_free_resources(_ARK  *_arkp)
   }
 
   KV_TRC_DBG(pAT, "blks_delete");
-  bl_delete(_arkp->bl);
+  if (_arkp->bl) {bl_delete(_arkp->bl);}
 
   KV_TRC_DBG(pAT, "blu_delete");
-  bl_delete(_arkp->blu);
+  if (_arkp->blu) {bl_delete(_arkp->blu);}
 
   KV_TRC(pAT, "done, free arkp %p", _arkp);
   am_free(_arkp);
@@ -526,7 +531,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   int      i       = 0;
   int      tnum    = 0;
   int      rnum    = 0;
-  int      am_sz   = 0;
+  uint64_t am_sz   = 0;
   scb_t   *scbp    = NULL;
 
   KV_TRC_OPEN(pAT, "arkdb");
@@ -595,12 +600,48 @@ int ark_create_verbose(char *path, ARK **arkret,
   ark->persload = 0;
   ark->nasyncs  = nqueue<ARK_MIN_NASYNCS  ? ARK_MIN_NASYNCS : nqueue;
   ark->basyncs  = basyncs<ARK_MIN_BASYNCS ? ARK_MIN_BASYNCS : basyncs;
-  ark->nthrds   = ARK_VERBOSE_NTHRDS_DEF;
+  ark->nthrds   = nthrds;
   ark->ntasks   = ARK_MAX_TASK_OPS;
 
+  /*---------------------------------------------------------------------------
+   * check for '=', which is a corsa multi-port to the same lun
+   *-------------------------------------------------------------------------*/
+  int   devI = 0;
+  int   devN = 0;
+  char *pstr = NULL;
+  char *dbuf = NULL;
+  char *devp = NULL;
+  char  devs[16][256];
+
+  if (path)
+  {
+      if (strchr(path,'='))
+      {
+          if (flags & ARK_KV_VIRTUAL_LUN)
+          {
+              rc = EINVAL;
+              KV_TRC_FFDC(pAT, "Bad path with VLUN %s", path);
+              goto ark_create_ark_err;
+          }
+          dbuf = strdup(path);
+          sprintf(dbuf,"%s",path);
+          while ((pstr=strsep((&dbuf),"=")))
+          {
+              sprintf(devs[devN++],"%s",pstr);
+              KV_TRC(pAT,"%d -> %s", devN-1, devs[devN-1]);
+          }
+      }
+      else
+      {
+          sprintf(devs[devN++],"%s",path);
+      }
+      devp = devs[devI];
+  }
+  KV_TRC(pAT,"open %s ", devp);
+
   // Create the KV storage, whether that will be memory based or flash
-  ark->ea = ea_new(path, ark->bsize, basyncs, &size, &bcount,
-                    (flags & ARK_KV_VIRTUAL_LUN));
+  ark->ea = ea_new(devp, ark->bsize, basyncs, &size, &bcount,
+                  (flags & ARK_KV_VIRTUAL_LUN));
   if (ark->ea == NULL)
   {
     if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
@@ -671,6 +712,7 @@ int ark_create_verbose(char *path, ARK **arkret,
       if (bl_reserve(ark->bl, ark->pers_max_blocks))
           {goto ark_create_ark_err;}
     }
+
     // Create the unmap block list
     ark->blu = bl_new(ark->bcount, ark->blkbits);
     if (ark->blu == NULL)
@@ -700,16 +742,20 @@ int ark_create_verbose(char *path, ARK **arkret,
   x          = ark->hcount / ark->nthrds;
   ark->npart = x + (ark->hcount % ark->nthrds ? 1 : 0);
 
-  am_sz = ark->hcount*sizeof(htc_t);
-  ark->htc_orig = am_malloc(am_sz + ARK_ALIGN);
-  if (!ark->htc_orig)
+  if (ark->htc_blks)
   {
-    rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "HTC initialization failed: %d", rc);
-    goto ark_create_ark_err;
+    am_sz = ark->hcount*sizeof(htc_t);
+    KV_TRC_FFDC(pAT,"htc am_sz:%ld hcount:%ld", am_sz, ark->hcount);
+    ark->htc_orig = am_malloc(am_sz + ARK_ALIGN);
+    if (!ark->htc_orig)
+    {
+      rc = ENOMEM;
+      KV_TRC_FFDC(pAT, "HTC initialization failed: %d", rc);
+      goto ark_create_ark_err;
+    }
+    ark->htc = ptr_align(ark->htc_orig);
+    memset(ark->htc,0,am_sz);
   }
-  ark->htc = ptr_align(ark->htc_orig);
-  memset(ark->htc,0,am_sz);
 
   rc = pthread_mutex_init(&ark->mainmutex,NULL);
   if (rc != 0)
@@ -723,7 +769,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   if ( NULL == ark->poolthreads )
   {
     rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for scbs", am_sz);
+    KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for scbs", am_sz);
     goto ark_create_ark_err;
   }
   memset(ark->poolthreads,0,am_sz);
@@ -733,7 +779,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   if ( ark->pts == NULL )
   {
     rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory bytes:%d for pts", am_sz);
+    KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for pts", am_sz);
     goto ark_create_ark_err;
   }
   memset(ark->pts,0,am_sz);
@@ -746,6 +792,19 @@ int ark_create_verbose(char *path, ARK **arkret,
     scbp = &(ark->poolthreads[i]);
 
     memset(scbp, 0, sizeof(scb_t));
+
+    /* if thread 0 OR vlun, use the existing ea */
+    if (i==0 || flags & ARK_KV_VIRTUAL_LUN)
+    {
+      scbp->ea = ark->ea;
+    }
+    else
+    {
+      devI = (devI+1) % devN;
+      if (path) devp = devs[devI];
+      scbp->ea = ea_new(devp, ark->bsize, basyncs, &size, &bcount,
+                        (flags & ARK_KV_VIRTUAL_LUN));
+    }
 
     scbp->ttags = tag_new(ark->ntasks);
     if ( NULL == scbp->ttags )
@@ -768,7 +827,7 @@ int ark_create_verbose(char *path, ARK **arkret,
     if (!scbp->tcbs)
     {
       rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for tcbs", am_sz);
+      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for tcbs", am_sz);
       goto ark_create_ark_err;
     }
     memset(scbp->tcbs,0,am_sz);
@@ -820,7 +879,7 @@ int ark_create_verbose(char *path, ARK **arkret,
     if ( NULL == scbp->iocbs )
     {
       rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for iocbs", am_sz);
+      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for iocbs", am_sz);
       goto ark_create_ark_err;
     }
     memset(scbp->iocbs,0,am_sz);
@@ -830,7 +889,7 @@ int ark_create_verbose(char *path, ARK **arkret,
     if ( NULL == scbp->ucbs )
     {
       rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory allocation of %d bytes for ucbs", am_sz);
+      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for ucbs", am_sz);
       goto ark_create_ark_err;
     }
     memset(scbp->ucbs,0,am_sz);
@@ -840,7 +899,7 @@ int ark_create_verbose(char *path, ARK **arkret,
     if (!scbp->rcbs)
     {
       rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory bytes:%d for rcbs",am_sz);
+      KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for rcbs",am_sz);
       goto ark_create_ark_err;
     }
     memset(scbp->rcbs,0,am_sz);
@@ -905,8 +964,11 @@ int ark_create_verbose(char *path, ARK **arkret,
   ark->pcmd = PT_RUN;
 
   /* sucess, goto end */
+  KV_TRC_PERF2(pAT, "DONE: %p path(%s) id:%d size %ld bsize %ld hcount %ld "
+              "ntasks:%ld nthrds %d nqueue %ld basyncs %d flags:%08lx",
+              ark, path, ark->ea->st_flash, size, bsize, hcount, ark->ntasks,
+              nthrds, ark->nasyncs, ark->basyncs, flags);
   goto ark_create_success;
-
 
 /*-------------------------------------------------------------------------------------
  * process ark create errors
@@ -933,10 +995,6 @@ ark_create_ark_err:
   KV_TRC_CLOSE(pAT);
 
 ark_create_success:
-  KV_TRC_PERF2(pAT, "DONE: %p path(%s) id:%d size %ld bsize %ld hcount %ld "
-              "ntasks:%ld nthrds %d nqueue %ld basyncs %d flags:%08lx",
-              ark, path, ark->ea->st_flash, size, bsize, hcount, ark->ntasks,
-              nthrds, ark->nasyncs, ark->basyncs, flags);
   return rc;
 }
 

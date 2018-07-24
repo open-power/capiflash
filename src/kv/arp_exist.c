@@ -84,7 +84,10 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->inb_size = tcbp->blen*_arkp->bsize;
   }
 
-  if (kv_inject_flags) {HTC_FREE(_arkp->htc[rcbp->pos]);}
+  if (kv_inject_flags && HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
+  {
+      HTC_FREE(_arkp->htc[rcbp->pos]);
+  }
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
@@ -100,8 +103,8 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // Create a chain of blocks to be passed to be read
   if (bl_rechain(&tcbp->aiol, _arkp->bl, tcbp->hblk, tcbp->blen, tcbp->aiolN))
   {
-    rcbp->res   = -1;
-    rcbp->rc    = ENOMEM;
+    rcbp->res    = -1;
+    rcbp->rc     = ENOMEM;
     iocbp->state = ARK_CMD_DONE;
     KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
     goto ark_exist_start_err;
@@ -109,8 +112,8 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   tcbp->aiolN = tcbp->blen;
 
   KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d", tid, tcbp->ttag);
-  ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
-                   tcbp->blen, 0, tcbp->ttag, ARK_EXIST_FINISH);
+  ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_READ, (void *)tcbp->inb,
+                   tcbp->aiol, tcbp->blen, 0, tcbp->ttag, ARK_EXIST_FINISH);
 
 ark_exist_start_err:
 

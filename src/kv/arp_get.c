@@ -67,7 +67,10 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // that contains the key
   tcbp->blen = bl_len(_arkp->bl, tcbp->hblk);
 
-  if (kv_inject_flags) {HTC_FREE(_arkp->htc[rcbp->pos]);}
+  if (kv_inject_flags && HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
+  {
+      HTC_FREE(_arkp->htc[rcbp->pos]);
+  }
 
   if (tcbp->blen*_arkp->bsize > tcbp->inb_size)
   {
@@ -86,7 +89,9 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->inb_size = tcbp->blen*_arkp->bsize;
   }
 
-  scbp->poolstats.io_cnt += tcbp->blen;
+  scbp->poolstats.io_cnt  += tcbp->blen;
+  scbp->poolstats.hcl_cnt += 1;
+  scbp->poolstats.hcl_tot += tcbp->blen;
 
   if (HTC_HIT(_arkp, rcbp->pos, tcbp->blen))
   {
@@ -101,8 +106,8 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // Create a chain of blocks to be passed to be read
   if (bl_rechain(&tcbp->aiol, _arkp->bl, tcbp->hblk, tcbp->blen, tcbp->aiolN))
   {
-    rcbp->res   = -1;
-    rcbp->rc    = ENOMEM;
+    rcbp->res    = -1;
+    rcbp->rc     = ENOMEM;
     iocbp->state = ARK_CMD_DONE;
     KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
     goto ark_get_start_err;
@@ -112,8 +117,8 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d pos:%6ld blk#:%5ld hblk:%6ld nblks:%ld",
          tid, tcbp->ttag, rcbp->pos, tcbp->aiol[0].blkno,tcbp->hblk,tcbp->blen);
 
-  ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->inb, tcbp->aiol,
-                   tcbp->blen, 0, tcbp->ttag, ARK_GET_PROCESS);
+  ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_READ, (void *)tcbp->inb,
+                   tcbp->aiol, tcbp->blen, 0, tcbp->ttag, ARK_GET_PROCESS);
 
 ark_get_start_err:
   return;
@@ -135,7 +140,7 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
   KV_TRC_DBG(pAT, "INB_GET tid:%d ttag:%3d pos:%6ld tot:%ld used:%ld",
              tid, tcbp->ttag, rcbp->pos, tcbp->inb_size, tcbp->inb->len);
 
-  if (!HTC_INUSE(_arkp->htc[rcbp->pos]) && HTC_AVAIL(_arkp,tcbp->blen))
+  if (!HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]) && HTC_AVAIL(_arkp,tcbp->blen))
   {
       ++scbp->htcN;
       KV_TRC(pAT, "HTC_NEW tid:%d ttag:%3d pos:%6ld htcN:%d blen:%ld",
@@ -185,8 +190,8 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
       // Create the block chain to be used for the IO
       if (bl_rechain(&tcbp->aiol, _arkp->bl, vblk, tcbp->blen, tcbp->aiolN))
       {
-        rcbp->res   = -1;
-        rcbp->rc    = ENOMEM;
+        rcbp->res    = -1;
+        rcbp->rc     = ENOMEM;
         iocbp->state = ARK_CMD_DONE;
         KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
         goto ark_get_process_err;
@@ -199,7 +204,7 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
              tid, tcbp->ttag, rcbp->pos, rcbp->vlen);
       // Schedule the READ of the key's value into the
       // variable buffer.
-      ea_async_io_init(_arkp, iocbp, ARK_EA_READ, (void *)tcbp->vb,
+      ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_READ, (void *)tcbp->vb,
                        tcbp->aiol, tcbp->blen, 0, tcbp->ttag, ARK_GET_FINISH);
     }
     else

@@ -41,8 +41,8 @@
 #include <errno.h>
 #include <ticks.h>
 
-#define KV_MAX_QD           256
-#define KV_NASYNC           256
+#define KV_MAX_QD           1024
+#define KV_NASYNC           1024
 #define KV_BASYNC           8*1024
 int     KV_MIN_SECS =       1;
 
@@ -145,8 +145,7 @@ void kv_async_DEL_KEY   (async_CB_t *pCB);
 ** \brief
 **   init a 64-bit tag word with the context and control block indexes
 *******************************************************************************/
-#define SET_ITAG(ctxt_i, cb_i) (UINT64_C(0xBEEF000000000000) | \
-                               (uint64_t)cb_i <<32)
+#define SET_ITAG(cb_i) (UINT64_C(0xBEEF000000000000) | (uint64_t)cb_i <<32)
 
 /**
 ********************************************************************************
@@ -198,9 +197,19 @@ do                                                                             \
 ** \brief
 **   create a new ark with specific parms
 *******************************************************************************/
-#define NEW_ARK(_dev, _ark)                                                    \
-        assert(0 == ark_create(_dev, _ark, ark_create_flag));                  \
-        assert(NULL != ark);
+#define NEW_ARK(_dev, _ark, _thds)                                             \
+  do                                                                           \
+  {                                                                            \
+        assert(0 == ark_create_verbose(_dev, _ark,                             \
+                                       ARK_VERBOSE_SIZE_DEF,                   \
+                                       ARK_VERBOSE_BSIZE_DEF,                  \
+                                       UINT64_C(1024*1024),                    \
+                                       _thds,                                  \
+                                       1024,                                   \
+                                       ARK_MAX_BASYNCS,                        \
+                                       ark_create_flag));                      \
+        assert(NULL != *_ark);                                                 \
+  } while (0)
 
 /**
 ********************************************************************************
@@ -228,7 +237,7 @@ void kv_async_cb(int errcode, uint64_t dt, int64_t res)
 
     pCB = pCTs->pCBs+GET_CB(dt);
 
-    KV_TRC(pAT, "CALLBACK:%p dt:%lx cur:%d beg:%d end:%d",
+    KV_TRC(pAT, "ASYNCCB %p dt:%lx cur:%d beg:%d end:%d",
                 pCB, dt, pCB->cur, pCB->beg, pCB->end);
 
     if (!pCB)             KV_ERR_STOP(pCB, "bad dt: cb", 0);
@@ -386,7 +395,7 @@ void kv_async_io(ARK     *ark,
     for (job=0; job<jobs; job++)
     {
         pCB            = pCTs->pCBs+job;
-        pCB->itag      = SET_ITAG(ctxt,job);
+        pCB->itag      = SET_ITAG(job);
         pCB->ark       = pCTs->ark;
         pCB->flags     = flags;
         pCB->klen      = klen;
@@ -684,17 +693,20 @@ int main(int argc, char **argv)
     char    *_len        = NULL;
     char    *_klen       = NULL;
     char    *_vlen       = NULL;
-    char    *_htc         = NULL;
+    char    *_htc        = NULL;
+    char    *_thds       = NULL;
     uint32_t readonly    = 0;
     uint32_t new         = 0;
     uint32_t sync        = 0;
     uint32_t htc         = 1;
-    uint32_t QD          = 100;
+    uint32_t thds        = 4;
+    uint32_t plun        = 0;
+    uint32_t QD          = 400;
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:c:rhSMn")))
+    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:c:t:prhSMn")))
     {
         switch (c)
         {
@@ -705,6 +717,8 @@ int main(int argc, char **argv)
             case 'v': _vlen      = optarg;   break;
             case 'k': _klen      = optarg;   break;
             case 'c': _htc       = optarg;   break;
+            case 't': _thds      = optarg;   break;
+            case 'p': plun       = 1;        break;
             case 'n': new        = 1;        break;
             case 'r': readonly   = 1; new=0; break;
             case 'S': sync       = 1;        break;
@@ -719,6 +733,7 @@ int main(int argc, char **argv)
     if (_klen) {KLEN        = atoi(_klen);}
     if (_vlen) {VLEN        = atoi(_vlen);}
     if (_htc)  {htc         = atoi(_htc);}
+    if (_thds) {thds        = atoi(_thds);}
 
     QD         %= KV_NASYNC;
     LEN         = LEN<QD ? QD : LEN;
@@ -727,11 +742,11 @@ int main(int argc, char **argv)
 
     if      (new)      {ark_create_flag = ARK_KV_PERSIST_STORE;}
     else if (readonly) {ark_create_flag = ARK_KV_PERSIST_LOAD;}
-    else               {ark_create_flag = ARK_KV_VIRTUAL_LUN;}
+    else if (!plun)    {ark_create_flag = ARK_KV_VIRTUAL_LUN;}
 
     if (htc) {ark_create_flag |= ARK_KV_HTC;}
 
-    NEW_ARK(dev, &ark);
+    NEW_ARK(dev, &ark, thds);
 
     if (sync)
     {
@@ -746,7 +761,7 @@ int main(int argc, char **argv)
         if (!new)      {kv_async_io(ark, dev, KV_ASYNC_GET, QD, KLEN,VLEN,LEN);}
     }
 
-    if (!new && !readonly) {kv_async_io(ark, dev, KV_ASYNC_DEL, QD, KLEN,VLEN,LEN);}
+//    if (!new && !readonly) {kv_async_io(ark, dev, KV_ASYNC_DEL, QD, KLEN,VLEN,LEN);}
 
     assert(0 == ark_delete(ark));
 

@@ -269,7 +269,7 @@ void process_unmapQ(_ARK *_arkp, int id, int iss)
         }
         aiol[0].blkno     = blk;
         aiol[0].a_tag.tag = -1;
-        ea_async_io_init(_arkp, iocbp, ARK_EA_UNMAP, (void *)_arkp->ea->zbuf,
+        ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_UNMAP, _arkp->ea->zbuf,
                          aiol, 1, 0, utag, ARK_CMD_DONE);
         queue_enq_unsafe(usq, utag);
     }
@@ -1004,7 +1004,7 @@ int get_task_state(int32_t cmd)
  ******************************************************************************/
 static __inline__ void PERF_LOG(_ARK *_arkp, scb_t *scbp, int id)
 {
-    if (SDELTA(_arkp->perflogtime, _arkp->ns_per_tick) < 1) {return;}
+    if (SDELTA(scbp->perflogtime, _arkp->ns_per_tick) < 1) {return;}
 
     uint64_t opsT = scbp->set_opsT + scbp->get_opsT + scbp->exi_opsT +\
                     scbp->del_opsT;
@@ -1018,7 +1018,7 @@ static __inline__ void PERF_LOG(_ARK *_arkp, scb_t *scbp, int id)
     if (scbp->del_opsT) {del_lat = scbp->del_latT/scbp->del_opsT;}
     if (scbp->um_opsT)  {um_lat  = scbp->um_latT/scbp->um_opsT;}
     if (scbp->QDT)      {QDA     = scbp->QDT/scbp->QDN;}
-    KV_TRC_PERF1(pAT,"IO:     tid:%d PERF   opsT:%7ld lat:%7ld "
+    KV_TRC_PERF1(pAT,"IO_PERF tid:%2d opsT:%7ld lat:%7ld "
                      "opsT(%7ld %7ld %7ld %7ld %7ld) "
                      "lat(%7ld %6ld %6ld %6ld %6ld) QDA:%4ld issT:%4d umQ:%ld",
                      id, opsT, lat,
@@ -1027,17 +1027,19 @@ static __inline__ void PERF_LOG(_ARK *_arkp, scb_t *scbp, int id)
                      set_lat, get_lat, exi_lat, del_lat, um_lat,
                      QDA, scbp->issT, _arkp->blu->count);
 
-    KV_TRC_PERF2(pAT,"IO:     tid:%d QUEUES rq:%3d tq:%3d sq:%4d hq:%4d "
+    KV_TRC_PERF2(pAT,"IO_QS   tid:%2d rq:%3d tq:%3d sq:%4d hq:%4d "
                      "cq:%4d usq:%4d uhq:%4d",
                      id, scbp->reqQ->c, scbp->taskQ->c, scbp->scheduleQ->c,
                      scbp->harvestQ->c, scbp->cmpQ->c, scbp->uscheduleQ->c,
                      scbp->uharvestQ->c);
-
-    KV_TRC_PERF2(pAT, "PSTATS  tid:%d kv:%8ld ops:%8ld ios:%8ld um:%8ld "
-                      "bytes:%8ld blks:%8ld htcN:%8d hit:%9ld disc:%8ld", id,
+    uint64_t hcl_tot=scbp->poolstats.hcl_tot;
+    KV_TRC_PERF2(pAT,"PSTATS  tid:%2d kv:%8ld ops:%8ld ios:%8ld cl:%5ld "
+                     "um:%8ld bytes:%8ld blks:%8ld htcN:%8d hit:%9ld disc:%8ld",
+                 id,
                  scbp->poolstats.kv_cnt   + _arkp->pers_stats.kv_cnt,
                  scbp->poolstats.ops_cnt,
                  scbp->poolstats.io_cnt,
+                 hcl_tot?hcl_tot/scbp->poolstats.hcl_cnt:1,
                  scbp->poolstats.um_cnt,
                  scbp->poolstats.byte_cnt + _arkp->pers_stats.byte_cnt,
                  scbp->poolstats.blk_cnt  + _arkp->pers_stats.blk_cnt,
@@ -1059,7 +1061,7 @@ static __inline__ void PERF_LOG(_ARK *_arkp, scb_t *scbp, int id)
     scbp->htc_hits  = 0;
     scbp->htc_disc  = 0;
 
-    _arkp->perflogtime = getticks();
+    scbp->perflogtime = getticks();
 }
 
 /**
@@ -1413,20 +1415,8 @@ void *pool_function(void *arg)
       PERF_LOG(_arkp, scbp, id);
   }
 
+  scbp->perflogtime = 0;
   PERF_LOG(_arkp, scbp, id);
-
-  KV_TRC_PERF1(pAT,"IO:     tid:%d QUEUES rq:%3d tq:%3d sq:%4d hq:%4d "
-                   "cq:%4d usq:%4d uhq:%4d",
-                   id, rq->c, tq->c, sq->c, hq->c, cq->c, usq->c, uhq->c);
-
-  KV_TRC_PERF1(pAT, "PSTATS  tid:%d kv:%8ld ops:%8ld ios:%8ld um:%8ld "
-                    "bytes:%8ld blks:%8ld", id,
-               scbp->poolstats.kv_cnt   + _arkp->pers_stats.kv_cnt,
-               scbp->poolstats.ops_cnt,
-               scbp->poolstats.io_cnt,
-               scbp->poolstats.um_cnt,
-               scbp->poolstats.byte_cnt + _arkp->pers_stats.byte_cnt,
-               scbp->poolstats.blk_cnt  + _arkp->pers_stats.blk_cnt);
 
   KV_TRC(pAT, "exiting tid:%d nactive:%d", id, _arkp->nactive);
   return NULL;

@@ -53,8 +53,8 @@ ifndef SURELOCKROOT
 $(error run: ". env.bash")
 endif
 
-VERSIONMAJOR=4
-VERSIONMINOR=3
+VERSIONMAJOR=5
+VERSIONMINOR=0
 
 ifneq (${SURELOCKROOT}/lib,$(findstring ${SURELOCKROOT}/lib,${LD_LIBRARY_PATH}))
 export LD_LIBRARY_PATH+=:${SURELOCKROOT}/lib

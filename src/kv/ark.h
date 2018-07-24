@@ -84,7 +84,7 @@
 #define ARK_VERBOSE_VLIMIT_DEF         256
 #define ARK_VERBOSE_BLKBITS_DEF         34
 #define ARK_VERBOSE_GROW_DEF          8192
-#define ARK_VERBOSE_NTHRDS_DEF           2
+#define ARK_VERBOSE_NTHRDS_DEF           8
 
 #define ARK_MAX_TASK_OPS                40
 #define ARK_MIN_NASYNCS   ARK_MAX_TASK_OPS
@@ -116,8 +116,8 @@ typedef struct
 
 #define HTC_GET(_htc, _bt, _sz)    memcpy(_bt,    _htc.p, _sz)
 #define HTC_PUT(_htc, _bt, _sz)    memcpy(_htc.p, _bt,    _sz)
-#define HTC_HIT(_ark, _pos, _blks) (_ark->htc[_pos].p && _blks<=_ark->htc_blks)
-#define HTC_INUSE(_htc)            (_htc.p)
+#define HTC_HIT(_ark, _pos, _blks) (_ark->htc_blks && _ark->htc[_pos].p && _blks<=_ark->htc_blks)
+#define HTC_INUSE(_ark, _htc)      (_ark->htc_blks && _htc.p)
 #define HTC_AVAIL(_ark, _blks)     (_ark->htc_blks && _blks <= _ark->htc_blks)
 
 #define HTC_NEW(_htc, _bt, _sz)                 \
@@ -214,6 +214,8 @@ typedef struct ark_stats
   volatile uint64_t blk_cnt;
   volatile uint64_t byte_cnt;
   volatile uint64_t um_cnt;
+  volatile uint64_t hcl_cnt;
+  volatile uint64_t hcl_tot;
 } ark_stats_t;
 
 #define ARK_P_VERSION_1       1
@@ -308,7 +310,6 @@ typedef struct _ark
 
   uint32_t         min_bt;      // min size of inb/oub
 
-  ticks            perflogtime;  // time since last perf log
   double           ns_per_tick;
   ark_stats_t      pers_stats;
 } _ARK;
@@ -358,6 +359,9 @@ typedef struct _scb
   uint64_t         htc_disc;    // ht cache discards
   uint32_t         htcN;        // current allocated ht cache elements
 
+  struct _ea      *ea;          // in memory store space
+
+  ticks            perflogtime;  // time since last perf log
   int32_t          rlast;
   int32_t          poolstate;
   ark_stats_t      poolstats;
@@ -552,6 +556,7 @@ void ea_async_io_harvest (_ARK *_arkp, int32_t tid, iocb_t *iocbp);
  *  init iocb struct for IO
  ******************************************************************************/
 static __inline__ void ea_async_io_init(_ARK          *_arkp,
+                                        struct _ea    *eap,
                                         iocb_t        *iocbp,
                                         int            op,
                                         void          *addr,
@@ -563,7 +568,7 @@ static __inline__ void ea_async_io_init(_ARK          *_arkp,
 {
   memset(iocbp,0,sizeof(iocb_t));
   iocbp->state    = ARK_IO_SCHEDULE;
-  iocbp->ea       = _arkp->ea;
+  iocbp->ea       = eap;
   iocbp->op       = op;
   iocbp->addr     = addr;
   iocbp->blist    = blist;

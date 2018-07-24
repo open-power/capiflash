@@ -65,7 +65,7 @@
 #define READ       1
 #define WRITE      0
 #define MAX_SGDEVS 8
-#define PAGESIZE   (_4K*73)
+#define PAGESIZE   (_4K*16)
 #define INUSE      0x1111
 #define GOOD       0x1001
 #define PRE_CHK    0x0010
@@ -115,6 +115,10 @@ page_state_t *pstate = NULL;       // state for each page
 
 #define NEXT_PAGE(_pI,_pN) _pI=(_pI+1)%_pN;
 
+int global_stop=0;
+
+#define PTR_ALIGN(_p, _a) ((void*)(((uintptr_t)(_p) + _a - 1) & ~(uintptr_t)(_a - 1)))
+
 /**
 ********************************************************************************
 ** \brief run sync IO in a thread
@@ -147,6 +151,8 @@ void run_sync(void *d)
     stime = getticks();
     do
     {
+        if (global_stop) {return;}
+
         P = &page[pI];
         D = &data[pI];
         S = &pstate[pI];
@@ -164,13 +170,9 @@ void run_sync(void *d)
         {
             rd=1;
             /* pre-check if all cmpdata matches */
-            if (S->state & PRE_CHK && memcmp(P, D, PAGESIZE) != 0)
+            if ((S->state & PRE_CHK) && memcmp(P, D, PAGESIZE) != 0)
             {
-                printf("PRE-MISCOMPARE tid:%d lba:%ld\n", tid, S->lba);
-            }
-            else
-            {
-                S->state |= PRE_CHK;
+                debug("PRE-MISCOMPARE tid:%d lba:%ld\n", tid, S->lba);
             }
             debug("RD_BEG tid:%4d cid:%d page:%ld:%p lba:%ld\n",
                             tid, S->cid, P-page, P, S->lba);
@@ -179,12 +181,14 @@ void run_sync(void *d)
             sticks = getticks();
             rc     = cblk_read(S->cid, P, S->lba, nblocks, flags);
             cticks = getticks()-sticks;
-            if (nblocks == rc)
+            if (errno == 0 && nblocks == rc)
             {
                 /* check if all cmpdata matches */
                 if (memcmp(P, D, PAGESIZE) != 0)
                 {
                     printf("MISCOMPARE tid:%d lba:%ld\n", tid, S->lba);
+                    global_stop=1;
+
                     if (1)
                     {
                         /* show which 64-bit word(s) miscompare */
@@ -192,13 +196,49 @@ void run_sync(void *d)
                         p2 = (uint64_t*)D;
                         for (i=0; i<PAGESIZE/8; i++,p++,p2++)
                         {
-                            if (*p != *p2) {printf("u64cmp: tid:%d i:%d\n",tid,i);}
+                            if (*p != *p2) {printf("u64cmp: tid:%d addr:%p i:%d P:%016lx D:%016lx\n",tid,p,i,*p,*p2);}
                         }
                     }
-                    exit(0);
+                    memset(P,0x94,PAGESIZE);
+                    rc = cblk_read(S->cid, P, S->lba, nblocks, flags);
+                    if (errno == 0 && nblocks == rc)
+                    {
+                        /* check if all cmpdata matches */
+                        if (memcmp(P, D, PAGESIZE) != 0)
+                        {
+                            printf("MISCOMPARE on 2nd read tid:%d lba:%ld\n", tid, S->lba);
+                        }
+                        else
+                        {
+                            printf("NO MISCOMPARE on 2nd read tid:%d lba:%ld\n", tid, S->lba);
+                        }
+                    }
+                    memset(P,0x94,PAGESIZE);
+                    rc = cblk_read(S->cid, P, S->lba, nblocks, flags);
+                    if (errno == 0 && nblocks == rc)
+                    {
+                        /* check if all cmpdata matches */
+                        if (memcmp(P, D, PAGESIZE) != 0)
+                        {
+                            printf("MISCOMPARE on 3rd read tid:%d lba:%ld\n", tid, S->lba);
+                            exit(0);
+                        }
+                        else
+                        {
+                            printf("NO MISCOMPARE on 3rd read tid:%d lba:%ld\n", tid, S->lba);
+                        }
+                    }
+                }
+                else
+                {
+                    S->state |= PRE_CHK;
                 }
             }
-            else if (EBUSY != errno) {printf("read err rc:%d errno:%d\n", rc, errno);}
+            else if (EBUSY != errno)
+            {
+                S->state &= ~PRE_CHK;
+                printf("read err rc:%d errno:%d\n", rc, errno);
+            }
         }
         else
         {
@@ -381,7 +421,8 @@ int main(int argc, char **argv)
                         sizeof(page_t)*PAGES, rc);
         exit(0);
     }
-    page = (page_t*)((char*)cache + 16);
+    page = PTR_ALIGN(cache,ALIGN);
+
     if ((rc=posix_memalign((void**)&data, 128, sizeof(page_t)*PAGES)))
     {
         fprintf(stderr,"posix_memalign size:%ld rc:%d\n",

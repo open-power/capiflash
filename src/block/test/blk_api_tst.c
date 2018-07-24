@@ -495,7 +495,7 @@ int blk_fvt_alloc_bufs(int size)
     /*
      * Align data buffer on page boundary.
      */	
-    if ( posix_memalign((void *)&blk_fvt_data_buf,4096,BLK_FVT_BUFSIZE*size)) {
+    if ( posix_memalign((void *)&blk_fvt_data_buf,16,BLK_FVT_BUFSIZE*size)) {
 
         perror("posix_memalign failed for data buffer");
         return (ret);
@@ -506,7 +506,7 @@ int blk_fvt_alloc_bufs(int size)
     /*
      * Align data buffer on page boundary.
      */	
-    if ( posix_memalign((void *)&blk_fvt_comp_data_buf,4096,BLK_FVT_BUFSIZE*size)) {
+    if ( posix_memalign((void *)&blk_fvt_comp_data_buf,16,BLK_FVT_BUFSIZE*size)) {
         perror("posix_memalign failed for comp data buffer");
         free(blk_fvt_data_buf);
         blk_fvt_data_buf=NULL;
@@ -975,14 +975,14 @@ void* blk_io_loop(void *data)
     blk_number = blk_data->tid * CHUNK_SIZE;
     max_lba    = blk_number    + CHUNK_SIZE-1;
 
-    if (posix_memalign((void *)&data_buf,4096,BLK_FVT_BUFSIZE))
+    if (posix_memalign((void *)&data_buf,16,BLK_FVT_BUFSIZE))
     {
         perror("posix_memalign failed for data buffer");
         blk_data->ret     = -1;
         blk_data->errcode = errno;
         goto exit;
     }
-    if (posix_memalign((void*)&comp_data_buf,4096,BLK_FVT_BUFSIZE))
+    if (posix_memalign((void*)&comp_data_buf,16,BLK_FVT_BUFSIZE))
     {
         perror("posix_memalign failed for data buffer");
         blk_data->ret     = -1;
@@ -1540,7 +1540,7 @@ START:
     for (i=0; i<NBUFS; i++)
     {
         /* Align write buffers on page boundary */
-        if (posix_memalign((void *)(data_buf+i),4096,BLK_FVT_BUFSIZE))
+        if (posix_memalign((void *)(data_buf+i),16,BLK_FVT_BUFSIZE))
         {
             perror("posix_memalign failed for data buffer");
             rc=-1;
@@ -1549,7 +1549,7 @@ START:
         memset(*(data_buf+i), i+1, BLK_FVT_BUFSIZE);
     }
     /* Align read buffer on page boundary */
-    if (posix_memalign((void *)&blk_fvt_comp_data_buf,4096,BLK_FVT_BUFSIZE))
+    if (posix_memalign((void *)&blk_fvt_comp_data_buf,16,BLK_FVT_BUFSIZE))
     {
         perror("posix_memalign failed for comp data buffer");
         rc=-1;

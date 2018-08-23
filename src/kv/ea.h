@@ -34,7 +34,6 @@
 
 #define ARK_EA_READ  0
 #define ARK_EA_WRITE 1
-#define ARK_EA_UNMAP 2
 
 #define st_memory  store.memory
 #define st_flash   store.flash.chkid
@@ -58,7 +57,6 @@ typedef struct _ea
   uint64_t         bsize;
   uint64_t         bcount;
   uint64_t         size;
-  uint64_t         unmap;
   char            *zbuf;
   store_id_t       store;
 
@@ -94,14 +92,14 @@ typedef struct _ea
 
 EA *ea_new(const char *path, uint64_t bsize, int basyncs, uint64_t *size, 
            uint64_t *bcount, uint64_t vlun);
+int ea_free(EA *ea);
 int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount);
-int ea_delete(EA *ea);
 
 int ea_read(EA *ea, uint64_t lba, void *dst);
 
 int ea_write(EA *ea, uint64_t lba, void *src);
 
-int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, int nthrs);
+int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len);
 
 
 #endif

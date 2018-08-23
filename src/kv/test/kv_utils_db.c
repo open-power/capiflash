@@ -456,3 +456,26 @@ kv_db_find(kv_t *db, uint32_t num_keys, void *key, uint32_t klen)
     }
     return NULL;
 }
+
+/*******************************************************************************
+ * search for key in db
+ ******************************************************************************/
+int kv_db_delete(kv_t *db, uint32_t num_keys, void *key, uint32_t klen)
+{
+    uint32_t i  = 0;
+    uint32_t rc = -1;
+
+    if (NULL == db) return rc;
+
+    for (i=0; i<num_keys; i++)
+    {
+        if (db[i].klen == klen &&
+            memcmp(key, db[i].key, klen) == 0)
+        {
+            memset(db[i].key,0,klen);
+            rc = 0;
+            break;
+        }
+    }
+    return rc;
+}

@@ -86,8 +86,8 @@ class Sync_pth
                                          sg_args->vlen,
                                          sg_args->val,
                                          &res))) {usleep(10000);}
-            EXPECT_EQ(0, rc);
-            EXPECT_EQ(sg_args->vlen, res);
+            ASSERT_EQ(0, rc);
+            ASSERT_EQ(sg_args->vlen, res);
         }
     }
 
@@ -111,15 +111,15 @@ class Sync_pth
                                          sg_args->gval,
                                          0,
                                          &res))) {usleep(10000);}
-            EXPECT_EQ(0, rc);
-            EXPECT_EQ(sg_args->vlen, res);
-            EXPECT_EQ(0, memcmp(sg_args->val,sg_args->gval,sg_args->vlen));
+            ASSERT_EQ(0, rc);
+            ASSERT_EQ(sg_args->vlen, res);
+            ASSERT_EQ(0, memcmp(sg_args->val,sg_args->gval,sg_args->vlen));
             while (EAGAIN == (rc=ark_exists(ark,
                                             KLEN,
                                             sg_args->key,
                                             &res))) {usleep(10000);}
-            EXPECT_EQ(0, rc);
-            EXPECT_EQ(sg_args->vlen, res);
+            ASSERT_EQ(0, rc);
+            ASSERT_EQ(sg_args->vlen, res);
         }
     }
 
@@ -140,8 +140,8 @@ class Sync_pth
                                          KLEN,
                                          key,
                                          &res))) {usleep(10000);}
-            EXPECT_EQ(0, rc);
-            EXPECT_EQ(sg_args->vlen, res);
+            ASSERT_EQ(0, rc);
+            ASSERT_EQ(sg_args->vlen, res);
         }
     }
 

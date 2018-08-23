@@ -145,8 +145,8 @@ TEST(FVT_KV_GOOD_PATH, PERSIST_COMPLEX)
     kv_t    *fdb    = NULL;
     kv_t    *mdb    = NULL;
     kv_t    *bdb    = NULL;
-    uint32_t klen   = 512;
-    uint32_t vlen   = 256;
+    uint32_t klen   = 377;
+    uint32_t vlen   = 137;
     uint32_t LEN    = 10000;
     uint32_t BLEN   = 1000;
     uint32_t i      = 0;
@@ -168,7 +168,7 @@ TEST(FVT_KV_GOOD_PATH, PERSIST_COMPLEX)
     printf("create k/v databases\n"); fflush(stdout);
     fdb = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
     ASSERT_TRUE(fdb != NULL);
-    bdb = (kv_t*)kv_db_create_fixed(BLEN, klen+1, KV_1M);
+    bdb = (kv_t*)kv_db_create_fixed(BLEN, klen+1, KV_250K);
     ASSERT_TRUE(bdb != NULL);
     mdb = (kv_t*)kv_db_create_mixed(LEN, klen-1, vlen);
     ASSERT_TRUE(mdb != NULL);
@@ -208,14 +208,14 @@ TEST(FVT_KV_GOOD_PATH, PERSIST_COMPLEX)
     printf("load ark with BIG db\n"); fflush(stdout);
     fvt_kv_utils_load (ark, bdb, BLEN);
     printf("query BIG db\n"); fflush(stdout);
-    fvt_kv_utils_query(ark, bdb, KV_1M, BLEN);
+    fvt_kv_utils_query(ark, bdb, KV_250K, BLEN);
 
     printf("query fixed db\n"); fflush(stdout);
     fvt_kv_utils_query(ark, fdb, vlen, LEN);
 
     printf("run REP_LOOP on fixed db\n"); fflush(stdout);
     fvt_kv_utils_REP_LOOP(ark,
-                          kv_db_create_fixed,
+                          kv_db_create_mixed,
                           kv_db_fixed_regen_values,
                           klen+100,
                           vlen,

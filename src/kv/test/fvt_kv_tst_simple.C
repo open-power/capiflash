@@ -42,9 +42,9 @@ extern "C"
 #include <am.h>
 #include <ark.h>
 #include <arkdb_trace.h>
+uint64_t seed = UINT64_C(0xEDCA000000000000);
 }
 
-uint64_t seed = 0xFF00000000000000;
 extern KV_Trace_t *pAT;
 
 /**
@@ -128,6 +128,7 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_iv)
  ******************************************************************************/
 TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
 {
+
     uint64_t       n  = 20000;
     uint64_t       w  = ARK_VERBOSE_BLKBITS_DEF;
     BL            *bl = NULL;
@@ -142,9 +143,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
     ASSERT_TRUE(bl_left(bl) < 0);
     ASSERT_TRUE(bl_len(bl,1) == 0);
     ASSERT_TRUE(bl_next(bl,1) < 0);
-    ASSERT_TRUE(bl_chain(bl,1,10) == 0);
-    ASSERT_TRUE(bl_rechain(&aiol,bl,1,1,1) != 0);
-    ASSERT_TRUE(bl_chain_blocks(bl,1,1) == 0);
+    ASSERT_TRUE(bl_chain(bl,1,10,0) == 0);
+    ASSERT_TRUE(bl_rechain(&aiol,bl,1,1,1,0) != 0);
 
     bl = bl_new(n, w);
     ASSERT_TRUE(NULL != bl);
@@ -160,15 +160,15 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
     ASSERT_EQ(bl_drop(bl,2),2);
     ASSERT_EQ(bl_take(bl,10), 2);
     ASSERT_EQ(bl_len(bl,2), 10);
-    aiol = bl_chain(bl,2,10);
+    aiol = bl_chain(bl,2,10,0);
     ASSERT_TRUE(aiol != NULL);
     ASSERT_EQ(bl_drop(bl,2),10);
     ASSERT_EQ(bl_take(bl,20), 2);
     ASSERT_EQ(bl_len(bl,2), 20);
-    ASSERT_EQ(bl_rechain(&aiol,bl,2,20,10), 0);
+    ASSERT_EQ(bl_rechain(&aiol,bl,2,20,10,0), 0);
 
     am_free(aiol);
-    bl_delete(bl);
+    bl_free(bl);
 
     /* now do it backwards */
     bl = bl_new(n, w);
@@ -192,9 +192,10 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_bl)
     ASSERT_EQ(bl_take(bl,1), 3);    ASSERT_EQ(bl_left(bl), 1);
     ASSERT_EQ(bl_take(bl,1), 1);    ASSERT_EQ(bl_left(bl), 0);
 
-    bl_delete(bl);
+    bl_free(bl);
 
     KV_TRC_CLOSE(pAT);
+
 }
 
 void rdy_unmap(BL *bl, BL *blu, uint64_t blk)
@@ -301,8 +302,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_unmap_bl)
     ASSERT_EQ(bl_left(blu), 0);
 
     /* cleanup */
-    bl_delete(bl);
-    bl_delete(blu);
+    bl_free(bl);
+    bl_free(blu);
 }
 
 /**
@@ -479,7 +480,7 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_create_delete)
 {
     ARK  *ark = NULL;
 
-    ARK_CREATE;
+    EXPECT_EQ(0, ark_create(getenv("FVT_DEV"), &ark, 0));
     usleep(100000);
     ARK_DELETE;
 }
@@ -492,29 +493,72 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_create_delete)
 TEST(FVT_KV_GOOD_PATH, SIMPLE_SET_GET_EXISTS_DEL)
 {
     ARK     *ark  = NULL;
-    char     k[]  = {"1234"};
+    char     k0[]  = {"1234"};
+    char     k1[]  = {"5678"};
+    char     k2[]  = {"9101"};
+    char     k3[]  = {"1121"};
     uint32_t klen = 4;
-    char     v[]  = {"12345678"};
-    char     g[8] = {0};
+    char     v0[]  = {"12345678"};
+    char     v1[]  = {"9101112 "};
+    char     v2[]  = {"13141516"};
+    char     v3[300];
+    char     g[300];
     uint32_t vlen = 8;
     int64_t  res  = 0;
 
     ARK_CREATE;
 
-    ASSERT_EQ(ENOENT, ark_get   (ark, klen, k, vlen, g, 0, &res));
-    ASSERT_EQ(ENOENT, ark_exists(ark, klen, k, &res));
-    ASSERT_EQ(ENOENT, ark_del   (ark, klen, k, &res));
+    ASSERT_EQ(ENOENT, ark_get   (ark, klen, k0, vlen, g, 0, &res));
+    ASSERT_EQ(ENOENT, ark_exists(ark, klen, k0, &res));
+    ASSERT_EQ(ENOENT, ark_del   (ark, klen, k0, &res));
     ASSERT_EQ(-1, res);
-    ASSERT_EQ(0,      ark_set   (ark, klen, k, vlen, v, &res));
+    ASSERT_EQ(0,      ark_set   (ark, klen, k0, vlen, v0, &res));
     ASSERT_EQ(vlen, res);
-    ASSERT_EQ(0,      ark_get   (ark, klen, k, vlen, g, 0, &res));
+    ASSERT_EQ(0,      ark_get   (ark, klen, k0, vlen, g, 0, &res));
     ASSERT_EQ(vlen, res);
-    ASSERT_EQ(0, memcmp(v,g,vlen));
-    ASSERT_EQ(0,      ark_exists(ark, klen, k, &res));
-    ASSERT_EQ(0,      ark_del   (ark, klen, k, &res));
+    ASSERT_EQ(0, memcmp(v0,g,vlen));
+    ASSERT_EQ(0,      ark_exists(ark, klen, k0, &res));
+    ASSERT_EQ(0,      ark_del   (ark, klen, k0, &res));
     ASSERT_EQ(vlen, res);
-    ASSERT_EQ(ENOENT, ark_get   (ark, klen, k, vlen, g, 0, &res));
-    ASSERT_EQ(ENOENT, ark_exists(ark, klen, k, &res));
+    ASSERT_EQ(ENOENT, ark_get   (ark, klen, k0, vlen, g, 0, &res));
+    ASSERT_EQ(ENOENT, ark_exists(ark, klen, k0, &res));
+    ASSERT_EQ(ENOENT, ark_del   (ark, klen, k0, &res));
+    ASSERT_EQ(-1, res);
+
+    ASSERT_EQ(0,      ark_set   (ark, klen, k0, vlen, v0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0,      ark_get   (ark, klen, k0, vlen, g, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(v0,g,vlen));
+    ASSERT_EQ(0,      ark_exists(ark, klen, k0, &res));
+
+    ASSERT_EQ(0,      ark_set   (ark, klen, k1, vlen, v1, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0,      ark_get   (ark, klen, k1, vlen, g, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(v1,g,vlen));
+    ASSERT_EQ(0,      ark_exists(ark, klen, k1, &res));
+
+    ASSERT_EQ(0,      ark_set   (ark, klen, k2, vlen, v2, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0,      ark_get   (ark, klen, k2, vlen, g, 0, &res));
+    ASSERT_EQ(vlen, res);
+    ASSERT_EQ(0, memcmp(v2,g,vlen));
+    ASSERT_EQ(0,      ark_exists(ark, klen, k2, &res));
+
+    ASSERT_EQ(0,      ark_set   (ark, klen, k3, 300, v3, &res));
+    ASSERT_EQ(300, res);
+    ASSERT_EQ(0,      ark_get   (ark, klen, k3, 300, g, 0, &res));
+    ASSERT_EQ(300, res);
+    ASSERT_EQ(0, memcmp(v3,g,300));
+    ASSERT_EQ(0,      ark_exists(ark, klen, k3, &res));
+
+    ASSERT_EQ(0,      ark_del   (ark, klen, k3, &res));
+    ASSERT_EQ(300, res);
+    ASSERT_EQ(ENOENT, ark_get   (ark, klen, k3, vlen, g, 0, &res));
+    ASSERT_EQ(ENOENT, ark_exists(ark, klen, k3, &res));
+    ASSERT_EQ(ENOENT, ark_del   (ark, klen, k3, &res));
+    ASSERT_EQ(-1, res);
 
     ARK_DELETE;
 }
@@ -1085,25 +1129,35 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_random)
 {
     ARK     *ark           = NULL;
     kv_t    *db            = NULL;
-    int32_t  LEN           = 1000;
+    uint32_t LEN           = 4931;
     uint64_t klen          = 0;
     uint64_t sklen         = 0;
     uint32_t i             = 0;
     char     svalue[KV_4K] = {0};
     char     kvalue[KV_4K] = {0};
     void    *null          = NULL;
+    char    *dev           = getenv("FVT_DEV");
 
-    ARK_CREATE;
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF*100,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    1973,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
 
     ASSERT_EQ(ENOENT, ark_random(ark, KV_4K, &klen, kvalue));
 
-    db = (kv_t*)kv_db_create_fixed(LEN, 64, 1);
+    db   = (kv_t*)kv_db_create_fixed(LEN, 32, 250);
     ASSERT_TRUE(db != NULL);
 
     fvt_kv_utils_load (ark, db, LEN);
     fvt_kv_utils_query(ark, db, KV_4K, LEN);
 
-    for (i=0; i<100; i++)
+    ASSERT_EQ(0, ark_random(ark, KV_4K, &klen, kvalue));
+
+    for (i=0; i<LEN*2; i++)
     {
         ASSERT_EQ(0, ark_random(ark, KV_4K, &klen, kvalue));
 
@@ -1120,9 +1174,70 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_random)
         memcpy(svalue, kvalue, klen);
         sklen = klen;
     }
-
     fvt_kv_utils_del(ark, db, LEN);
     kv_db_destroy(db, LEN);
+
+    ARK_DELETE;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   load keys, ark_random, verify key is valid and different from last key,
+ *    delete ark
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_random_no_HTC)
+{
+    ARK     *ark           = NULL;
+    kv_t    *db            = NULL;
+    uint32_t LEN           = 4931;
+    uint64_t klen          = 0;
+    uint64_t sklen         = 0;
+    uint32_t i             = 0;
+    char     svalue[KV_4K] = {0};
+    char     kvalue[KV_4K] = {0};
+    void    *null          = NULL;
+    char    *dev           = getenv("FVT_DEV");
+
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF*100,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    1973,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN));
+
+    ASSERT_EQ(ENOENT, ark_random(ark, KV_4K, &klen, kvalue));
+
+    db   = (kv_t*)kv_db_create_fixed(LEN, 32, 250);
+    ASSERT_TRUE(db != NULL);
+
+    fvt_kv_utils_load (ark, db, LEN);
+    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+
+    ASSERT_EQ(0, ark_random(ark, KV_4K, &klen, kvalue));
+
+    for (i=0; i<LEN*2; i++)
+    {
+        ASSERT_EQ(0, ark_random(ark, KV_4K, &klen, kvalue));
+
+        /* make sure the key exists in our db */
+        ASSERT_NE(null, kv_db_find(db, LEN, kvalue, klen));
+
+        /* make sure the new key is not the same as the last key */
+        if (i && klen == sklen)
+        {
+            ASSERT_NE(0, memcmp(kvalue, svalue, klen));
+        }
+
+        /* save this key to compare to the next key */
+        memcpy(svalue, kvalue, klen);
+        sklen = klen;
+    }
+    fvt_kv_utils_del(ark, db, LEN);
+    kv_db_destroy(db, LEN);
+
     ARK_DELETE;
 }
 
@@ -1130,23 +1245,29 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_random)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-TEST(FVT_KV_GOOD_PATH, SIMPLE_first_next_FIXED_256x1x10000)
+TEST(FVT_KV_GOOD_PATH, SIMPLE_first_next_FIXED_134x1)
 {
     ARK     *ark           = NULL;
     ARI     *ari           = NULL;
-    int32_t  i             = 0;
     uint8_t  gvalue[KV_4K] = {0};
     kv_t    *db            = NULL;
-    int32_t  LEN           = 10000;
+    int32_t  LEN           = 1733;
     int64_t  res           = 0;
-    int64_t  klen          = 0;
-    int32_t  num           = 1;
+    int64_t  klen          = 134;
+    int32_t  num           = 0;
     int32_t  rc            = 0;
-    void    *null          = NULL;
+    char    *dev           = getenv("FVT_DEV");
 
-    ARK_CREATE;
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF*100,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    579,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN));
 
-    db = (kv_t*)kv_db_create_fixed(LEN, 256, 1);
+    db = (kv_t*)kv_db_create_fixed(LEN, klen, 1);
     ASSERT_TRUE(db != NULL);
 
     ari = ark_first(ark, KV_4K, &klen, gvalue);
@@ -1156,29 +1277,90 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_first_next_FIXED_256x1x10000)
     fvt_kv_utils_query(ark, db, KV_4K, LEN);
 
     ari = ark_first(ark, KV_4K, &klen, gvalue);
-    ASSERT_TRUE(ari != NULL);
-    ASSERT_TRUE(klen != 0);
+    ASSERT_NE(ari,  (ARI*)NULL);
+    ASSERT_NE(klen, 0);
+    ASSERT_EQ(0, kv_db_delete(db, LEN, gvalue, klen));
+    ASSERT_EQ(0, ark_exists(ark, klen, gvalue, &res));
+    ASSERT_NE(0, res);
 
     /* use ark_next to query all key/value pairs from the ark */
-    for (i=1; i<LEN; i++)
+    while (++num < LEN)
     {
-        ASSERT_NE(null, kv_db_find(db, LEN, gvalue, klen));
+        rc = ark_next(ari, KV_4K, &klen, gvalue);
+        ASSERT_EQ(rc,   0);
+        ASSERT_EQ(klen, klen);
+        ASSERT_EQ(0, kv_db_delete(db, LEN, gvalue, klen));
         ASSERT_EQ(0, ark_exists(ark, klen, gvalue, &res));
         ASSERT_NE(0, res);
-        rc = ark_next(ari, KV_4K, &klen, gvalue);
-        ASSERT_TRUE(klen == 256);
-        ASSERT_TRUE(rc == 0);
-        ++num;
     }
+    ASSERT_EQ(num,LEN);
+
     // query LEN+1
     ASSERT_EQ(ENOENT, ark_next(ari, KV_4K, &klen, gvalue));
 
-    fvt_kv_utils_del(ark, db, LEN);
-
     kv_db_destroy(db, LEN);
+
+    ASSERT_EQ(0, ark_delete(ark));
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_first_next_FIXED_23x277)
+{
+    ARK     *ark           = NULL;
+    ARI     *ari           = NULL;
+    uint8_t  gvalue[KV_4K] = {0};
+    kv_t    *db            = NULL;
+    int32_t  LEN           = 1917;
+    int64_t  res           = 0;
+    int64_t  klen          = 23;
+    int32_t  num           = 0;
+    int32_t  rc            = 0;
+    char    *dev           = getenv("FVT_DEV");
+
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF*100,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    ARK_VERBOSE_HASH_DEF,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN));
+
+    db = (kv_t*)kv_db_create_fixed(LEN, klen, 1377);
+    ASSERT_TRUE(db != NULL);
 
     ari = ark_first(ark, KV_4K, &klen, gvalue);
     ASSERT_TRUE(ari == NULL);
+
+    fvt_kv_utils_load (ark, db, LEN);
+    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+
+    ari = ark_first(ark, KV_4K, &klen, gvalue);
+    ASSERT_NE(ari,  (ARI*)NULL);
+    ASSERT_NE(klen, 0);
+    ASSERT_EQ(0, kv_db_delete(db, LEN, gvalue, klen));
+    ASSERT_EQ(0, ark_exists(ark, klen, gvalue, &res));
+    ASSERT_NE(0, res);
+
+    /* use ark_next to query all key/value pairs from the ark */
+    while (++num < LEN)
+    {
+        rc = ark_next(ari, KV_4K, &klen, gvalue);
+        ASSERT_EQ(rc,   0);
+        ASSERT_EQ(klen, klen);
+        ASSERT_EQ(0, kv_db_delete(db, LEN, gvalue, klen));
+        ASSERT_EQ(0, ark_exists(ark, klen, gvalue, &res));
+        ASSERT_NE(0, res);
+    }
+    ASSERT_EQ(num,LEN);
+
+    // query LEN+1
+    ASSERT_EQ(ENOENT, ark_next(ari, KV_4K, &klen, gvalue));
+
+    kv_db_destroy(db, LEN);
 
     ASSERT_EQ(0, ark_delete(ark));
 }
@@ -1191,15 +1373,13 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_first_next_MIXED_256x4)
 {
     ARK     *ark           = NULL;
     ARI     *ari           = NULL;
-    int32_t  i             = 0;
     uint8_t  gvalue[KV_4K] = {0};
     kv_t    *db            = NULL;
     int32_t  LEN           = 500;
     int64_t  res           = 0;
-    int64_t  klen          = 0;
+    int64_t  klen          = 256;
     int32_t  num           = 0;
     int32_t  rc            = 0;
-    void    *null          = NULL;
 
     ARK_CREATE;
 
@@ -1213,27 +1393,111 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_first_next_MIXED_256x4)
     fvt_kv_utils_query(ark, db, KV_4K, LEN);
 
     ari = ark_first(ark, KV_4K, &klen, gvalue);
-    ASSERT_TRUE(ari != NULL);
-    ASSERT_TRUE(klen != 0);
+    ASSERT_NE(ari,  (ARI*)NULL);
+    ASSERT_NE(klen, 0);
+    ASSERT_EQ(0, kv_db_delete(db, LEN, gvalue, klen));
+    ASSERT_EQ(0, ark_exists(ark, klen, gvalue, &res));
+    ASSERT_NE(0, res);
 
     /* use ark_next to query all key/value pairs from the ark */
-    for (i=0; i<LEN; i++)
+    while (++num < LEN)
     {
-        ASSERT_NE(null, kv_db_find(db, LEN, gvalue, klen));
+        rc = ark_next(ari, KV_4K, &klen, gvalue);
+        ASSERT_EQ(rc,0);
+        ASSERT_TRUE(klen >= 0);
+        ASSERT_TRUE(klen < 257);
+        ASSERT_EQ(0, kv_db_delete(db, LEN, gvalue, klen));
         ASSERT_EQ(0, ark_exists(ark, klen, gvalue, &res));
         ASSERT_NE(0, res);
-        rc = ark_next(ari, KV_4K, &klen, gvalue);
-        ASSERT_TRUE(rc == 0 || rc == ENOENT);
-        ++num;
     }
     ASSERT_EQ(LEN, num);
 
-    fvt_kv_utils_del(ark, db, LEN);
+    // query LEN+1
+    ASSERT_EQ(ENOENT, ark_next(ari, KV_4K, &klen, gvalue));
 
     kv_db_destroy(db, LEN);
 
+    ASSERT_EQ(0, ark_delete(ark));
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_first_nextN)
+{
+    ARK     *ark           = NULL;
+    ARI     *ari           = NULL;
+    uint8_t  gvalue[KV_4K] = {0};
+    kv_t    *db            = NULL;
+    int32_t  LEN           = 5333;
+    int64_t  res           = 0;
+    int64_t  klen          = 237;
+    int32_t  num           = 0;
+    int64_t  keyN          = -1;
+    uint8_t *buf[KV_64K]   = {0};
+    keye_t  *keye          = NULL;
+    void    *null          = NULL;
+    char    *dev           = getenv("FVT_DEV");
+
+    ASSERT_EQ(0, ark_create_verbose(dev, &ark,
+                                    ARK_VERBOSE_SIZE_DEF*100,
+                                    ARK_VERBOSE_BSIZE_DEF,
+                                    1000,
+                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    ARK_MAX_NASYNCS,
+                                    ARK_MAX_BASYNCS,
+                                    ARK_KV_VIRTUAL_LUN));
+
+    db = (kv_t*)kv_db_create_mixed(LEN, 256, 4);
+    ASSERT_TRUE(db != NULL);
+
+    ASSERT_EQ(EINVAL, ark_nextN(ari, KV_64K, buf, &keyN));
+    ASSERT_NE(keyN, 0);
+
     ari = ark_first(ark, KV_4K, &klen, gvalue);
     ASSERT_TRUE(ari == NULL);
+
+    ASSERT_EQ(EINVAL, ark_nextN(ari,  0, buf, &keyN));
+    ASSERT_NE(keyN, 0);
+    ASSERT_EQ(EINVAL, ark_nextN(ari,  KV_64K, null, &keyN));
+    ASSERT_NE(keyN, 0);
+
+    fvt_kv_utils_load (ark, db, LEN);
+    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+
+    ari = ark_first(ark, KV_4K, &klen, gvalue);
+    ASSERT_NE(ari,  (ARI*)NULL);
+    ASSERT_NE(klen, 0);
+    ++num;
+    ASSERT_EQ(0, kv_db_delete(db, LEN, gvalue, klen));
+    ASSERT_EQ(0, ark_exists(ark, klen, gvalue, &res));
+    ASSERT_NE(0, res);
+
+    /* use ark_next to query all key/value pairs from the ark */
+    while (num < LEN)
+    {
+        ASSERT_EQ(0, ark_nextN(ari, KV_64K, buf, &keyN));
+        int i=0;
+        num += keyN;
+        keye = (keye_t*)buf;
+        for (i=0; i<keyN; i++)
+        {
+            ASSERT_TRUE(keye->len >= 0);
+            ASSERT_TRUE(keye->len < 257);
+            ASSERT_EQ(0, kv_db_delete(db, LEN, keye->p, keye->len));
+            ASSERT_EQ(0, ark_exists(ark, keye->len, keye->p, &res));
+            ASSERT_NE(0, res);
+            keye = BMP_KEYE(keye);
+        }
+    }
+    ASSERT_EQ(LEN, num);
+
+    // query LEN+1
+    ASSERT_EQ(ENOENT, ark_nextN(ari, KV_64K, buf, &keyN));
+    ASSERT_EQ(0,keyN);
+
+    kv_db_destroy(db, LEN);
 
     ASSERT_EQ(0, ark_delete(ark));
 }
@@ -1248,9 +1512,8 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     _ARK    *park       = NULL;
     uint64_t zero       = 0;
     uint64_t ret        = 0;
+    uint64_t expect     = 0;
     int64_t  res        = 0;
-    uint64_t min        = 0;
-    uint64_t max        = 0;
     uint64_t bs         = 0;
     uint64_t kl         = 0;
     uint64_t vl         = 0;
@@ -1259,42 +1522,143 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     uint8_t  val[10000] = {0};
     char    *dev        = getenv("FVT_DEV");
 
-#ifdef _AIX
-    LEN=100;
-#endif
-
     ASSERT_EQ(0, ark_create_verbose(dev, &ark,
-                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF*100,
                                     ARK_VERBOSE_BSIZE_DEF,
-                                    10,
-                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    100,
+                                    6,
                                     ARK_MAX_NASYNCS,
                                     ARK_MAX_BASYNCS,
-                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
+                                    ARK_KV_VIRTUAL_LUN));
     park = (_ARK *)ark;
 
-    kl=16; vl=32;
+    /*-------------------------------------------------------------------------------*/
+    kl=10; vl=10; LEN=15000;
     fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
     fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes, since the data pattern is the same each run */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); expect=524288004;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); expect=417792;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); expect=330816;
+    EXPECT_EQ(ret, expect);
+
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes */
+    EXPECT_EQ(0, ark_allocated(ark, &ret));  expect=524288004;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret));  expect=417792;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));  expect=330816;
+    EXPECT_EQ(ret, expect);
+
     fvt_kv_utils_sdel        (ark, seed, kl, vl, LEN);
     fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
 
     /* empty */
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > 0);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
     EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
 
-    kl=4096; vl=8000;
+    /*-------------------------------------------------------------------------------*/
+    kl=10; vl=3000; LEN=15000;
     fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
     fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes, since the data pattern is the same each run */
+    EXPECT_EQ(0, ark_allocated(ark, &ret));    expect=524288004;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret));    expect=61857792;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));    expect=45315816;
+    EXPECT_EQ(ret, expect);
+
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes */
+    EXPECT_EQ(0, ark_allocated(ark, &ret));    expect=524288004;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret));    expect=61857792;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));    expect=45315816;
+    EXPECT_EQ(ret, expect);
+
     fvt_kv_utils_sdel        (ark, seed, kl, vl, LEN);
     fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
 
     /* empty */
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > zero);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
     EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
 
+    /*-------------------------------------------------------------------------------*/
+    kl=300; vl=4000; LEN=1000;
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes, since the data pattern is the same each run */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > 4464640);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret));
+    expect=4513792;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    expect=4312816;
+    EXPECT_EQ(ret, expect);
+
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > 4464640);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret));
+    expect=4513792;
+    EXPECT_EQ(ret, expect);
+    EXPECT_EQ(0, ark_actual   (ark, &ret));
+    expect=4312816;
+    EXPECT_EQ(ret, expect);
+
+    fvt_kv_utils_sdel        (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
+
+    /* empty */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > zero);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
+
+    /*-------------------------------------------------------------------------------*/
+    kl=4000; vl=4000; LEN=1000;
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > 8192000);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_TRUE(ret == 8192000);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); expect=8012816;
+    EXPECT_EQ(ret, expect);
+
+    fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
+
+    /* check blocks and bytes */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > 8192000);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_TRUE(ret == 8192000);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); expect=8012816;
+    EXPECT_EQ(ret, expect);
+
+    fvt_kv_utils_sdel        (ark, seed, kl, vl, LEN);
+    fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
+
+    /* empty */
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > zero);
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
+
+    /*-------------------------------------------------------------------------------*/
     kl=3745; vl=251;
     fvt_kv_utils_sload       (ark, seed, kl, vl, LEN);
     fvt_kv_utils_squery      (ark, seed, kl, vl, LEN);
@@ -1302,7 +1666,7 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     fvt_kv_utils_squery_empty(ark, seed, kl, LEN);
 
     /* empty */
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > zero);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
     EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
 
@@ -1310,22 +1674,17 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     kl=10; vl=20;
     GEN_VAL(key, seed, kl);
     GEN_VAL(val, seed, vl);
-    max  = BT_SZ + kl + vl + BT_KV_LEN_SZ;
-    min  = max*3/4;
     bs   = park->bsize;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > bs);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
-    EXPECT_EQ(0, ark_actual   (ark, &ret));
-    EXPECT_GT(ret, min);
-    EXPECT_LE(ret, max);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_TRUE(ret == 48);
 
     /* del k/v */
-    max=0;
     EXPECT_EQ(0, ark_del      (ark, kl, key, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > zero);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
     EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
 
@@ -1333,92 +1692,66 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_allocated_inuse_actual)
     kl=100; vl=200;
     GEN_VAL(key, seed+1, kl);
     GEN_VAL(val, seed+1, vl);
-    max  = BT_SZ + kl + vl + BT_KV_LEN_SZ;
-    min  = max*3/4;
     bs   = park->bsize;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > bs);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
-    EXPECT_EQ(0, ark_actual   (ark, &ret));
-    EXPECT_GT(ret, min);
-    EXPECT_LE(ret, max);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_TRUE(ret == 319);
 
     /* add 2nd k/v */
     kl=150; vl=2000;
     GEN_VAL(key, seed+2, kl);
     GEN_VAL(val, seed+2, vl);
-    max += BT_SZ + kl + vl + BT_KV_LEN_SZ;
-    min  = max*3/4;
     bs  += 2*park->bsize;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > bs);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
-    EXPECT_EQ(0, ark_actual   (ark, &ret));
-    EXPECT_GT(ret, min);
-    EXPECT_LE(ret, max);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_TRUE(ret == 2497);
 
     /* add 3rd k/v */
     kl=200; vl=250;
     GEN_VAL(key, seed+3, kl);
     GEN_VAL(val, seed+3, vl);
-    max += BT_SZ + kl + vl + BT_KV_LEN_SZ;
-    min  = max*3/4;
     bs  += park->bsize;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > bs);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
-    EXPECT_EQ(0, ark_actual   (ark, &ret));
-    EXPECT_GT(ret, min);
-    EXPECT_LE(ret, max);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_TRUE(ret == 2967);
 
     /* rep 2nd k/v, VDF->INLINE */
     kl=150; vl=10;
     GEN_VAL(key, seed+2, kl);
     GEN_VAL(val, seed+2, vl);
-    max -= 2000 - VDF_SZ;
-    max += vl;
-    min  = max*3/4;
     bs  -= park->bsize;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > bs);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
-    EXPECT_EQ(0, ark_actual   (ark, &ret));
-    EXPECT_GT(ret, min);
-    EXPECT_LE(ret, max);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_TRUE(ret == 968);
 
     /* rep 2nd k/v, INLINE->VDF */
     kl=150; vl=9000;
     GEN_VAL(key, seed+2, kl);
     GEN_VAL(val, seed+2, vl);
-    max += vl + VDF_SZ;
-    max -= 10;
-    min  = max*3/4;
     bs  += 3*park->bsize;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > bs);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
-    EXPECT_EQ(0, ark_actual   (ark, &ret));
-    EXPECT_GT(ret, min);
-    EXPECT_LE(ret, max);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_TRUE(ret == 9967);
 
     /* rep 3rd k/v INLINE->INLINE*/
     kl=200; vl=20;
     GEN_VAL(key, seed+3, kl);
     GEN_VAL(val, seed+3, vl);
-    max += vl - 250;
-    min  = max*3/4;
     EXPECT_EQ(0, ark_set(ark, kl, key, vl, val, &res));
     EXPECT_EQ(res, (int64_t)vl);
-    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_EQ(ret, park->size);
+    EXPECT_EQ(0, ark_allocated(ark, &ret)); EXPECT_TRUE(ret > bs);
     EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, bs);
-    EXPECT_EQ(0, ark_actual   (ark, &ret));
-    EXPECT_GT(ret, min);
-    EXPECT_LE(ret, max);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_TRUE(ret == 9736);
 
     ARK_DELETE;
 }
@@ -1483,13 +1816,13 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_bigkv)
 #endif
 
     ASSERT_EQ(0, ark_create_verbose(dev, &ark,
-                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF*100,
                                     ARK_VERBOSE_BSIZE_DEF,
                                     16,
-                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    6,
                                     ARK_MAX_NASYNCS,
                                     ARK_MAX_BASYNCS,
-                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
+                                    ARK_KV_VIRTUAL_LUN));
 
     db = (kv_t*)kv_db_create_fixed(LEN, klen, vlen);
     ASSERT_TRUE(db != NULL);
@@ -1498,6 +1831,47 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_long_hash_list_bigkv)
     fvt_kv_utils_query(ark, db, vlen, LEN);
     fvt_kv_utils_del  (ark, db, LEN);
 
+    kv_db_destroy(db, LEN);
+    ARK_DELETE;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ *   load keys, ark_random, verify key is valid and different from last key,
+ *    delete ark
+ ******************************************************************************/
+TEST(FVT_KV_GOOD_PATH, SIMPLE_flush)
+{
+    ARK     *ark           = NULL;
+    kv_t    *db            = NULL;
+    uint32_t LEN           = 10000;
+    uint64_t klen          = 0;
+    uint64_t zero          = 0;
+    uint64_t ret           = 0;
+    char     kvalue[KV_4K] = {0};
+
+    ARK_CREATE;
+
+    ASSERT_EQ(ENOENT, ark_random(ark, KV_4K, &klen, kvalue));
+
+    db   = (kv_t*)kv_db_create_fixed(LEN, 8, 24);
+    ASSERT_TRUE(db != NULL);
+
+    fvt_kv_utils_load (ark, db, LEN);
+    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+
+    ASSERT_EQ(0, ark_flush(ark));
+
+    EXPECT_EQ(0, ark_inuse    (ark, &ret)); EXPECT_EQ(ret, zero);
+    EXPECT_EQ(0, ark_actual   (ark, &ret)); EXPECT_EQ(ret, zero);
+
+    ASSERT_EQ(ENOENT, ark_random(ark, KV_4K, &klen, kvalue));
+
+    fvt_kv_utils_load (ark, db, LEN);
+    fvt_kv_utils_query(ark, db, KV_4K, LEN);
+
+    fvt_kv_utils_del(ark, db, LEN);
     kv_db_destroy(db, LEN);
     ARK_DELETE;
 }
@@ -1523,13 +1897,13 @@ TEST(FVT_KV_GOOD_PATH, SIMPLE_cleanup_task_memory)
 #endif
 
     ASSERT_EQ(0, ark_create_verbose(dev, &ark,
-                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF*100,
                                     ARK_VERBOSE_BSIZE_DEF,
                                     4,
-                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    6,
                                     ARK_MAX_NASYNCS,
                                     ARK_MAX_BASYNCS,
-                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
+                                    ARK_KV_VIRTUAL_LUN));
 
     if (dev != NULL) {loops=3;}
 

@@ -46,13 +46,13 @@
 #define KV_BASYNC           8*1024
 int     KV_MIN_SECS =       1;
 
-#define _4K                 (4*1024)
-#define _64K                (64*1024)
-#define VLEN_4k             4000
-#define VLEN_64k            64000
-int     LEN  =              10000;
-int     KLEN =              10;
-int     VLEN =              10;
+#define  _4K                (4*1024)
+#define  _64K               (64*1024)
+#define  VLEN_4k            4000
+#define  VLEN_64k           64000
+uint64_t LEN  =             10000;
+int      KLEN =             8;
+uint64_t VLEN =             24;
 
 #define KV_ASYNC_RUNNING           0x08000000
 #define KV_ASYNC_SHUTDOWN          0x04000000
@@ -77,7 +77,7 @@ typedef struct
     uint32_t   beg;
     uint32_t   end;
     uint32_t   klen;
-    uint32_t   vlen;
+    uint64_t   vlen;
     uint32_t   flags;
     uint64_t   itag;
     uint64_t   tag;
@@ -118,7 +118,7 @@ typedef struct
     uint32_t  beg;
     uint32_t  end;
     uint32_t  klen;
-    uint32_t  vlen;
+    uint64_t  vlen;
     char     *keyval;
     char     *genval;
     char     *getval;
@@ -133,7 +133,7 @@ typedef struct
 uint32_t error_stop      = 0;
 uint64_t ark_create_flag = 0;
 double   ns_per_tick     = 0;
-uint64_t seed            = UINT64_C(0xFF00000000000000);
+uint64_t seed            = UINT64_C(0x7DCA000000000000);
 uint32_t MEMCMP          = 0;
 
 void kv_async_SET_KEY   (async_CB_t *pCB);
@@ -171,9 +171,10 @@ void kv_async_DEL_KEY   (async_CB_t *pCB);
 #define KV_ERR_STOP(_pCB, _msg, _rc)                                           \
 do                                                                             \
 {                                                                              \
+    int64_t _rc64=(int64_t)_rc;                                                \
     error_stop=1;                                                              \
-    KV_TRC_FFDC(pAT, "ERR_STOP pCB:%p msg:(%s) rc:%d", _pCB, _msg,_rc);        \
-    printf("(%s:%d)", _msg,_rc);                                               \
+    KV_TRC_FFDC(pAT, "ERR_STOP pCB:%p msg:(%s) rc:%ld", _pCB, _msg,_rc64);     \
+    printf("(%s:%ld)", _msg,_rc64);                                            \
     if (_pCB->flags & KV_ASYNC_RUNNING) {_pCB->flags &= ~KV_ASYNC_RUNNING;}    \
     return;                                                                    \
 } while (0)
@@ -197,34 +198,23 @@ do                                                                             \
 ** \brief
 **   create a new ark with specific parms
 *******************************************************************************/
-#define NEW_ARK(_dev, _ark, _thds)                                             \
+#define NEW_ARK(_dev, _ark, _thds, _ht)                                        \
   do                                                                           \
   {                                                                            \
-        assert(0 == ark_create_verbose(_dev, _ark,                             \
-                                       ARK_VERBOSE_SIZE_DEF,                   \
-                                       ARK_VERBOSE_BSIZE_DEF,                  \
-                                       UINT64_C(1024*1024),                    \
-                                       _thds,                                  \
-                                       1024,                                   \
-                                       ARK_MAX_BASYNCS,                        \
-                                       ark_create_flag));                      \
-        assert(NULL != *_ark);                                                 \
+      int rc = ark_create_verbose(_dev, _ark,                                  \
+                                  ARK_VERBOSE_SIZE_DEF,                        \
+                                  ARK_VERBOSE_BSIZE_DEF,                       \
+                                  _ht,                                         \
+                                  _thds,                                       \
+                                  KV_NASYNC,                                   \
+                                  ARK_MAX_BASYNCS,                             \
+                                  ark_create_flag);                            \
+      if (rc != 0 || NULL == *_ark)                                            \
+      {                                                                        \
+          printf(" ark_create failed rc:%d errno:%d\n", rc, errno);            \
+          exit(-2);                                                            \
+      }                                                                        \
   } while (0)
-
-/**
-********************************************************************************
-** \brief
-**   query the io stats from the ark
-*******************************************************************************/
-void get_stats(ARK *ark, uint32_t *ops, uint32_t *ios)
-{
-    uint64_t ops64    = 0;
-    uint64_t ios64    = 0;
-
-    (void)ark_stats(ark, &ops64, &ios64);
-    *ops = (uint32_t)ops64;
-    *ios = (uint32_t)ios64;
-}
 
 /**
 ********************************************************************************
@@ -287,10 +277,18 @@ done:
 *******************************************************************************/
 void kv_async_SET_KEY(async_CB_t *pCB)
 {
-    uint32_t rc  = 0;
+    uint32_t rc = 0;
 
     GEN_VAL(pCB->keyval, seed+pCB->cur, pCB->klen);
-    GEN_VAL(pCB->genval, seed+pCB->cur, pCB->vlen);
+
+    if (!MEMCMP && pCB->vlen>_64K)
+    {
+        GEN_VAL(pCB->genval, seed+pCB->cur, _64K);
+    }
+    else
+    {
+        GEN_VAL(pCB->genval, seed+pCB->cur, pCB->vlen);
+    }
     pCB->tag = pCB->itag + pCB->cur;
 
     if (EAGAIN == (rc=ark_set_async_cb(pCB->ark,
@@ -316,8 +314,6 @@ void kv_async_SET_KEY(async_CB_t *pCB)
 void kv_async_GET_KEY(async_CB_t *pCB)
 {
     uint32_t rc  = 0;
-
-    KV_TRC(pAT, "GET_KEY pCB:%p cur:%d", pCB, pCB->cur);
 
     GEN_VAL(pCB->keyval, seed+pCB->cur, pCB->klen);
     pCB->tag = pCB->itag + pCB->cur;
@@ -367,28 +363,27 @@ void kv_async_DEL_KEY(async_CB_t *pCB)
 **   do an ark asynchronous IO performance run
 *******************************************************************************/
 void kv_async_io(ARK     *ark,
-                 char    *dev,
                  uint32_t flags,
                  uint32_t jobs,
                  uint32_t klen,
-                 uint32_t vlen,
-                 uint32_t len)
+                 uint64_t vlen,
+                 uint64_t len)
 {
     async_CB_t      *pCB          = NULL;
     uint32_t         job          = 0;
     uint32_t         ctxt_running = TRUE;
     uint32_t         e_secs       = 0;
-    uint32_t         s_ops        = 0;
-    uint32_t         s_ios        = 0;
-    uint32_t         ops          = 0;
-    uint32_t         ios          = 0;
+    uint64_t         s_ops        = 0;
+    uint64_t         s_ios        = 0;
+    uint64_t         ops          = 0;
+    uint64_t         ios          = 0;
     uint32_t         shutdown     = 0;
     ticks            start        = 0;
 
     memset(pCTs, 0, sizeof(async_context_t));
 
     pCTs->ark = ark;
-    get_stats(pCTs->ark, &s_ops, &s_ios);
+    ark_stats(pCTs->ark, &s_ops, &s_ios);
 
     if (len<jobs) {len=jobs;}
 
@@ -403,7 +398,7 @@ void kv_async_io(ARK     *ark,
         pCB->beg       = job==0 ? 0 : (pCTs->pCBs+(job-1))->end+1;
         pCB->end       = pCB->beg + (len/jobs)-1;
         pCB->cur       = pCB->beg;
-        KV_TRC(pAT, "JOB:    i:%3d klen:%5d vlen:%5d len:%d beg:%3d end:%3d",
+        KV_TRC(pAT, "JOB:    i:%3d klen:%5d vlen:%5ld len:%ld beg:%3d end:%3d",
                     job, klen, vlen, len, pCB->beg, pCB->end);
         if (0==posix_memalign((void**)&pCB->keyval, 128, klen))
             {assert(pCB->keyval);}
@@ -419,6 +414,7 @@ void kv_async_io(ARK     *ark,
     for (pCB=pCTs->pCBs; pCB<pCTs->pCBs+jobs; pCB++)
     {
         pCB->flags |=  KV_ASYNC_RUNNING;
+        if (KV_MIN_SECS==0) {pCB->flags |= KV_ASYNC_SHUTDOWN;}
         if      (pCB->flags & KV_ASYNC_SET) {kv_async_SET_KEY(pCB);}
         else if (pCB->flags & KV_ASYNC_GET) {kv_async_GET_KEY(pCB);}
         else                                {kv_async_DEL_KEY(pCB);}
@@ -463,13 +459,13 @@ void kv_async_io(ARK     *ark,
     e_secs = (e_secs <= 0) ? 1 : e_secs;
 
     /* sum perf ops for all contexts/jobs and delete arks */
-    get_stats(pCTs->ark, &ops, &ios);
+    ark_stats(pCTs->ark, &ops, &ios);
     char *op=NULL;
     if      (flags & KV_ASYNC_SET) {op="SET";}
     else if (flags & KV_ASYNC_GET) {op="GET";}
     if (op)
     {
-        printf("%s: tops:%8d tios:%8d op/s:%7d io/s:%7d secs:%d\n",
+        printf("%s   tops:%8ld tios:%8ld op/s:%8ld io/s:%8ld secs:%d\n",
                op, ops-s_ops, ios-s_ios,
                (ops-s_ops)/e_secs, (ios-s_ios)/e_secs, e_secs);
     }
@@ -500,7 +496,8 @@ uint32_t kv_set(worker_t *w)
         for (i=w->beg; i<=w->end; i++)
         {
             GEN_VAL(w->keyval, seed+i, w->klen);
-            GEN_VAL(w->genval, seed+i, w->vlen);
+            if (!MEMCMP && w->vlen>_64K) {GEN_VAL(w->genval, seed+i, _64K);}
+            else                         {GEN_VAL(w->genval, seed+i, w->vlen);}
 
             while (EAGAIN == (rc=ark_set(w->ark,
                                          w->klen,
@@ -533,7 +530,8 @@ uint32_t kv_get(worker_t *w)
         for (i=w->beg; i<=w->end; i++)
         {
             GEN_VAL(w->keyval, seed+i, w->klen);
-            GEN_VAL(w->genval, seed+i, w->vlen);
+            if (!MEMCMP && w->vlen>_64K) {GEN_VAL(w->genval, seed+i, _64K);}
+            else                         {GEN_VAL(w->genval, seed+i, w->vlen);}
 
             while (EAGAIN == (rc=ark_get(w->ark,
                                          w->klen,
@@ -588,23 +586,22 @@ uint32_t kv_del(worker_t *w)
 **   for the threads to complete, prints the iops, delete the arks
 *******************************************************************************/
 void kv_sync_io(ARK     *ark,
-                char    *dev,
                 uint32_t QD,
                 uint32_t klen,
-                uint32_t vlen,
-                uint32_t len,
+                uint64_t vlen,
+                uint64_t len,
                 void*  (*fp)(void*))
 {
     worker_t w[KV_MAX_QD];
     uint32_t i      = 0;
-    uint32_t s_ops  = 0;
-    uint32_t s_ios  = 0;
-    uint32_t ops    = 0;
-    uint32_t ios    = 0;
+    uint64_t s_ops  = 0;
+    uint64_t s_ios  = 0;
+    uint64_t ops    = 0;
+    uint64_t ios    = 0;
     uint32_t e_secs = 0;
     uint64_t start  = 0;
 
-    get_stats(ark, &s_ops, &s_ios);
+    ark_stats(ark, &s_ops, &s_ios);
     start = getticks();
 
     /* create all threads */
@@ -630,10 +627,10 @@ void kv_sync_io(ARK     *ark,
     e_secs = SDELTA(start,ns_per_tick);
 
     /* sum perf ops for all contexts/jobs and delete arks */
-    get_stats(ark, &ops, &ios);
+    ark_stats(ark, &ops, &ios);
     char *op=NULL;
     if ((void*)fp == (void*)kv_set) {op="SET";} else {op="GET";}
-    printf("%s: tops:%8d tios:%8d op/s:%7d io/s:%7d secs:%d\n",
+    printf("%s   tops:%8ld tios:%8ld op/s:%8ld io/s:%8ld secs:%d\n",
             op, ops-s_ops, ios-s_ios,
             (ops-s_ops)/e_secs, (ios-s_ios)/e_secs, e_secs);
 
@@ -643,6 +640,87 @@ void kv_sync_io(ARK     *ark,
         free(w[i].genval);
         free(w[i].getval);
     }
+    return;
+}
+
+/**
+********************************************************************************
+** \brief
+**   get all keys in an Arkdb, getN at a time in a buf
+*******************************************************************************/
+void kv_getN(ARK *ark, int64_t klen, uint64_t vlen, uint64_t len, uint32_t getN)
+{
+    ARI      *ari    = NULL;
+    uint32_t  rc     = 0;
+    uint64_t  s_ops  = 0;
+    uint64_t  s_ios  = 0;
+    uint64_t  ops    = 0;
+    uint64_t  ios    = 0;
+    uint32_t  e_secs = 0;
+    uint64_t  cnt    = 0;
+    uint64_t  start  = 0;
+    uint64_t  buflen = 0;
+    uint8_t  *buf    = NULL;
+    int64_t   keyN   = 0;
+    int       i      = 0;
+
+    buflen = getN ? getN*(klen+8) : klen;
+    buf    = malloc(buflen);
+
+    ark_stats(ark, &s_ops, &s_ios);
+    start = getticks();
+
+    if (!(ari=ark_first(ark, buflen, &klen, buf)))
+    {
+        rc = errno;
+        goto exit;
+    }
+    ++cnt;
+
+    KV_TRC(pAT,"     getN:%d keyN:%ld cnt:%2ld ",getN,keyN,cnt);
+
+    while (rc==0)
+    {
+        if (getN==1)
+        {
+            rc = ark_next(ari, buflen, &keyN, buf);
+            if (rc==0)
+            {
+                //key = buf;
+                cnt += 1;
+            }
+        }
+        else
+        {
+            rc = ark_nextN(ari, buflen, buf, &keyN);
+            if (rc==0)
+            {
+                cnt += keyN;
+                keye_t *keye = (keye_t*)buf;
+                for (i=0; i<keyN; i++)
+                {
+                    //key  = keye->p;
+                    //klen = keye->len;
+                    keye = BMP_KEYE(keye);
+                }
+            }
+        }
+    }
+
+    if (cnt != len) {printf("cnt:%ld != len:%ld\n",cnt,len); rc=-1; goto exit;}
+
+    e_secs = SDELTA(start,ns_per_tick);
+    e_secs = e_secs==0?1:e_secs;
+
+    ark_stats(ark, &ops, &ios);
+
+    printf("GETN  tops:%8ld tios:%8ld op/s:%8ld io/s:%8ld secs:%d cnt:%ld\n",
+            ops-s_ops, ios-s_ios,
+            (ops-s_ops)/e_secs, (ios-s_ios)/e_secs, e_secs, cnt);
+exit:
+    if (buf) {free(buf);}
+    if (!rc) {printf("GETN failed, errno:%d\n", errno);}
+    return;
 }
 
 /**
@@ -655,6 +733,9 @@ void kv_sync_io(ARK     *ark,
 **   -l len        *number of k/v pairs to set/get (default is 10000)         \n
 **   -k klen       *len in bytes of each key                                  \n
 **   -v vlen       *len in bytes of each value                                \n
+**   -t vlen       *arkdb threads                                             \n
+**   -h hte        *ht entries                                                \n
+**   -p            *use plun rather than vlun                                 \n
 **   -c 0          *disable the metadata cache                                \n
 **   -n            *write to a new persisted ark                              \n
 **   -r            *read the existing persisted ark                           \n
@@ -665,7 +746,7 @@ void usage(void)
 {
     printf("Usage:\n");
     printf("   [-d device] [-q qdepth] [-s secs] [-l len]"
-           " [-k klen] [-v vlen] [-n] [-r] [-S] [-M] [-c]\n");
+           " [-k klen] [-v vlen] [-t thds] [-h hte] [-p] [-n] [-r] [-S] [-M] [-c]\n");
     exit(0);
 }
 
@@ -694,19 +775,24 @@ int main(int argc, char **argv)
     char    *_klen       = NULL;
     char    *_vlen       = NULL;
     char    *_htc        = NULL;
+    char    *_hte        = NULL;
     char    *_thds       = NULL;
+    char    *_getN       = NULL;
     uint32_t readonly    = 0;
     uint32_t new         = 0;
     uint32_t sync        = 0;
+    uint32_t getN        = 0;
     uint32_t htc         = 1;
-    uint32_t thds        = 4;
+    uint64_t hte         = ARK_VERBOSE_HASH_DEF;
+    uint32_t thds        = ARK_VERBOSE_NTHRDS_DEF;
     uint32_t plun        = 0;
     uint32_t QD          = 400;
+    uint32_t verbose     = 0;
 
     /*--------------------------------------------------------------------------
      * process and verify input parms
      *------------------------------------------------------------------------*/
-    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:c:t:prhSMn")))
+    while (FF != (c=getopt(argc, argv, "d:q:s:l:v:k:c:t:h:G:VprhSMn")))
     {
         switch (c)
         {
@@ -717,23 +803,27 @@ int main(int argc, char **argv)
             case 'v': _vlen      = optarg;   break;
             case 'k': _klen      = optarg;   break;
             case 'c': _htc       = optarg;   break;
+            case 'h': _hte       = optarg;   break;
             case 't': _thds      = optarg;   break;
+            case 'G': _getN      = optarg;   break;
             case 'p': plun       = 1;        break;
             case 'n': new        = 1;        break;
             case 'r': readonly   = 1; new=0; break;
             case 'S': sync       = 1;        break;
             case 'M': MEMCMP     = 1;        break;
-            case 'h':
+            case 'V': verbose    = 1;        break;
             case '?': usage();               break;
         }
     }
-    if (_secs) {KV_MIN_SECS = atoi(_secs);}
-    if (_QD)   {QD          = atoi(_QD);}
-    if (_len)  {LEN         = atoi(_len);}
-    if (_klen) {KLEN        = atoi(_klen);}
-    if (_vlen) {VLEN        = atoi(_vlen);}
-    if (_htc)  {htc         = atoi(_htc);}
-    if (_thds) {thds        = atoi(_thds);}
+    if (_secs) {KV_MIN_SECS = atoi (_secs);}
+    if (_QD)   {QD          = atoi (_QD);}
+    if (_len)  {LEN         = atoll(_len);}
+    if (_klen) {KLEN        = atoi (_klen);}
+    if (_vlen) {VLEN        = atoll(_vlen);}
+    if (_htc)  {htc         = atoi (_htc);}
+    if (_hte)  {hte         = atoll(_hte);}
+    if (_thds) {thds        = atoi (_thds);}
+    if (_getN) {getN        = atoi (_getN);}
 
     QD         %= KV_NASYNC;
     LEN         = LEN<QD ? QD : LEN;
@@ -746,22 +836,44 @@ int main(int argc, char **argv)
 
     if (htc) {ark_create_flag |= ARK_KV_HTC;}
 
-    NEW_ARK(dev, &ark, thds);
+    NEW_ARK(dev, &ark, thds, hte);
 
-    if (sync)
+    if (getN)
     {
-        printf("SYNC: %s: QD:%d LEN:%d\n", dev, QD, LEN); fflush(stdout);
-        if (!readonly) {kv_sync_io(ark, dev, QD, KLEN, VLEN, LEN,(void*(*)(void*))kv_set);}
-        if (!new)      {kv_sync_io(ark, dev, QD, KLEN, VLEN, LEN,(void*(*)(void*))kv_get);}
+        KV_MIN_SECS=0;
+        printf("GETN: %s: QD:%d LEN:%ld getN:%d\n", dev,QD,LEN,getN); fflush(stdout);
+        if (!readonly) {kv_async_io(ark, KV_ASYNC_SET, QD, KLEN,VLEN,LEN);}
+        kv_getN(ark, KLEN, VLEN, LEN, getN);
+    }
+    else if (sync)
+    {
+        printf("SYNC: %s: QD:%d LEN:%ld\n", dev, QD, LEN); fflush(stdout);
+        if (!readonly) {kv_sync_io(ark, QD, KLEN, VLEN, LEN,(void*(*)(void*))kv_set);}
+        if (!new)      {kv_sync_io(ark, QD, KLEN, VLEN, LEN,(void*(*)(void*))kv_get);}
     }
     else
     {
-        printf("ASYNC: %s: QD:%d LEN:%d\n", dev, QD, LEN); fflush(stdout);
-        if (!readonly) {kv_async_io(ark, dev, KV_ASYNC_SET, QD, KLEN,VLEN,LEN);}
-        if (!new)      {kv_async_io(ark, dev, KV_ASYNC_GET, QD, KLEN,VLEN,LEN);}
+        printf("ASYNC: %s: QD:%d LEN:%ld\n", dev, QD, LEN); fflush(stdout);
+        if (!readonly) {kv_async_io(ark, KV_ASYNC_SET, QD, KLEN,VLEN,LEN);}
+        if (!new)      {kv_async_io(ark, KV_ASYNC_GET, QD, KLEN,VLEN,LEN);}
     }
 
 //    if (!new && !readonly) {kv_async_io(ark, dev, KV_ASYNC_DEL, QD, KLEN,VLEN,LEN);}
+
+    if (verbose)
+    {
+        uint64_t size   = 0;
+        uint64_t inuse  = 0;
+        uint64_t actual = 0;
+        int64_t  count  = 0;
+
+        ark_allocated(ark, &size);
+        ark_inuse    (ark, &inuse);
+        ark_actual   (ark, &actual);
+        ark_count    (ark, &count);
+
+        printf("\nsize:%ld inuse:%ld actual:%ld count:%ld\n",size,inuse,actual,count);
+    }
 
     assert(0 == ark_delete(ark));
 

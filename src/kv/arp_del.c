@@ -32,22 +32,23 @@
 // if success returns size of value deleted
 void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 {
-  scb_t         *scbp       = &(_arkp->poolthreads[tid]);
-  rcb_t         *rcbp       = &(scbp->rcbs[tcbp->rtag]);
-  iocb_t        *iocbp      = &(scbp->iocbs[rcbp->ttag]);
-  int32_t        rc         = 0;
+  scb_t   *scbp  = &(_arkp->poolthreads[tid]);
+  rcb_t   *rcbp  = &(scbp->rcbs[tcbp->rtag]);
+  iocb_t  *iocbp = &(scbp->iocbs[rcbp->ttag]);
+  int32_t  rc    = 0;
+  uint8_t  lck   = 0;
 
   scbp->poolstats.ops_cnt += 1;
 
   // Acquire the block that contains the hash entry
   // control information.
-  tcbp->hblk = HASH_LBA(HASH_GET(_arkp->ht, rcbp->pos));
+  HASH_GET(scbp->ht, rcbp->posI, &lck, &tcbp->hblk);
 
   if (DUMP_KV)
   {
       char buf[256]={0};
-      sprintf(buf, "HEX_KEY tid:%d ttag:%3d pos:%6ld",
-              tid, tcbp->ttag, rcbp->pos);
+      sprintf(buf, "HEX_KEY tid:%3d ttag:%3d pos:%6ld",
+              tid, tcbp->ttag, rcbp->posI);
       KV_TRC_HEX(pAT, 4, buf, rcbp->key, rcbp->klen);
   }
 
@@ -56,8 +57,8 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // key in question is not in the store.
   if (tcbp->hblk == 0)
   {
-    KV_TRC(pAT, "ENOENT  tid:%d ttag:%3d pos:%6ld key:%p klen:%ld pos:%6ld",
-           tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen, rcbp->pos);
+    KV_TRC(pAT, "ENOENT  tid:%3d ttag:%3d pos:%6ld key:%p klen:%ld pos:%6ld",
+           tid, tcbp->ttag, rcbp->posI, rcbp->key, rcbp->klen, rcbp->posI);
     rcbp->res    = -1;
     rcbp->rc     = ENOENT;
     iocbp->state = ARK_CMD_DONE;
@@ -66,11 +67,11 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   // Check to see if we need to grow the in buffer
   // to hold the hash entry
-  tcbp->blen = bl_len(_arkp->bl, tcbp->hblk);
+  tcbp->blen = bl_len(scbp->bl, tcbp->hblk);
   if (tcbp->blen <= 0)
   {
-    KV_TRC(pAT, "ENOENT  tid:%d ttag:%3d pos:%6ld key:%p klen:%ld pos:%6ld",
-           tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen, rcbp->pos);
+    KV_TRC(pAT, "ENOENT  tid:%3d ttag:%3d pos:%6ld key:%p klen:%ld pos:%6ld",
+           tid, tcbp->ttag, rcbp->posI, rcbp->key, rcbp->klen, rcbp->posI);
     rcbp->res   = -1;
     rcbp->rc    = ENOENT;
     iocbp->state = ARK_CMD_DONE;
@@ -79,49 +80,49 @@ void ark_del_start(_ARK *_arkp, int tid, tcb_t *tcbp)
 
   if (tcbp->blen*_arkp->bsize > tcbp->inb_size)
   {
-      KV_TRC_DBG(pAT, "RE_INB  tid:%d ttag:%3d pos:%6ld old:%ld new:%ld",
-                 tid, tcbp->ttag, rcbp->pos, tcbp->inb_size,
+      KV_TRC_DBG(pAT, "RE_INB  tid:%3d ttag:%3d pos:%6ld old:%ld new:%ld",
+                 tid, tcbp->ttag, rcbp->posI, tcbp->inb_size,
                  tcbp->blen*_arkp->bsize);
       rc = bt_realloc(&(tcbp->inb), &(tcbp->inb_orig), tcbp->blen*_arkp->bsize);
       if (rc != 0)
       {
           KV_TRC_FFDC(pAT, "bt_realloc failed ttag:%d", tcbp->ttag);
-          rcbp->res = -1;
-          rcbp->rc = rc;
+          rcbp->res    = -1;
+          rcbp->rc     = rc;
           iocbp->state = ARK_CMD_DONE;
           goto ark_del_start_err;
       }
       tcbp->inb_size = tcbp->blen*_arkp->bsize;
   }
 
-  if (kv_inject_flags && HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
+  if (kv_inject_flags && HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
   {
-      HTC_FREE(_arkp->htc[rcbp->pos]);
+      HTC_FREE(scbp->htc[rcbp->posI]);
   }
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  if (HTC_HIT(_arkp, rcbp->pos, tcbp->blen))
+  if (HTC_HIT(scbp, rcbp->posI, tcbp->blen))
   {
       ++scbp->htc_hits;
-      KV_TRC(pAT, "HTC_GET tid:%d ttag:%3d pos:%6ld", tid,tcbp->ttag,rcbp->pos);
-      HTC_GET(_arkp->htc[rcbp->pos], tcbp->inb, tcbp->blen*_arkp->bsize);
+      KV_TRC(pAT, "HTC_GET tid:%3d ttag:%3d pos:%6ld", tid,tcbp->ttag,rcbp->posI);
+      HTC_GET(scbp->htc[rcbp->posI], tcbp->inb, tcbp->blen*_arkp->bsize);
       ark_del_process(_arkp, tid, tcbp);
       return;
   }
 
   // Create a list of blocks that will be read in
-  if (bl_rechain(&tcbp->aiol, _arkp->bl, tcbp->hblk, tcbp->blen, tcbp->aiolN))
+  if (bl_rechain(&tcbp->aiol, scbp->bl,tcbp->hblk,tcbp->blen,tcbp->aiolN,scbp->offset))
   {
-    rcbp->res   = -1;
-    rcbp->rc    = ENOMEM;
+    rcbp->res    = -1;
+    rcbp->rc     = ENOMEM;
     iocbp->state = ARK_CMD_DONE;
     KV_TRC_FFDC(pAT, "bl_rechain failed, ttag:%d", tcbp->ttag);
     goto ark_del_start_err;
   }
   tcbp->aiolN = tcbp->blen;
 
-  KV_TRC(pAT, "RD_HASH tid:%d ttag:%3d pos:%6ld", tid, tcbp->ttag, rcbp->pos);
+  KV_TRC(pAT, "RD_HASH tid:%3d ttag:%3d pos:%6ld", tid, tcbp->ttag, rcbp->posI);
 
   // Schedule the IO to read the hash entry from storage
   ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_READ, (void *)tcbp->inb,
@@ -151,8 +152,8 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   tcbp->old_btsize = tcbp->inb->len;
   tcbp->bytes      = 0;
 
-  KV_TRC_DBG(pAT, "INB_GET tid:%d ttag:%3d pos:%6ld tot:%ld used:%ld",
-             tid, tcbp->ttag, rcbp->pos, tcbp->inb_size, tcbp->inb->len);
+  KV_TRC_DBG(pAT, "INB_GET tid:%3d ttag:%3d pos:%6ld tot:%ld used:%ld",
+             tid, tcbp->ttag, rcbp->posI, tcbp->inb_size, (uint64_t)tcbp->inb->len);
 
   if ((exivlen=bt_exists(tcbp->inb, rcbp->klen, rcbp->key)) >= 0 &&
       tcbp->inb->len > 1)
@@ -162,8 +163,8 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       new_btsize = divceil(new_btsize, _arkp->bsize) * _arkp->bsize;
       if (new_btsize > tcbp->oub_size)
       {
-          KV_TRC_DBG(pAT, "RE_OUB  tid:%d ttag:%3d pos:%6ld old:%ld new:%ld",
-                     tid, tcbp->ttag, rcbp->pos, tcbp->oub_size, new_btsize);
+          KV_TRC_DBG(pAT, "RE_OUB  tid:%3d ttag:%3d pos:%6ld old:%ld new:%ld",
+                     tid, tcbp->ttag, rcbp->posI, tcbp->oub_size, new_btsize);
           rc = bt_realloc(&(tcbp->oub), &(tcbp->oub_orig), new_btsize);
           if (rc != 0)
           {
@@ -213,7 +214,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       }
 
       // Create a list of the blocks to write.
-      if (bl_rechain(&tcbp->aiol, _arkp->bl, tcbp->nblk, blkcnt, tcbp->aiolN))
+      if (bl_rechain(&tcbp->aiol, scbp->bl,tcbp->nblk,blkcnt,tcbp->aiolN,scbp->offset))
       {
         rcbp->res   = -1;
         rcbp->rc    = ENOMEM;
@@ -227,8 +228,8 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->bytes            += tcbp->old_btsize;
       tcbp->bytes            -= tcbp->oub->len;
 
-      KV_TRC(pAT, "WR_HASH tid:%d ttag:%3d pos:%6ld bytes:%ld",
-                  tid, tcbp->ttag, rcbp->pos, tcbp->bytes);
+      KV_TRC(pAT, "WR_HASH tid:%3d ttag:%3d pos:%6ld bytes:%ld",
+                  tid, tcbp->ttag, rcbp->posI, tcbp->bytes);
 
       // Schedule the WRITE IO of the updated hash entry.
       ea_async_io_init(_arkp, scbp->ea, iocbp, ARK_EA_WRITE, (void *)tcbp->oub,
@@ -239,7 +240,7 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
       // Nothing left in this hash entry, so let's clear out
       // the hash entry control block to show there is no
       // data in the store for this hash entry
-      HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, tcbp->ttag, 0));
+      HASH_SET(scbp->ht, rcbp->posI, 1, 0);
 
       tcbp->bytes += tcbp->old_btsize;
       rcbp->rc     = 0;
@@ -248,8 +249,8 @@ void ark_del_process(_ARK *_arkp, int tid, tcb_t *tcbp)
   }
   else
   {
-    KV_TRC(pAT, "ENOENT tid:%d ttag:%3d pos:%6ld key:%p klen:%ld pos:%6ld",
-           tid, tcbp->ttag, rcbp->pos, rcbp->key, rcbp->klen, rcbp->pos);
+    KV_TRC(pAT, "ENOENT tid:%3d ttag:%3d pos:%6ld key:%p klen:%ld",
+           tid, tcbp->ttag, rcbp->posI, rcbp->key, rcbp->klen);
     rcbp->rc     = ENOENT;
     rcbp->res    = -1;
     iocbp->state = ARK_CMD_DONE;
@@ -277,28 +278,31 @@ void ark_del_finish(_ARK *_arkp, int32_t tid, tcb_t *tcbp)
   {
     // Update the starting hash entry block with the
     // new block info.
-    HASH_SET(_arkp->ht, rcbp->pos, HASH_MAKE(1, tcbp->ttag, tcbp->nblk));
-    KV_TRC(pAT, "HASHSET tid:%d ttag:%3d pos:%6ld bytes:%ld byte_cnt:%ld",
-           tid, tcbp->ttag, rcbp->pos, tcbp->bytes, scbp->poolstats.byte_cnt);
+    HASH_SET(scbp->ht, rcbp->posI, 1, tcbp->nblk);
+    KV_TRC(pAT, "HASHSET tid:%3d ttag:%3d pos:%6ld bytes:%ld byte_cnt:%ld "
+                 "kv_cnt:%ld",
+                 tid, tcbp->ttag, rcbp->posI, tcbp->bytes,
+                 scbp->poolstats.byte_cnt, scbp->poolstats.kv_cnt);
 
-    if (HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
+    if (HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
     {
-        HTC_PUT(_arkp->htc[rcbp->pos], tcbp->oub, tcbp->blen*_arkp->bsize);
+        HTC_PUT(scbp->htc[rcbp->posI], tcbp->oub, tcbp->blen*_arkp->bsize);
     }
   }
   else
   {
-      KV_TRC(pAT, "HASHSET tid:%d ttag:%3d pos:%6ld bytes:%ld byte_cnt:%ld "
-                  "NO_WRITE_REQD",
-             tid, tcbp->ttag, rcbp->pos, tcbp->bytes, scbp->poolstats.byte_cnt);
+      KV_TRC(pAT, "HASHSET tid:%3d ttag:%3d pos:%6ld bytes:%ld byte_cnt:%ld "
+                  "kv_cnt:%ld NO_WRITE_REQD",
+                  tid, tcbp->ttag, rcbp->posI,
+                  tcbp->bytes, scbp->poolstats.byte_cnt, scbp->poolstats.kv_cnt);
 
-      if (HTC_INUSE(_arkp,_arkp->htc[rcbp->pos]))
+      if (HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
       {
           --scbp->htcN;
           ++scbp->htc_disc;
-          KV_TRC(pAT, "HTCFREE tid:%d ttag:%3d pos:%6ld htcN:%d disc:%ld",
-                  tid, tcbp->ttag, rcbp->pos, scbp->htcN, scbp->htc_disc);
-          HTC_FREE(_arkp->htc[rcbp->pos]);
+          KV_TRC(pAT, "HTCFREE tid:%3d ttag:%3d pos:%6ld htcN:%d disc:%ld",
+                  tid, tcbp->ttag, rcbp->posI, scbp->htcN, scbp->htc_disc);
+          HTC_FREE(scbp->htc[rcbp->posI]);
       }
   }
 

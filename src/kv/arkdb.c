@@ -31,27 +31,7 @@ REVISION_TAGS(arkdb);
 KV_Trace_t  arkdb_kv_trace;
 KV_Trace_t *pAT             = &arkdb_kv_trace;
 uint32_t    kv_inject_flags = 0;
-uint64_t    ARK_MAX_LEN     = 0x1900000000; //100gb
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-void ark_persist_stats(_ARK * _arkp, ark_stats_t *pstats)
-{
-  int i = 0;
-  
-  pstats->kv_cnt = _arkp->pers_stats.kv_cnt;
-  pstats->blk_cnt = _arkp->pers_stats.blk_cnt;
-  pstats->byte_cnt = _arkp->pers_stats.byte_cnt;
-
-  for (i = 0; i < _arkp->nthrds; i++)
-  {
-    pstats->kv_cnt += _arkp->poolthreads[i].poolstats.kv_cnt;
-    pstats->blk_cnt += _arkp->poolthreads[i].poolstats.blk_cnt;
-    pstats->byte_cnt += _arkp->poolthreads[i].poolstats.byte_cnt;
-  }
-}
+uint64_t    ARK_MAX_LEN     = UINT64_C(0x1900000000); //100gb
 
 /**
  *******************************************************************************
@@ -59,33 +39,51 @@ void ark_persist_stats(_ARK * _arkp, ark_stats_t *pstats)
  ******************************************************************************/
 void ark_persistence_calc(_ARK *_arkp)
 {
-  uint64_t bytes = 0;
+  uint64_t pers_cs_bytes  = 0;
+  uint64_t size           = 0;
+  uint64_t size_per_thd   = 0;
+  uint64_t bcount         = 0;
+  uint64_t bcount_per_thd = 0;
+  EA      *eap            = NULL;
+  hash_t  *htp            = NULL;
+  BL      *blp            = NULL;
 
   // We need to determine the total size of the data
   // that needs to be persisted.  Items that we persist
   // are:
   //
-  // - Configuration
-  // - Hash Table (hash_t)
-  // - Block List (BL)
-  // - IV->data
+  // - Ark Config
+  // - Hash Tables
+  // - Block Lists
 
-  // Configuration
-  _arkp->pers_cs_bytes = sizeof(p_cntr_t) + sizeof(P_ARK_t);
+  // Ark Config
+  pers_cs_bytes = sizeof(p_cntr_t) +
+                  sizeof(P_ARK_t)  +
+                 (sizeof(ark_stats_t)*_arkp->nthrds);
 
-  // Hash Table
-  _arkp->pers_cs_bytes += sizeof(hash_t) + (_arkp->ht->n * sizeof(uint64_t));
+  // Hash Tables
+  htp           = hash_new(_arkp->hcount, _arkp->blkbits);
+  size_per_thd  = sizeof(hash_t);
+  size_per_thd += htp->iv->words * sizeof(uint64_t);
+  hash_free(htp);
+  pers_cs_bytes += size_per_thd * _arkp->nthrds;
 
-  // Block List
-  _arkp->pers_cs_bytes += sizeof(BL);
+  // Block Lists - calculate for a full ark
+  eap = ea_new(_arkp->devs[0], _arkp->bsize, ARK_MAX_BASYNCS, &size, &bcount,0);
+  ea_free(eap);
+  bcount_per_thd = bcount / _arkp->nthrds;
+  size_per_thd   = bcount_per_thd;
+  size_per_thd  += sizeof(BL);
+  blp            = bl_new(bcount_per_thd, _arkp->blkbits);
+  size_per_thd  += blp->iv->words * sizeof(uint64_t);
+  bl_free(blp);
+  pers_cs_bytes += size_per_thd * _arkp->nthrds;
 
-  // calculate for a full ark
-  bytes  = _arkp->pers_cs_bytes;
-  bytes += _arkp->bl->list->words * sizeof(uint64_t);
-  _arkp->pers_max_blocks = divup(bytes, _arkp->bsize);
+  // round up to 4k
+  _arkp->pers_max_blocks = divup(pers_cs_bytes, _arkp->bsize);
 
-  KV_TRC(pAT, "PERSIST_CALC pers_cs_bytes:%ld pers_max_blocks:%ld",
-          _arkp->pers_cs_bytes, _arkp->pers_max_blocks);
+  KV_TRC_PERF1(pAT, "PERSIST_CALC pers_cs_bytes:%ld pers_max_blocks:%ld",
+                  pers_cs_bytes, _arkp->pers_max_blocks);
   return;
 }
 
@@ -96,6 +94,7 @@ void ark_persistence_calc(_ARK *_arkp)
 int ark_persist(_ARK *_arkp)
 {
   int32_t        rc          = 0;
+  int32_t        i           = 0;
   uint64_t       tot_bytes   = 0;
   uint64_t       wrblks      = 0;
   char          *p_data_orig = NULL;
@@ -104,103 +103,147 @@ int ark_persist(_ARK *_arkp)
   char          *dptr        = NULL;
   P_ARK_t       *pcfg        = NULL;
   ark_io_list_t *bl_array    = NULL;
-
-  if ( (_arkp->ea->st_type == EA_STORE_TYPE_MEMORY) ||
-      !(_arkp->flags & ARK_KV_PERSIST_STORE) )
-  {
-    return 0;
-  }
+  uint64_t       size        = 0;
+  scb_t         *scbp        = NULL;
+  vbe_t         *vbep        = NULL;
 
   ark_persistence_calc(_arkp);
 
   // allocate write buffer
   tot_bytes   = _arkp->pers_max_blocks * _arkp->bsize;
   p_data_orig = am_malloc(tot_bytes + ARK_ALIGN);
-  if (p_data_orig == NULL)
+  if (!p_data_orig)
   {
-    KV_TRC_FFDC(pAT, "Out of memory allocating %"PRIu64" bytes for "
-                     "persistence data", tot_bytes);
-    return ENOMEM;
+      KV_TRC_FFDC(pAT, "ENOMEM bytes:%ld for persist write", tot_bytes);
+      rc = ENOMEM;
+      goto done;
   }
   p_data = ptr_align(p_data_orig);
   memset(p_data, 0, tot_bytes);
+  KV_TRC_PERF1(pAT, "PERSIST p_data tot_bytes:%ld",tot_bytes);
 
   // Record cntr data
   pptr   = (p_cntr_t *)p_data;
   memcpy(pptr->p_cntr_magic, ARK_P_MAGIC, sizeof(pptr->p_cntr_magic));
-  pptr->p_cntr_version = ARK_P_VERSION_2;
+  pptr->p_cntr_version = ARK_P_VERSION_4;
   pptr->p_cntr_size    = sizeof(p_cntr_t);
 
   // Record configuration info
-  pcfg = (P_ARK_t*)pptr->p_cntr_data;
-  pcfg->flags   = _arkp->flags;
-  pcfg->size    = _arkp->ea->size;
-  pcfg->bsize   = _arkp->bsize;
-  pcfg->bcount  = _arkp->bcount;
-  pcfg->blkbits = _arkp->blkbits;
-  pcfg->grow    = _arkp->blkbits;
-  pcfg->hcount  = _arkp->hcount;
-  pcfg->vlimit  = _arkp->vlimit;
-  pcfg->blkused = _arkp->blkused;
-  pcfg->nasyncs = _arkp->nasyncs;
-  pcfg->basyncs = _arkp->basyncs;
-  pcfg->ntasks  = _arkp->ntasks;
-  pcfg->nthrds  = _arkp->nthrds;
-  ark_persist_stats(_arkp, &(pcfg->pstats));
   pptr->p_cntr_cfg_offset = 0;
   pptr->p_cntr_cfg_size   = sizeof(P_ARK_t);
+  pcfg                    = (P_ARK_t*)pptr->p_cntr_data;
+  pcfg->flags             = _arkp->flags;
+  pcfg->max_blocks        = _arkp->pers_max_blocks;
+  pcfg->bsize             = _arkp->bsize;
+  pcfg->blkbits           = _arkp->blkbits;
+  pcfg->grow              = _arkp->grow;
+  pcfg->hcount            = _arkp->hcount;
+  pcfg->vlimit            = _arkp->vlimit;
+  pcfg->nasyncs           = _arkp->nasyncs;
+  pcfg->basyncs           = _arkp->basyncs;
+  pcfg->ntasks            = _arkp->ntasks;
+  pcfg->nthrds            = _arkp->nthrds;
 
-  dptr = pptr->p_cntr_data;
+  // Record stats info
+  pptr->p_cntr_st_offset = pptr->p_cntr_cfg_size;
+  dptr                   = pptr->p_cntr_data + pptr->p_cntr_st_offset;
+  pptr->p_cntr_st_size   = 0;
+  for (i=0; i<_arkp->nthrds; i++)
+  {
+      scbp = &_arkp->poolthreads[i];
+      size = sizeof(ark_stats_t);
+      memcpy(dptr, &scbp->poolstats, size);
+      KV_TRC(pAT, "PERSIST_WR stats[%3d] offset:%12ld len:%ld",
+                      i, dptr-(char*)pptr, size);
+      pptr->p_cntr_st_size += size;
+      dptr                 += size;
+  }
 
   // Record hash info
-  dptr                  += pptr->p_cntr_cfg_size;
-  pptr->p_cntr_ht_offset = dptr - pptr->p_cntr_data;
-  pptr->p_cntr_ht_size   = sizeof(hash_t) + (_arkp->ht->n * sizeof(uint64_t));
-  memcpy(dptr, _arkp->ht, pptr->p_cntr_ht_size);
+  pptr->p_cntr_ht_offset = pptr->p_cntr_cfg_size +
+                           pptr->p_cntr_st_size;
+  dptr                   = pptr->p_cntr_data + pptr->p_cntr_ht_offset;
+  pptr->p_cntr_ht_size   = 0;
+  for (i=0; i<_arkp->nthrds; i++)
+  {
+      scbp = &_arkp->poolthreads[i];
+      size = scbp->ht->iv->words * sizeof(uint64_t);
+      memcpy(dptr, scbp->ht->iv->data, size);
+      KV_TRC(pAT, "PERSIST_WR ht[%3d] offset:%12ld len:%ld",
+                      i, dptr-(char*)pptr, size);
+      pptr->p_cntr_ht_size += size;
+      dptr                 += size;
+  }
 
   // Record block list info
-  dptr                  += pptr->p_cntr_ht_size;
-  pptr->p_cntr_bl_offset = dptr - pptr->p_cntr_data;
-  pptr->p_cntr_bl_size   = sizeof(BL);
-  memcpy(dptr, _arkp->bl, pptr->p_cntr_bl_size);
+  pptr->p_cntr_bl_offset = pptr->p_cntr_cfg_size +
+                           pptr->p_cntr_st_size  +
+                           pptr->p_cntr_ht_size;
+  dptr                   = pptr->p_cntr_data + pptr->p_cntr_bl_offset;
+  pptr->p_cntr_bl_size   = 0;
+  for (i=0; i<_arkp->nthrds; i++)
+  {
+      scbp = &_arkp->poolthreads[i];
+      size = sizeof(BL)-sizeof(void*);
+      memcpy(dptr, scbp->bl, size);
+      pptr->p_cntr_bl_size += size;
+      KV_TRC(pAT, "PERSIST_WR bl[%3d] offset:%12ld len:%ld",
+                      i, dptr-(char*)pptr, size);
+      dptr += size;
 
-  // Record IV list info
-  dptr                    += pptr->p_cntr_bl_size;
-  pptr->p_cntr_bliv_offset = dptr - pptr->p_cntr_data;
-
-  // bliv_size = bytes in bl->list->data[cs_blocks + kvdata_blocks]
-  // add 2 to top because of how IV->data chaining works
-  pptr->p_cntr_bliv_size = divup((_arkp->bl->top+2) * _arkp->bl->w, 8);
-  memcpy(dptr, _arkp->bl->list->data, pptr->p_cntr_bliv_size);
+      size      = divup((scbp->bl->top+5) * scbp->bl->w, 8);
+      vbep      = (vbe_t*)dptr;
+      vbep->len = size;
+      memcpy(vbep->p, scbp->bl->iv->data, vbep->len);
+      pptr->p_cntr_bl_size += vbep->len;
+      KV_TRC(pAT, "PERSIST_WR iv[%3d] offset:%12ld len:%ld",
+                      i, dptr-(char*)pptr, vbep->len);
+      dptr += sizeof(vbep->len) + vbep->len;
+  }
 
   // Calculate wrblks: number of persist metadata blocks to write
-  tot_bytes = _arkp->pers_cs_bytes + pptr->p_cntr_bliv_size;
+  tot_bytes = pptr->p_cntr_cfg_size +
+              pptr->p_cntr_st_size  +
+              pptr->p_cntr_ht_size  +
+              pptr->p_cntr_bl_size;
   wrblks    = pcfg->pblocks = divup(tot_bytes, _arkp->bsize);
 
-  KV_TRC(pAT, "PERSIST_WR dev:%s top:%ld wrblks:%ld vs pers_max_blocks:%ld",
-         _arkp->ea->st_device, _arkp->bl->top, pcfg->pblocks,
-         _arkp->pers_max_blocks);
+  KV_TRC_PERF1(pAT, "PERSIST_WR wrblks:%ld vs pers_max_blocks:%ld",
+                  wrblks, _arkp->pers_max_blocks);
 
-  bl_array = bl_chain_blocks(_arkp->bl, 0, wrblks);
-  if ( NULL == bl_array )
+  bl_array = bl_chain_no_bl(wrblks,0);
+  if (!bl_array)
   {
-    KV_TRC_FFDC(pAT, "Out of memory allocating %"PRIu64" blocks for block list",
-                wrblks);
-    rc = ENOMEM;
+      KV_TRC_FFDC(pAT, "ENOMEM blocks:%ld for write", wrblks);
+      rc = ENOMEM;
+      goto done;
   }
   else
   {
-    rc = ea_async_io(_arkp->ea, ARK_EA_WRITE, (void *)p_data, 
-                     bl_array, wrblks, _arkp->nthrds);
-    am_free(bl_array);
+      rc = ea_async_io(_arkp->poolthreads->ea, ARK_EA_WRITE, p_data,
+                       bl_array, wrblks);
+      am_free(bl_array);
+      if (rc != 0)
+      {
+          KV_TRC_FFDC(pAT, "PERSIST VERSION_4 STORE FAILED rc:%d", rc);
+          goto done;
+      }
   }
 
-  KV_TRC_PERF2(pAT, "PSTATS  kv:%8ld bytes:%8ld blks:%8ld",
-               _arkp->pers_stats.kv_cnt,
-               _arkp->pers_stats.byte_cnt,
-               _arkp->pers_stats.blk_cnt);
-  KV_TRC(pAT, "PERSIST_DATA_STORED rc:%d", rc);
+  KV_TRC_PERF1(pAT, "PERSIST ARK_META size %ld bsize %ld hcount %ld "
+              "nthrds %d nasyncs %ld basyncs %d blkbits %ld",
+              _arkp->size, _arkp->bsize, _arkp->hcount,
+              _arkp->nthrds, _arkp->nasyncs, _arkp->basyncs, _arkp->blkbits);
 
+  KV_TRC_PERF1(pAT, "PERSIST pcfg     size %ld bsize %ld hcount %ld "
+              "nthrds %d nasyncs %d basyncs %d blkbits %ld version:%ld",
+              pcfg->size, pcfg->bsize, pcfg->hcount,
+              pcfg->nthrds, pcfg->nasyncs, pcfg->basyncs, pcfg->blkbits,
+              pptr->p_cntr_version);
+
+  KV_TRC_FFDC(pAT, "PERSIST VERSION_4 STORED");
+
+done:
   am_free(p_data_orig);
   return rc;
 }
@@ -209,210 +252,257 @@ int ark_persist(_ARK *_arkp)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ark_check_persistence(_ARK *_arkp, uint64_t flags)
+int ark_persist_load(_ARK *_arkp)
 {
-  int32_t  rc = -1;
-  char    *p_data_orig = NULL;
-  char    *p_data = NULL;
-  ark_io_list_t *bl_array = NULL;
-  p_cntr_t *pptr = NULL;
-  P_ARK_t  *pcfg = NULL;
-  hash_t   *htp = NULL;
-  BL       *blp = NULL;
-  uint64_t  rdblks = 0;
+    int32_t        rc          = -1;
+    char          *p_data_orig = NULL;
+    char          *p_data      = NULL;
+    ark_io_list_t *bl_array    = NULL;
+    p_cntr_t      *pptr        = NULL;
+    P_ARK_t       *pcfg        = NULL;
+    EA            *eap         = NULL;
+    uint64_t      rdblks       = 0;
+    uint64_t      size         = 0;
+    uint64_t      bcount       = 0;
 
-  // Ignore the persistence data and load from scratch
-  if ( (!(flags & ARK_KV_PERSIST_LOAD)) || (flags & ARK_KV_VIRTUAL_LUN) )
-  {
-    return -1;
-  }
+    KV_TRC_PERF1(pAT, "PERSIST LOAD %s", _arkp->devs[0]);
 
-  KV_TRC(pAT, "PERSIST_LOAD");
+    // Create the KV storage, whether that will be memory based or flash
+    eap = ea_new(_arkp->devs[0], _arkp->bsize, ARK_MAX_BASYNCS, &size, &bcount,0);
+    if (!eap)
+    {
+        rc = errno;
+        goto error_exit;
+    }
 
-  p_data_orig = am_malloc(_arkp->bsize + ARK_ALIGN);
-  if (p_data_orig == NULL)
-  {
-    KV_TRC_FFDC(pAT, "Out of memory allocating %"PRIu64" bytes for the first "
-                     "persistence block", _arkp->bsize);
-    rc = ENOMEM;
-  }
-  else
-  {
-    p_data = ptr_align(p_data_orig);
-    bl_array = bl_chain_no_bl(0, 1);
-    rc = ea_async_io(_arkp->ea, ARK_EA_READ, (void *)p_data, 
-                      bl_array, 1, 1);
+    // malloc a single block for read
+    p_data_orig = am_malloc(_arkp->bsize + ARK_ALIGN);
+    if (!p_data_orig)
+    {
+        KV_TRC_FFDC(pAT, "Out of memory allocating %ld bytes for the first "
+                         "persistence block", _arkp->bsize);
+        rc = ENOMEM;
+        goto error_exit;
+    }
+
+    // read first block
+    p_data   = ptr_align(p_data_orig);
+    bl_array = bl_chain_no_bl(1, 0);
+    rc       = ea_async_io(eap, ARK_EA_READ, p_data, bl_array, 1);
     am_free(bl_array);
-  }
+    if (rc != 0) {goto error_exit;}
 
-  if (rc == 0)
-  {
-    // We've read the first block.  We check to see if
-    // persistence data is present and if so, then
-    // read the rest of the data from the flash.
+    // check if persist data is valid
     pptr = (p_cntr_t *)p_data;
-    if ( memcmp(pptr->p_cntr_magic, ARK_P_MAGIC, 
-                 sizeof(pptr->p_cntr_magic) != 0))
+    if (memcmp(pptr->p_cntr_magic,ARK_P_MAGIC,sizeof(pptr->p_cntr_magic) != 0))
     {
-      KV_TRC_FFDC(pAT, "No magic number found in persistence data: %d", EINVAL);
-      // The magic number does not match so data is either
-      // not present or is corrupted.
-      rc = -1;
-    }
-    else
-    {
-      // Now we check version and the first persistence data
-      // needs to be the ARK_PERSIST_CONFIG block
-      if (pptr->p_cntr_version != ARK_P_VERSION_1 &&
-          pptr->p_cntr_version != ARK_P_VERSION_2)
-      {
-        KV_TRC_FFDC(pAT, "Invalid / unsupported version: %"PRIu64"",
-                    pptr->p_cntr_version);
+        KV_TRC_FFDC(pAT, "No magic number found in persistence data: %d", EINVAL);
+        // The magic number does not match so data is either
+        // not present or is corrupted.
         rc = EINVAL;
-      }
-      else
-      {
-        // Read in the rest of the persistence data
-        pcfg   = (P_ARK_t *)(pptr->p_cntr_data + pptr->p_cntr_cfg_offset);
-        rdblks = pcfg->pblocks;
-        if (rdblks > 1)
-        {
-          p_data_orig = am_realloc(p_data_orig, (rdblks * _arkp->bsize) +
-                                   ARK_ALIGN);
-          if (p_data_orig == NULL)
-          {
-            KV_TRC_FFDC(pAT, "Out of memory allocating %"PRIu64" bytes for "
-                             "full persistence block",
-                             (rdblks * _arkp->bsize));
-            rc = ENOMEM;
-          }
-          else
-          {
-            p_data = ptr_align(p_data_orig);
-            bl_array = bl_chain_no_bl(0, rdblks);
-            if (bl_array == NULL)
-            {
-              KV_TRC_FFDC(pAT, "Out of memory allocating %"PRIu64" blocks for "
-                               "full persistence data", rdblks);
-              rc = ENOMEM;
-            }
-          }
-
-          // We are still good to read the rest of the data
-          // from the flash
-          if (rc == 0)
-          {
-            KV_TRC(pAT, "PERSIST_RD rdblks:%ld", rdblks);
-            rc = ea_async_io(_arkp->ea, ARK_EA_READ, (void *)p_data,
-                           bl_array, rdblks, 1);
-            am_free(bl_array);
-            pptr = (p_cntr_t *)p_data;
-            pcfg   = (P_ARK_t *)(pptr->p_cntr_data + pptr->p_cntr_cfg_offset);
-          }
-        }
-      }
+        goto error_exit;
     }
-  }
 
-  // If rc == 0, that means we have persistence data
-  if (rc == 0)
-  {
-      KV_TRC(pAT, "PERSIST_META size %ld bsize %ld hcount %ld bcount %ld "
-                  "nthrds %d nasyncs %d basyncs %d blkbits %ld version:%ld",
-                  pcfg->size, pcfg->bsize, pcfg->hcount, pcfg->bcount,
-                  pcfg->nthrds, pcfg->nasyncs, pcfg->basyncs, pcfg->blkbits,
-                  pptr->p_cntr_version);
+    // check version
+    if (pptr->p_cntr_version != ARK_P_VERSION_4)
+    {
+        KV_TRC_FFDC(pAT, "The persist data has a version:%ld, which is not supported "
+                         "by this level of Arkdb software. This software supports "
+                         "version:%d",
+                         pptr->p_cntr_version, ARK_P_VERSION_4);
+        rc = EINVAL;
+        goto error_exit;
+    }
 
-    _arkp->persload            = 1;
-    _arkp->size                = pcfg->size;
-    _arkp->flags               = flags;
-    _arkp->bsize               = pcfg->bsize;
-    _arkp->bcount              = pcfg->bcount;
-    _arkp->blkbits             = pcfg->blkbits;
-    _arkp->grow                = pcfg->grow;
-    _arkp->hcount              = pcfg->hcount;
-    _arkp->vlimit              = pcfg->vlimit;
-    _arkp->blkused             = pcfg->blkused;
-    _arkp->pers_stats.kv_cnt   = pcfg->pstats.kv_cnt;
-    _arkp->pers_stats.blk_cnt  = pcfg->pstats.blk_cnt;
-    _arkp->pers_stats.byte_cnt = pcfg->pstats.byte_cnt;
+    // Read in the rest of the persistence data
+    pcfg   = (P_ARK_t *)(pptr->p_cntr_data + pptr->p_cntr_cfg_offset);
+    rdblks = pcfg->pblocks;
+    if (rdblks > 1)
+    {
+        p_data_orig = am_realloc(p_data_orig, (rdblks*_arkp->bsize)+ARK_ALIGN);
+        if (!p_data_orig)
+        {
+            KV_TRC_FFDC(pAT, "Out of memory allocating %ld bytes for "
+                            "full persistence block", rdblks * _arkp->bsize);
+            rc = ENOMEM;
+            goto error_exit;
+        }
 
-    KV_TRC(pAT, "ARK_META size %ld bsize %ld hcount %ld bcount %ld "
+        p_data   = ptr_align(p_data_orig);
+        bl_array = bl_chain_no_bl(rdblks,0);
+        if (!bl_array)
+        {
+            KV_TRC_FFDC(pAT, "Out of memory allocating %ld blocks for "
+                             "full persistence data", rdblks);
+            rc = ENOMEM;
+            goto error_exit;
+        }
+    }
+    KV_TRC_PERF1(pAT, "PERSIST_RD rdblks:%ld", rdblks);
+    rc = ea_async_io(eap, ARK_EA_READ, (void *)p_data, bl_array, rdblks);
+    am_free(bl_array);
+    if (rc != 0) {goto error_exit;}
+
+    // read was successful, parse the data
+    pptr = (p_cntr_t *)p_data;
+    pcfg = (P_ARK_t *)(pptr->p_cntr_data + pptr->p_cntr_cfg_offset);
+
+    KV_TRC_FFDC(pAT, "PERSIST_VERSION_4 LOADED");
+    KV_TRC_PERF1(pAT, "PERSIST pcfg     size %ld bsize %ld hcount %ld "
+                "nthrds %d nasyncs %d basyncs %d blkbits %ld version:%ld",
+                pcfg->size, pcfg->bsize, pcfg->hcount,
+                pcfg->nthrds, pcfg->nasyncs, pcfg->basyncs, pcfg->blkbits,
+                pptr->p_cntr_version);
+
+    _arkp->persload        = 1;
+    _arkp->size            = pcfg->size;
+    _arkp->bsize           = pcfg->bsize;
+    _arkp->blkbits         = pcfg->blkbits;
+    _arkp->grow            = pcfg->grow;
+    _arkp->hcount          = pcfg->hcount;
+    _arkp->vlimit          = pcfg->vlimit;
+    _arkp->nasyncs         = pcfg->nasyncs;
+    _arkp->basyncs         = pcfg->basyncs;
+    _arkp->ntasks          = pcfg->ntasks;
+    _arkp->nthrds          = pcfg->nthrds;
+    _arkp->pers_max_blocks = pcfg->max_blocks;
+
+    KV_TRC_PERF1(pAT, "PERSIST ARK_META size %ld bsize %ld hcount %ld "
                 "nthrds %d nasyncs %ld basyncs %d blkbits %ld",
-                _arkp->size, _arkp->bsize, _arkp->hcount, _arkp->bcount,
+                _arkp->size, _arkp->bsize, _arkp->hcount,
                 _arkp->nthrds, _arkp->nasyncs, _arkp->basyncs, _arkp->blkbits);
 
-    htp = (hash_t *)(pptr->p_cntr_data + pptr->p_cntr_ht_offset);
-    _arkp->ht = hash_new(htp->n);
-    if (_arkp->ht == NULL)
-    {
-        if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-        rc = errno;
-        KV_TRC_FFDC(pAT, "ht_new failed: n:%ld rc:%d", htp->n, rc);
-        goto error_exit;
-    }
-    memcpy(_arkp->ht, htp, pptr->p_cntr_ht_size);
-
-    blp = (BL *)(pptr->p_cntr_data + pptr->p_cntr_bl_offset);
-    _arkp->bl = bl_new(blp->n, blp->w);
-    if (_arkp->bl == NULL)
-    {
-        if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-        rc = errno;
-        KV_TRC_FFDC(pAT, "bl_new failed: n:%ld w:%ld rc:%d",
-                    blp->n, blp->w, rc);
-        goto error_exit;
-    }
-    _arkp->blu = bl_new(blp->n, blp->w);
-    if (_arkp->blu == NULL)
-    {
-        if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-        rc = errno;
-        KV_TRC_FFDC(pAT, "bl_new failed: n:%ld w:%ld rc:%d",
-                    blp->n, blp->w, rc);
-        goto error_exit;
-    }
-    _arkp->bl->count = blp->count;
-    _arkp->bl->head  = blp->head;
-    _arkp->bl->hold  = blp->hold;
-    _arkp->bl->top   = blp->top;
-
-    if (pptr->p_cntr_version == ARK_P_VERSION_1)
-    {
-        IV *piv = (IV *)(pptr->p_cntr_data + pptr->p_cntr_bliv_offset);
-
-        KV_TRC(pAT, "PERSIST_VERSION_1 LOADED");
-        _arkp->bl->top = _arkp->bl->n;
-
-        // copy IV->data from piv->data
-        memcpy(_arkp->bl->list->data,
-               piv->data,
-               pptr->p_cntr_bliv_size);
-    }
-    else if (pptr->p_cntr_version == ARK_P_VERSION_2)
-    {
-        KV_TRC(pAT, "PERSIST_VERSION_2 LOADED");
-        // copy IV->data from bliv_offset
-        memcpy(_arkp->bl->list->data,
-               pptr->p_cntr_data + pptr->p_cntr_bliv_offset,
-               pptr->p_cntr_bliv_size);
-    }
-    else
-    {
-        rc = EINVAL;
-        KV_TRC_FFDC(pAT, "bad persistent version number: ver:%ld",
-                    pptr->p_cntr_version);
-        goto error_exit;
-    }
-
-    KV_TRC(pAT, "BL_META: n:%ld count:%ld head:%ld hold:%ld top:%ld",
-            _arkp->bl->n, _arkp->bl->count, _arkp->bl->head, _arkp->bl->hold,
-            _arkp->bl->top);
-  }
+    _arkp->persist_orig = p_data_orig;
+    _arkp->persist      = pptr;
+    goto success;
 
 error_exit:
+  ea_free(eap);
   am_free(p_data_orig);
+
+success:
   return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+void ark_persist_restore(_ARK *_arkp)
+{
+    p_cntr_t *pptr = _arkp->persist;
+    scb_t    *scbp = NULL;
+    char     *dptr = NULL;
+    vbe_t    *vbep = NULL;
+    int       i    = 0;
+    uint64_t  size = 0;
+
+    dptr = pptr->p_cntr_data + pptr->p_cntr_st_offset;
+    size = pptr->p_cntr_st_size / _arkp->nthrds;
+    for (i=0; i<_arkp->nthrds; i++)
+    {
+        scbp = &_arkp->poolthreads[i];
+        memcpy(&scbp->poolstats, dptr, size);
+        KV_TRC(pAT, "PERSIST_RES stats[%3d] offset:%12ld len:%ld",
+                        i, dptr-(char*)pptr, size);
+        dptr += size;
+    }
+
+    dptr = pptr->p_cntr_data + pptr->p_cntr_ht_offset;
+    size = pptr->p_cntr_ht_size / _arkp->nthrds;
+    for (i=0; i<_arkp->nthrds; i++)
+    {
+        scbp = &_arkp->poolthreads[i];
+        memcpy(scbp->ht->iv->data, dptr, size);
+        KV_TRC(pAT, "PERSIST_RES ht[%3d] offset:%12ld len:%ld",
+                        i, dptr-(char*)pptr, size);
+        dptr += size;
+    }
+
+    dptr = pptr->p_cntr_data + pptr->p_cntr_bl_offset;
+    for (i=0; i<_arkp->nthrds; i++)
+    {
+        scbp = &_arkp->poolthreads[i];
+        size = sizeof(BL) - sizeof(void*);
+        memcpy(scbp->bl, dptr, size);
+        KV_TRC(pAT, "PERSIST_RES bl[%3d] offset:%12ld len:%ld",
+                        i, dptr-(char*)pptr, size);
+        dptr += size;
+
+        vbep = (vbe_t*)dptr;
+        memcpy(scbp->bl->iv->data, vbep->p, vbep->len);
+        KV_TRC(pAT, "PERSIST_RES iv[%3d] offset:%12ld len:%ld",
+                        i, dptr-(char*)pptr, vbep->len);
+        dptr += sizeof(vbep->len) + vbep->len;
+    }
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+void ark_thd_free_res(_ARK *_arkp, int tid)
+{
+    scb_t *scbp = &_arkp->poolthreads[tid];
+    int    j    = 0;
+    int    rnum = 0;
+
+    if (!_arkp) {return;}
+
+    KV_TRC_DBG(pAT, "free inb/oub/vb");
+    for (j=0; j<_arkp->ntasks && scbp->tcbs; j++)
+    {
+        bt_delete(scbp->tcbs[j].inb_orig);
+        bt_delete(scbp->tcbs[j].oub_orig);
+        am_free  (scbp->tcbs[j].vb_orig);
+        am_free  (scbp->tcbs[j].aiol);
+    }
+    KV_TRC_DBG(pAT, "free tcbs");
+    am_free(scbp->tcbs);
+
+    KV_TRC_DBG(pAT, "free iocbs");
+    am_free(scbp->iocbs);
+
+    KV_TRC_DBG(pAT, "destroy rcb cond/lock");
+    for (rnum=0; rnum<_arkp->nasyncs && scbp->rcbs; rnum++)
+    {
+        pthread_cond_destroy(&(scbp->rcbs[rnum].acond));
+        pthread_mutex_destroy(&(scbp->rcbs[rnum].alock));
+    }
+
+    KV_TRC_DBG(pAT, "free rcbs");
+    if (scbp->rcbs) {am_free(scbp->rcbs);}
+
+    KV_TRC_DBG(pAT, "free rtags");
+    if (scbp->rtags) {tag_free(scbp->rtags);}
+
+    KV_TRC_DBG(pAT, "free ttags");
+    if (scbp->ttags) {tag_free(scbp->ttags);}
+
+    KV_TRC_DBG(pAT, "free ht");
+    hash_free(scbp->ht);
+
+    KV_TRC_DBG(pAT, "free bl");
+    if (scbp->bl) {bl_free(scbp->bl);}
+
+    queue_free(scbp->reqQ);
+    queue_free(scbp->cmpQ);
+    queue_free(scbp->taskQ);
+    queue_free(scbp->scheduleQ);
+    queue_free(scbp->harvestQ);
+
+    pthread_mutex_destroy(&(scbp->lock));
+
+    KV_TRC_DBG(pAT, "ea_delete");
+    ea_free(scbp->ea);
+
+    if (scbp->htc_orig)
+    {
+        KV_TRC_DBG(pAT, "free htc");
+        for (j=0; j<scbp->hcount; j++) {am_free(scbp->htc[j].orig);}
+        am_free(scbp->htc_orig);
+    }
+    return;
 }
 
 /**
@@ -421,70 +511,13 @@ error_exit:
  ******************************************************************************/
 void ark_free_resources(_ARK  *_arkp)
 {
-  scb_t *scbp = NULL;
-  int    i    = 0;
-  int    rnum = 0;
+  int i = 0;
 
   if (!_arkp) {return;}
 
   for (i=0; i<_arkp->nthrds && _arkp->poolthreads; i++)
   {
-      scbp = &(_arkp->poolthreads[i]);
-
-      KV_TRC_DBG(pAT, "free inb/oub/vb");
-      for (i=0; i<_arkp->ntasks && scbp->tcbs; i++)
-      {
-          bt_delete(scbp->tcbs[i].inb_orig);
-          bt_delete(scbp->tcbs[i].oub_orig);
-          am_free  (scbp->tcbs[i].vb_orig);
-          am_free  (scbp->tcbs[i].aiol);
-      }
-      KV_TRC_DBG(pAT, "free tcbs");
-      am_free(scbp->tcbs);
-
-      KV_TRC_DBG(pAT, "free ucbs");
-      am_free(scbp->ucbs);
-
-      KV_TRC_DBG(pAT, "free iocbs");
-      am_free(scbp->iocbs);
-
-      KV_TRC_DBG(pAT, "free rcbs");
-      if (scbp->rcbs) {am_free(scbp->rcbs);}
-
-      KV_TRC_DBG(pAT, "free rtags");
-      if (scbp->rtags) {tag_free(scbp->rtags);}
-
-      KV_TRC_DBG(pAT, "free ttags");
-      if (scbp->ttags) {tag_free(scbp->ttags);}
-
-      KV_TRC_DBG(pAT, "free utags");
-      if (scbp->utags) {tag_free(scbp->utags);}
-
-      KV_TRC_DBG(pAT, "destroy rcb cond/lock");
-      for (rnum=0; rnum<_arkp->nasyncs && scbp->rcbs; rnum++)
-      {
-          pthread_cond_destroy(&(scbp->rcbs[rnum].acond));
-          pthread_mutex_destroy(&(scbp->rcbs[rnum].alock));
-      }
-
-      queue_free(scbp->reqQ);
-      queue_free(scbp->cmpQ);
-      queue_free(scbp->taskQ);
-      queue_free(scbp->scheduleQ);
-      queue_free(scbp->harvestQ);
-      queue_free(scbp->uscheduleQ);
-      queue_free(scbp->uharvestQ);
-
-      pthread_mutex_destroy(&(scbp->lock));
-      KV_TRC(pAT, "thread %d joined", i);
-
-      /* if vlun and thread 0   OR  if plun */
-      if ((i==0 && _arkp->flags & ARK_KV_VIRTUAL_LUN) ||
-                 !(_arkp->flags & ARK_KV_VIRTUAL_LUN))
-      {
-          KV_TRC_DBG(pAT, "ea_delete");
-          (void)ea_delete(scbp->ea);
-      }
+      ark_thd_free_res(_arkp, i);
   }
 
   KV_TRC_DBG(pAT, "free arkp->poolthreads");
@@ -492,25 +525,6 @@ void ark_free_resources(_ARK  *_arkp)
 
   KV_TRC_DBG(pAT, "free arkp->pts");
   if (_arkp->pts) {am_free(_arkp->pts);}
-
-  KV_TRC_DBG(pAT, "destroy mainmutex");
-  pthread_mutex_destroy(&_arkp->mainmutex);
-
-  KV_TRC_DBG(pAT, "free ht");
-  hash_free(_arkp->ht);
-
-  if (_arkp->htc_orig)
-  {
-      KV_TRC_DBG(pAT, "free htc");
-      for (i=0; i<_arkp->hcount; i++) {am_free(_arkp->htc[i].orig);}
-      am_free(_arkp->htc_orig);
-  }
-
-  KV_TRC_DBG(pAT, "blks_delete");
-  if (_arkp->bl) {bl_delete(_arkp->bl);}
-
-  KV_TRC_DBG(pAT, "blu_delete");
-  if (_arkp->blu) {bl_delete(_arkp->blu);}
 
   KV_TRC(pAT, "done, free arkp %p", _arkp);
   am_free(_arkp);
@@ -520,333 +534,115 @@ void ark_free_resources(_ARK  *_arkp)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ark_create_verbose(char *path, ARK **arkret,
-                       uint64_t size, uint64_t bsize, uint64_t hcount,
-                       int nthrds, int nqueue, int basyncs, uint64_t flags)
+int ark_thd_init_res(_ARK *ark, int tid)
 {
-  _ARK    *ark     = NULL;
-  int      rc      = 0;
-  uint64_t bcount  = 0;
-  uint64_t x       = 0;
-  int      i       = 0;
-  int      tnum    = 0;
-  int      rnum    = 0;
-  uint64_t am_sz   = 0;
-  scb_t   *scbp    = NULL;
-
-  KV_TRC_OPEN(pAT, "arkdb");
-  KV_TRC_PERF2(pAT, "%p path(%s) size %ld bsize %ld hcount %ld "
-              "nthrds %d nqueue %d basyncs %d flags:%08lx",
-              ark, path, size, bsize, hcount,
-              nthrds, nqueue, basyncs, flags);
-
-  if (NULL == arkret)
-  {
-    KV_TRC_FFDC(pAT, "Incorrect value for ARK control block: rc=EINVAL");
-    rc = EINVAL;
-    goto ark_create_ark_err;
-  }
-
-  if ( (flags & (ARK_KV_PERSIST_LOAD|ARK_KV_PERSIST_STORE)) && 
-         (flags & ARK_KV_VIRTUAL_LUN) )
-  {
-    KV_TRC_FFDC(pAT, "Invalid persistence combination with ARK flags: %016lx",
-                flags);
-    rc = EINVAL;
-    goto ark_create_ark_err;
-  }
-
-  if (nthrds <= 0)
-  {
-      KV_TRC_FFDC(pAT, "invalid nthrds:%d", nthrds);
-      rc = EINVAL;
-      goto ark_create_ark_err;
-  }
-
-  am_sz = sizeof(_ARK);
-  ark   = am_malloc(am_sz);
-  if (ark == NULL)
-  {
-    rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocating ARK control structure for %ld",
-                sizeof(_ARK));
-    goto ark_create_ark_err;
-  }
-  memset(ark,0,am_sz);
-
-  ark->ns_per_tick = time_per_tick(1000, 100);
-
-  if (flags & ARK_KV_HTC)
-  {
-      /* if caller didn't specify a unique hcount, use htc default size */
-      if (hcount == ARK_VERBOSE_HASH_DEF) {hcount = ARK_VERBOSE_HTC_DEF;}
-      ark->htc_max  = hcount;
-      ark->htc_blks = 1;
-  }
-  else
-  {
-      ark->htc_blks = 0;
-  }
-
-  KV_TRC_FFDC(pAT, "%p path(%s) size %ld bsize %ld hcount %ld "
-              "nthrds %d nqueue %d basyncs %d flags:%08lx htc:%d",
-              ark, path, size, bsize, hcount,
-              nthrds, nqueue, basyncs, flags, ark->htc_blks);
-
-  nqueue = nqueue<ARK_MAX_NASYNCS ? nqueue : ARK_MAX_NASYNCS;
-
-  ark->bsize    = bsize;
-  ark->rthread  = 0;
-  ark->persload = 0;
-  ark->nasyncs  = nqueue<ARK_MIN_NASYNCS  ? ARK_MIN_NASYNCS : nqueue;
-  ark->basyncs  = basyncs<ARK_MIN_BASYNCS ? ARK_MIN_BASYNCS : basyncs;
-  ark->nthrds   = nthrds;
-  ark->ntasks   = ARK_MAX_TASK_OPS;
-
-  /*---------------------------------------------------------------------------
-   * check for '=', which is a corsa multi-port to the same lun
-   *-------------------------------------------------------------------------*/
-  int   devI = 0;
-  int   devN = 0;
-  char *pstr = NULL;
-  char *dbuf = NULL;
-  char *devp = NULL;
-  char  devs[16][256];
-
-  if (path)
-  {
-      if (strchr(path,'='))
-      {
-          if (flags & ARK_KV_VIRTUAL_LUN)
-          {
-              rc = EINVAL;
-              KV_TRC_FFDC(pAT, "Bad path with VLUN %s", path);
-              goto ark_create_ark_err;
-          }
-          dbuf = strdup(path);
-          sprintf(dbuf,"%s",path);
-          while ((pstr=strsep((&dbuf),"=")))
-          {
-              sprintf(devs[devN++],"%s",pstr);
-              KV_TRC(pAT,"%d -> %s", devN-1, devs[devN-1]);
-          }
-      }
-      else
-      {
-          sprintf(devs[devN++],"%s",path);
-      }
-      devp = devs[devI];
-  }
-  KV_TRC(pAT,"open %s ", devp);
-
-  // Create the KV storage, whether that will be memory based or flash
-  ark->ea = ea_new(devp, ark->bsize, basyncs, &size, &bcount,
-                  (flags & ARK_KV_VIRTUAL_LUN));
-  if (ark->ea == NULL)
-  {
-    if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-    rc = errno;
-    KV_TRC_FFDC(pAT, "KV storage initialization failed: rc/errno:%d", rc);
-    goto ark_create_ark_err;
-  }
-
-
-  int p_rc = 0;
-  // Now that the "connection" to the store has been established
-  // we need to check to see if data was persisted from a previous
-  // instantiation of the KV store.
-  p_rc = ark_check_persistence(ark, flags);
-  if (p_rc > 0)
-  {
-    // We ran into an error while trying to read from
-    // the store.
-    rc = p_rc;
-    KV_TRC_FFDC(pAT, "Persistence check failed: %d", rc);
-    goto ark_create_ark_err;
-  }
-  else if (p_rc == -1)
-  {
-    KV_TRC(pAT, "NO PERSIST LOAD FLAG");
-    // There was no persistence data, so we just build off
-    // of what was passed into the API.
-
-    ark->size                = size;
-    ark->bcount              = bcount;
-    ark->hcount              = hcount;
-    ark->vlimit              = ARK_VERBOSE_VLIMIT_DEF;
-    ark->blkbits             = ARK_VERBOSE_BLKBITS_DEF;
-    ark->grow                = ARK_VERBOSE_GROW_DEF;
-    ark->rthread             = 0;
-    ark->flags               = flags;
-    ark->astart              = 0;
-    ark->blkused             = 1;
-    ark->ark_exit            = 0;
-    ark->nactive             = 0;
-    ark->pers_stats.kv_cnt   = 0;
-    ark->pers_stats.blk_cnt  = 0;
-    ark->pers_stats.byte_cnt = 0;
-    ark->pcmd                = PT_IDLE;
-
-    // Create the hash table
-    ark->ht = hash_new(ark->hcount);
-    if (ark->ht == NULL)
-    {
-      if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-      rc = errno;
-      KV_TRC_FFDC(pAT, "Hash initialization failed: %d", rc);
-      goto ark_create_ark_err;
-    }
-
-    // Create the block list
-    ark->bl = bl_new(ark->bcount, ark->blkbits);
-    if (ark->bl == NULL)
-    {
-      if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-      rc = errno;
-      KV_TRC_FFDC(pAT, "Block list initialization failed: %d", rc);
-      goto ark_create_ark_err;
-    }
-    if (flags & ARK_KV_PERSIST_STORE)
-    {
-      ark_persistence_calc(ark);
-      if (bl_reserve(ark->bl, ark->pers_max_blocks))
-          {goto ark_create_ark_err;}
-    }
-
-    // Create the unmap block list
-    ark->blu = bl_new(ark->bcount, ark->blkbits);
-    if (ark->blu == NULL)
-    {
-      if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-      rc = errno;
-      KV_TRC_FFDC(pAT, "Block list initialization failed: %d", rc);
-      goto ark_create_ark_err;
-    }
-  }
-  else
-  {
-      KV_TRC_PERF2(pAT, "PERSIST: %p path(%s) size %ld bsize %ld hcount %ld "
-                  "nthrds %d nqueue %ld basyncs %d bcount %ld blkbits %ld "
-                  "npart:%d",
-                  ark, path, ark->size, ark->bsize, ark->hcount,
-                  ark->nthrds, ark->nasyncs, ark->basyncs,
-                  ark->bcount, ark->blkbits, ark->npart);
-      KV_TRC_PERF2(pAT, "PSTATS  kv:%8ld bytes:%8ld blks:%8ld",
-                   ark->pers_stats.kv_cnt,
-                   ark->pers_stats.byte_cnt,
-                   ark->pers_stats.blk_cnt);
-
-  }
-  ark->min_bt = ARK_MIN_BT*ark->bsize;
-
-  x          = ark->hcount / ark->nthrds;
-  ark->npart = x + (ark->hcount % ark->nthrds ? 1 : 0);
-
-  if (ark->htc_blks)
-  {
-    am_sz = ark->hcount*sizeof(htc_t);
-    KV_TRC_FFDC(pAT,"htc am_sz:%ld hcount:%ld", am_sz, ark->hcount);
-    ark->htc_orig = am_malloc(am_sz + ARK_ALIGN);
-    if (!ark->htc_orig)
-    {
-      rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "HTC initialization failed: %d", rc);
-      goto ark_create_ark_err;
-    }
-    ark->htc = ptr_align(ark->htc_orig);
-    memset(ark->htc,0,am_sz);
-  }
-
-  rc = pthread_mutex_init(&ark->mainmutex,NULL);
-  if (rc != 0)
-  {
-    KV_TRC_FFDC(pAT, "pthread_mutex_init for main mutex failed: %d", rc);
-    goto ark_create_ark_err;
-  }
-
-  am_sz            = ark->nthrds * sizeof(scb_t);
-  ark->poolthreads = am_malloc(am_sz);
-  if ( NULL == ark->poolthreads )
-  {
-    rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for scbs", am_sz);
-    goto ark_create_ark_err;
-  }
-  memset(ark->poolthreads,0,am_sz);
-
-  am_sz    = ark->nthrds * sizeof(PT);
-  ark->pts = am_malloc(am_sz);
-  if ( ark->pts == NULL )
-  {
-    rc = ENOMEM;
-    KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for pts", am_sz);
-    goto ark_create_ark_err;
-  }
-  memset(ark->pts,0,am_sz);
-
-  /*---------------------------------------------------------------------------
-   * loop for nthrds resources
-   *-------------------------------------------------------------------------*/
-  for (i=0; i<ark->nthrds; i++)
-  {
-    scbp = &(ark->poolthreads[i]);
+    char    *dev    = NULL;
+    int      rc     = -1;
+    scb_t   *scbp   = &ark->poolthreads[tid];
+    uint64_t sz     = 0;
+    uint64_t bcount = 0;
 
     memset(scbp, 0, sizeof(scb_t));
 
-    /* if thread 0 OR vlun, use the existing ea */
-    if (i==0 || flags & ARK_KV_VIRTUAL_LUN)
+    dev          = ark->devs[tid % ark->devN];
+    scbp->size   = ark->size / ark->nthrds;
+    scbp->hcount = ark->hcount_per_thd;
+
+    scbp->ea = ea_new(dev, ark->bsize, ark->basyncs, &scbp->size, &bcount,
+                      (ark->flags & ARK_KV_VIRTUAL_LUN));
+    if (!scbp->ea)
     {
-      scbp->ea = ark->ea;
+        if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
+        rc = errno;
+        KV_TRC_FFDC(pAT, "KV storage initialization failed: rc/errno:%d", rc);
+        goto error;
+    }
+
+    if (ark->flags & ARK_KV_VIRTUAL_LUN)
+    {
+        scbp->bcount = bcount;
+        KV_TRC_PERF2(pAT,"VLUN dev:%s tid:%d size:%ld bcount:%ld",
+               dev, tid, scbp->size, scbp->bcount);
     }
     else
     {
-      devI = (devI+1) % devN;
-      if (path) devp = devs[devI];
-      scbp->ea = ea_new(devp, ark->bsize, basyncs, &size, &bcount,
-                        (flags & ARK_KV_VIRTUAL_LUN));
+        bcount       = (bcount - ark->pers_max_blocks) / ark->nthrds;
+        scbp->bcount = bcount;
+        scbp->offset = ark->pers_max_blocks + (bcount * (tid % ark->nthrds_per_dev));
+        KV_TRC_PERF2(pAT,"PLUN dev:%s tid:%3d size:%ld bcount:%ld offset:%ld",
+               dev, tid, scbp->size, scbp->bcount, scbp->offset);
+    }
+
+    if (ark->flags & ARK_KV_HTC)
+    {
+        sz = scbp->hcount*sizeof(htc_t);
+        KV_TRC_PERF2(pAT,"htc sz:%ld hcount:%ld", sz, scbp->hcount);
+        scbp->htc_orig = am_malloc(sz + ARK_ALIGN);
+        if (!scbp->htc_orig)
+        {
+            rc = ENOMEM;
+            KV_TRC_FFDC(pAT, "HTC initialization failed: %d", rc);
+            goto error;
+        }
+        scbp->htc_blks = 1;
+        scbp->htc      = ptr_align(scbp->htc_orig);
+        memset(scbp->htc,0,sz);
+    }
+    else {scbp->htc_blks = 0;}
+
+    // Create the hash table
+    scbp->ht = hash_new(scbp->hcount, ark->blkbits);
+    if (scbp->ht == NULL)
+    {
+        if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
+        rc = errno;
+        KV_TRC_FFDC(pAT, "Hash initialization failed: %d", rc);
+        goto error;
+    }
+
+    // Create the block list
+    scbp->bl = bl_new(scbp->bcount, ark->blkbits);
+    if (scbp->bl == NULL)
+    {
+        if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
+        rc = errno;
+        KV_TRC_FFDC(pAT, "Block list initialization failed: %d", rc);
+        goto error;
     }
 
     scbp->ttags = tag_new(ark->ntasks);
     if ( NULL == scbp->ttags )
     {
-      rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Tag initialization for tasks failed: %d", rc);
-      goto ark_create_ark_err;
+        rc = ENOMEM;
+        KV_TRC_FFDC(pAT, "Tag initialization for tasks failed: %d", rc);
+        goto error;
     }
 
-    scbp->utags = tag_new(ARK_UQ_SIZE);
-    if ( NULL == scbp->utags )
-    {
-      rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Tag initialization for utags failed: %d", rc);
-      goto ark_create_ark_err;
-    }
-
-    am_sz      = ark->ntasks * sizeof(tcb_t);
-    scbp->tcbs = am_malloc(am_sz);
+    sz         = ark->ntasks * sizeof(tcb_t);
+    scbp->tcbs = am_malloc(sz);
     if (!scbp->tcbs)
     {
-      rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for tcbs", am_sz);
-      goto ark_create_ark_err;
+        rc = ENOMEM;
+        KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for tcbs", sz);
+        goto error;
     }
-    memset(scbp->tcbs,0,am_sz);
+    memset(scbp->tcbs,0,sz);
 
     /*-------------------------------------------------------------------------
      * loop for ntasks resources
      *-----------------------------------------------------------------------*/
-    for (tnum=0; tnum<ark->ntasks; tnum++)
+    int num=0;
+    for (num=0; num<ark->ntasks; num++)
     {
-        tcb_t *tcbp = &scbp->tcbs[tnum];
+        tcb_t *tcbp = &scbp->tcbs[num];
 
-        tcbp->inb = bt_new(ark->min_bt, ark->vlimit, VDF_SZ,
-                                     &(tcbp->inb_orig));
+        tcbp->inb = bt_new(ark->min_bt, ark->vlimit, VDF_SZ, &tcbp->inb_orig);
         if (tcbp->inb == NULL)
         {
           if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
           rc = errno;
           KV_TRC_FFDC(pAT, "Bucket allocation for inbuffer failed: %d", rc);
-          goto ark_create_ark_err;
+          goto error;
         }
         tcbp->inb_size = ark->min_bt;
 
@@ -857,74 +653,59 @@ int ark_create_verbose(char *path, ARK **arkret,
           if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
           rc = errno;
           KV_TRC_FFDC(pAT, "Bucket allocation for outbuffer failed: %d", rc);
-          goto ark_create_ark_err;
+          goto error;
         }
         tcbp->oub_size = ark->min_bt;
 
-        tcbp->vbsize  = bsize * ARK_MIN_VB;
+        tcbp->vbsize  = ark->bsize * ARK_MIN_VB;
         tcbp->vb_orig = am_malloc(tcbp->vbsize +ARK_ALIGN);
         if (tcbp->vb_orig == NULL)
         {
           rc = ENOMEM;
           KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for tcb->vb",
                       tcbp->vbsize);
-          goto ark_create_ark_err;
+          goto error;
         }
         tcbp->vb = ptr_align(tcbp->vb_orig);
-        KV_TRC_DBG(pAT, "tid:%d VAB:%p %ld", i, tcbp->vb_orig, tcbp->vbsize);
+        KV_TRC_DBG(pAT, "num:%d VAB:%p %ld", num, tcbp->vb_orig, tcbp->vbsize);
     }
 
-    am_sz      = ark->ntasks * sizeof(iocb_t);
-    scbp->iocbs = am_malloc(am_sz);
+    sz          = ark->ntasks * sizeof(iocb_t);
+    scbp->iocbs = am_malloc(sz);
     if ( NULL == scbp->iocbs )
     {
       rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for iocbs", am_sz);
-      goto ark_create_ark_err;
+      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for iocbs", sz);
+      goto error;
     }
-    memset(scbp->iocbs,0,am_sz);
+    memset(scbp->iocbs,0,sz);
 
-    am_sz      = ARK_UQ_SIZE * sizeof(iocb_t);
-    scbp->ucbs = am_malloc(am_sz);
-    if ( NULL == scbp->ucbs )
-    {
-      rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for ucbs", am_sz);
-      goto ark_create_ark_err;
-    }
-    memset(scbp->ucbs,0,am_sz);
-
-    am_sz     = ark->nasyncs * sizeof(rcb_t);
-    scbp->rcbs = am_malloc(am_sz);
+    sz         = ark->nasyncs * sizeof(rcb_t);
+    scbp->rcbs = am_malloc(sz);
     if (!scbp->rcbs)
     {
       rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for rcbs",am_sz);
-      goto ark_create_ark_err;
+      KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for rcbs",sz);
+      goto error;
     }
-    memset(scbp->rcbs,0,am_sz);
+    memset(scbp->rcbs,0,sz);
 
-    for (rnum=0; rnum<ark->nasyncs; rnum++)
+    for (num=0; num<ark->nasyncs; num++)
     {
-      scbp->rcbs[rnum].stat = A_NULL;
-      pthread_cond_init(&(scbp->rcbs[rnum].acond), NULL);
-      pthread_mutex_init(&(scbp->rcbs[rnum].alock), NULL);
+        scbp->rcbs[num].stat = A_NULL;
+        pthread_cond_init (&(scbp->rcbs[num].acond), NULL);
+        pthread_mutex_init(&(scbp->rcbs[num].alock), NULL);
     }
 
     scbp->rtags = tag_new(ark->nasyncs);
     if (!scbp->rtags)
     {
-      rc = ENOMEM;
-      KV_TRC_FFDC(pAT, "Tag initialization for requests failed: %d", rc);
-      goto ark_create_ark_err;
+        rc = ENOMEM;
+        KV_TRC_FFDC(pAT, "Tag initialization for requests failed: %d", rc);
+        goto error;
     }
 
-    // Start off the random start point for this thread
-    // at -1, to show that it has not been part of a
-    // ark_random call.
-    scbp->rlast     = -1;
-    scbp->poolstate = PT_RUN;
-
+    scbp->poolstate          = PT_RUN;
     scbp->poolstats.io_cnt   = 0;
     scbp->poolstats.ops_cnt  = 0;
     scbp->poolstats.kv_cnt   = 0;
@@ -938,63 +719,300 @@ int ark_create_verbose(char *path, ARK **arkret,
     scbp->taskQ      = queue_new(ark->ntasks);
     scbp->scheduleQ  = queue_new(ark->ntasks);
     scbp->harvestQ   = queue_new(ark->ntasks);
-    scbp->uscheduleQ = queue_new(ARK_UQ_SIZE);
-    scbp->uharvestQ  = queue_new(ARK_UQ_SIZE);
+
+    KV_TRC_PERF2(pAT, "THD:%d dev(%s) size:%ld bcount:%ld hcount:%ld errno:%d",
+                    tid, dev, scbp->size, scbp->bcount, scbp->hcount, errno);
+
+    rc=0;
+
+error:
+  return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int ark_thd_start_all(_ARK *_arkp)
+{
+    int    rc    = 0;
+    int    i     = 0;
+    scb_t *scbp  = NULL;
+
+    KV_TRC_DBG(pAT, "create threads");
+
+    for (i=0; i<_arkp->nthrds; i++)
+    {
+        PT *pt  = &_arkp->pts[i];
+        scbp    = &_arkp->poolthreads[i];
+        pt->id  = i;
+        pt->ark = _arkp;
+        rc      = pthread_create(&(scbp->pooltid), NULL, pool_function, pt);
+        if (rc != 0)
+        {
+          KV_TRC_FFDC(pAT, "pthread_create of server thread failed: %d", rc);
+          goto ark_create_poolloop_err;
+        }
+        KV_TRC_DBG(pAT, "create thread%d success",i);
+    }
+
+    goto success;
+
+ark_create_poolloop_err:
+
+      for (; --i >= 0; i--)
+      {
+        scbp = &_arkp->poolthreads[i];
+
+        KV_TRC_DBG(pAT, "abort/join pt:%d", i);
+
+        if (scbp->pooltid)
+        {
+            queue_lock  (scbp->reqQ);
+            queue_wakeup(scbp->reqQ);
+            queue_unlock(scbp->reqQ);
+            pthread_join(scbp->pooltid, NULL);
+        }
+      }
+
+success:
+    return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+void ark_log_stats(ARK *ark)
+{
+    _ARK    *_arkp  = (_ARK*)ark;
+    uint64_t size   = 0;
+    uint64_t inuse  = 0;
+    uint64_t actual = 0;
+    int64_t  count  = 0;
+
+    if (!ark) {return;}
+
+    ark_allocated(ark, &size);
+    ark_inuse    (ark, &inuse);
+    ark_actual   (ark, &actual);
+    ark_count    (ark, &count);
+
+    KV_TRC_FFDC(pAT, "PERSIST max_blocks:%ld size:%ld inuse:%ld actual:%ld "
+                     "count:%ld",
+                _arkp->pers_max_blocks*_arkp->bsize,size,inuse,actual,count);
+    return;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int ark_create_verbose(char *path, ARK **arkret,
+                       uint64_t size, uint64_t bsize, uint64_t hcount,
+                       int nthrds, int nqueue, int basyncs, uint64_t flags)
+{
+  _ARK    *ark           = NULL;
+  int      rc            = 0;
+  int      i             = 0;
+  uint64_t am_sz         = 0;
+  int      vlun          = flags & ARK_KV_VIRTUAL_LUN;
+  int      persist_load  = flags & ARK_KV_PERSIST_LOAD;
+  int      persist_store = flags & ARK_KV_PERSIST_STORE;
+  int      mem_store     = path == NULL;
+
+  KV_TRC_OPEN(pAT, "arkdb");
+  KV_TRC_PERF2(pAT, "path(%s) size %ld bsize %ld hcount %ld "
+              "nthrds %d nqueue %d basyncs %d flags:%08lx",
+              path, size, bsize, hcount, nthrds, nqueue, basyncs, flags);
+
+  if (!arkret)
+  {
+      KV_TRC_FFDC(pAT, "Incorrect value for ARK control block: rc=EINVAL");
+      rc = EINVAL;
+      goto ark_create_ark_err;
   }
 
+  if ((persist_load || persist_store) && (mem_store || vlun))
+  {
+      KV_TRC_FFDC(pAT, "Invalid persistence combination with ARK flags:%016lx "
+                       "or store type path:%s",flags,path);
+      rc = EINVAL;
+      goto ark_create_ark_err;
+  }
+  if (nthrds <= 0)
+  {
+      KV_TRC_FFDC(pAT, "invalid nthrds:%d", nthrds);
+      rc = EINVAL;
+      goto ark_create_ark_err;
+  }
+
+  am_sz = sizeof(_ARK);
+  ark   = am_malloc(am_sz);
+  if (ark == NULL)
+  {
+      rc = ENOMEM;
+      KV_TRC_FFDC(pAT, "Out of memory allocating ARK control structure for %ld",
+                sizeof(_ARK));
+      goto ark_create_ark_err;
+  }
+  memset(ark,0,am_sz);
+
+  KV_TRC_FFDC(pAT, "%p path(%s) size %ld bsize %ld hcount %ld "
+              "nthrds %d nqueue %d basyncs %d flags:%08lx",
+              ark, path, size, bsize, hcount, nthrds, nqueue, basyncs, flags);
+
+  /*---------------------------------------------------------------------------
+   * check for '=', which is a corsa multi-port to the same lun
+   *-------------------------------------------------------------------------*/
+  char *pstr = NULL;
+  char *dbuf = NULL;
+
+  memset(ark->devs,0,sizeof(ark->devs));
+  if (path && strlen(path) != 0)
+  {
+      if (strchr(path,'='))
+      {
+          if (flags & ARK_KV_VIRTUAL_LUN)
+          {
+              rc = EINVAL;
+              KV_TRC_FFDC(pAT, "Bad path with VLUN %s", path);
+              goto ark_create_ark_err;
+          }
+          dbuf = strdup(path);
+          sprintf(dbuf,"%s",path);
+          while ((pstr=strsep((&dbuf),"=")))
+          {
+              sprintf(ark->devs[ark->devN++],"%s",pstr);
+              KV_TRC(pAT,"%d -> %s", ark->devN-1, ark->devs[ark->devN-1]);
+          }
+      }
+      else
+      {
+          sprintf(ark->devs[ark->devN++],"%s",path);
+      }
+  }
+  else
+  {
+      ark->devN=1;
+  }
+
+  nqueue = nqueue<ARK_MAX_NASYNCS ? nqueue : ARK_MAX_NASYNCS;
+
+  ark->ns_per_tick         = time_per_tick(1000, 100);
+  ark->flags               = flags;
+  ark->bsize               = bsize;
+  ark->rand_thdI           = 0;
+  ark->persload            = 0;
+  ark->astart              = 0;
+  ark->ark_exit            = 0;
+  ark->nactive             = 0;
+  ark->pcmd                = PT_IDLE;
+
   /*------------------------------------------------------------------------
-   * loop for nthrds resources
+   * check if data was persisted for a previous arkdb
+   *----------------------------------------------------------------------*/
+  if (persist_load)
+  {
+      if ((rc=ark_persist_load(ark)) == 0)
+      {
+          KV_TRC_PERF1(pAT, "PERSIST: %p path(%s) size %ld bsize %ld hcount %ld "
+                      "nthrds %d nqueue %ld basyncs %d blkbits %ld ",
+                      ark, path, ark->size, ark->bsize, ark->hcount,
+                      ark->nthrds, ark->nasyncs, ark->basyncs, ark->blkbits);
+      }
+      else
+      {
+          KV_TRC_FFDC(pAT, "Persistence check failed: %d", rc);
+          goto ark_create_ark_err;
+      }
+  }
+  else
+  {
+      KV_TRC(pAT, "NO PERSIST LOAD FLAG");
+      ark->nthrds              = ark->devN   * divup(nthrds,ark->devN);
+      ark->size                = ark->nthrds * divup(size,ark->nthrds);
+      ark->nasyncs             = nqueue <ARK_MIN_NASYNCS?ARK_MIN_NASYNCS:nqueue;
+      ark->basyncs             = basyncs<ARK_MIN_BASYNCS?ARK_MIN_BASYNCS:basyncs;
+      ark->ntasks              = ARK_MAX_TASK_OPS;
+      ark->hcount              = ark->nthrds * divup(hcount,ark->nthrds);
+      ark->vlimit              = ARK_VERBOSE_VLIMIT_DEF;
+      ark->blkbits             = ARK_VERBOSE_BLKBITS_DEF;
+      ark->grow                = ARK_VERBOSE_GROW_DEF;
+  }
+
+  ark->nthrds_per_dev = ark->nthrds / ark->devN;
+  ark->hcount_per_thd = ark->hcount / ark->nthrds;
+
+  // if we are persisting for the first time, calc the max size for persist data
+  if (persist_store && ark->pers_max_blocks==0) {ark_persistence_calc(ark);}
+
+  KV_TRC_PERF1(pAT,"path:%s nthrds:%d:%d hcount:%ld:%ld",
+                  path, ark->nthrds, ark->nthrds_per_dev,
+                  ark->hcount, ark->hcount_per_thd);
+
+  ark->min_bt = ARK_MIN_BT*ark->bsize;
+
+  am_sz            = ark->nthrds * sizeof(scb_t);
+  ark->poolthreads = am_malloc(am_sz);
+  if (!ark->poolthreads)
+  {
+      rc = ENOMEM;
+      KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for scbs", am_sz);
+      goto ark_create_ark_err;
+  }
+  memset(ark->poolthreads,0,am_sz);
+
+  am_sz    = ark->nthrds * sizeof(PT);
+  ark->pts = am_malloc(am_sz);
+  if (!ark->pts)
+  {
+      rc = ENOMEM;
+      KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for pts", am_sz);
+      goto ark_create_ark_err;
+  }
+  memset(ark->pts,0,am_sz);
+
+  /*------------------------------------------------------------------------
+   * init ark threads
    *----------------------------------------------------------------------*/
   for (i=0; i<ark->nthrds; i++)
   {
-    PT *pt = &(ark->pts[i]);
-    scbp = &(ark->poolthreads[i]);
-
-    pt->id = i;
-    pt->ark = ark;
-    rc = pthread_create(&(scbp->pooltid), NULL, pool_function, pt);
-    if (rc != 0)
-    {
-      KV_TRC_FFDC(pAT, "pthread_create of server thread failed: %d", rc);
-      goto ark_create_poolloop_err;
-    }
+      if ((rc=ark_thd_init_res(ark,i)) != 0) {goto ark_create_ark_err;}
   }
 
-  *arkret = (void *)ark;
+  /*------------------------------------------------------------------------
+   * restore the persisted data into the ark data structures
+   *----------------------------------------------------------------------*/
+  if (persist_load) {ark_persist_restore(ark);}
+
+  /*------------------------------------------------------------------------
+   * create ark threads
+   *----------------------------------------------------------------------*/
+  if ((rc=ark_thd_start_all(ark)) != 0) {goto ark_create_ark_err;}
+
+  *arkret   = (void *)ark;
   ark->pcmd = PT_RUN;
 
-  /* sucess, goto end */
-  KV_TRC_PERF2(pAT, "DONE: %p path(%s) id:%d size %ld bsize %ld hcount %ld "
-              "ntasks:%ld nthrds %d nqueue %ld basyncs %d flags:%08lx",
-              ark, path, ark->ea->st_flash, size, bsize, hcount, ark->ntasks,
-              nthrds, ark->nasyncs, ark->basyncs, flags);
-  goto ark_create_success;
+  /* success, goto end */
+  KV_TRC_PERF2(pAT,"DONE: ark:%p path(%s) type:%d size:%ld bsize:%ld hcount:%ld "
+              "ntasks:%ld nthrds:%d nqueue:%ld basyncs:%d flags:%08lx rc:%d errno:%d",
+              ark, path, ark->st_type, ark->size, ark->bsize, ark->hcount,
+              ark->ntasks, ark->nthrds, ark->nasyncs,ark->basyncs,ark->flags,rc,errno);
 
-/*-------------------------------------------------------------------------------------
- * process ark create errors
- * ----------------------------------------------------------------------------------*/
-  ark_create_poolloop_err:
+  ark_log_stats(*arkret);
 
-  for (; --i >= 0; i--)
-  {
-    scbp = &(ark->poolthreads[i]);
-
-    KV_TRC_DBG(pAT, "destroy pt:%d", i);
-
-    if (scbp->pooltid)
-    {
-        queue_lock  (scbp->reqQ);
-        queue_wakeup(scbp->reqQ);
-        queue_unlock(scbp->reqQ);
-        pthread_join(scbp->pooltid, NULL);
-    }
-  }
+  goto done;
 
 ark_create_ark_err:
+  KV_TRC_FFDC(pAT, "ark_create_ark_err ark:%p", ark);
   ark_free_resources(ark);
   KV_TRC_CLOSE(pAT);
 
-ark_create_success:
+done:
+  KV_TRC_DBG(pAT, "free arkp->persist_orig");
+  if (ark) {am_free(ark->persist_orig);}
+
   return rc;
 }
 
@@ -1018,29 +1036,13 @@ int ark_create(char *path, ARK **arkret, uint64_t flags)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ark_delete(ARK *ark)
+int ark_thd_stop_all(_ARK *_arkp)
 {
   int    rc    = 0;
   int    i     = 0;
-  _ARK  *_arkp = (_ARK *)ark;
   scb_t *scbp  = NULL;
 
-  if (NULL == ark)
-  {
-    rc = EINVAL;
-    KV_TRC_FFDC(pAT, "Invalid ARK control block parameter: %d", rc);
-    goto ark_delete_ark_err;
-  }
-
-  if (!(_arkp->flags & ARK_KV_VIRTUAL_LUN))
-  {
-      if ((rc=ark_persist(_arkp)))
-      {
-        KV_TRC_FFDC(pAT, "FFDC: ark_persist failed: %d", rc);
-      }
-  }
-
-  KV_TRC_DBG(pAT, "free thread resources");
+  KV_TRC_DBG(pAT, "stop all threads");
 
   // Wait for all active threads to exit
   for (i=0; i<_arkp->nthrds; i++)
@@ -1056,9 +1058,35 @@ int ark_delete(ARK *ark)
       KV_TRC(pAT, "thread %d joined", i);
   }
 
+  return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int ark_delete(ARK *ark)
+{
+  _ARK *_arkp = (_ARK *)ark;
+  int   rc    = 0;
+
+  if (!ark)
+  {
+    rc = EINVAL;
+    KV_TRC_FFDC(pAT, "Invalid ARK control block parameter: %d", rc);
+    goto ark_delete_ark_err;
+  }
+
+  ark_thd_stop_all(_arkp);
+  ark_log_stats(ark);
+
+  if (_arkp->flags & ARK_KV_PERSIST_STORE) {rc=ark_persist(_arkp);}
+
+  KV_TRC_DBG(pAT, "free thread resources");
   ark_free_resources(_arkp);
 
 ark_delete_ark_err:
+  KV_TRC_FFDC(pAT, "%p",ark);
   KV_TRC_CLOSE(pAT);
   return rc;
 }
@@ -1121,31 +1149,26 @@ int ark_set(ARK *ark, uint64_t klen,
   int64_t res     = 0;
   _ARK   *_arkp   = (_ARK *)ark;
 
-  KV_TRC(pAT, "SET_BEG rc:%d", rc);
-
   if ((_arkp == NULL) || klen < 0 || vlen < 0 ||
       ((klen > 0) && (key == NULL)) || (klen>ARK_MAX_LEN) ||
       ((vlen > 0) && (val == NULL)) || (vlen>ARK_MAX_LEN) ||
       (rval == NULL))
   {
-    KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %"PRIu64" "
-                     "key %p vlen %"PRIu64" val %p rval %p",
+    KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %ld "
+                     "key %p vlen %ld val %p rval %p",
                      ark, klen, key, vlen, val, rval);
     return EINVAL;
   }
 
-  *rval = -1;
-  rcb = ark_set_async_tag(_arkp, klen, key, vlen, val);
+  ark_enq_cmd(K_SET, _arkp, klen,key,vlen,val,0,NULL,0, -1, NULL,&rcb);
   if (!rcb)
   {
-      KV_TRC_IO(pAT, "EAGAIN: ark_set_async_tag");
+      KV_TRC_IO(pAT, "EAGAIN");
       return EAGAIN;
   }
 
-  KV_TRC(pAT, "SET_WTB rc:%d", rc);
-
   // Will wait here for command to complete
-  rc = ark_wait_tag(_arkp, rcb, &errcode, &res);
+  rc = ark_wait_cmd(_arkp, rcb, &errcode, &res);
   if (rc == 0)
   {
       if (errcode != 0)
@@ -1156,8 +1179,6 @@ int ark_set(ARK *ark, uint64_t klen,
 
       *rval = res;
   }
-
-  KV_TRC(pAT, "SET_CMP rc:%d", rc);
 
   return rc;
 }
@@ -1179,21 +1200,20 @@ int ark_exists(ARK *ark, uint64_t klen, void *key, int64_t *rval)
       ((klen > 0) && (key == NULL)) ||
       (rval == NULL))
   {
-    KV_TRC_FFDC(pAT, "FFDC: rc:EINVAL ark %p, klen %"PRIu64" "
+    KV_TRC_FFDC(pAT, "FFDC: rc:EINVAL ark %p, klen %ld "
                      "key %p, rval %p", ark, klen, key, rval);
     return EINVAL;
   }
 
-  *rval = -1;
-  rcb = ark_exists_async_tag(_arkp, klen, key);
+  ark_enq_cmd(K_EXI, _arkp, klen,key,0,0,0,NULL,0, -1,NULL,&rcb);
   if (!rcb)
   {
-      KV_TRC_IO(pAT, "EAGAIN: ark_exists_async_tag");
+      KV_TRC_IO(pAT, "EAGAIN");
       return EAGAIN;
   }
 
   // Will wait here for command to complete
-  rc = ark_wait_tag(_arkp, rcb, &errcode, &res);
+  rc = ark_wait_cmd(_arkp, rcb, &errcode, &res);
   if (rc == 0)
   {
       if (errcode != 0)
@@ -1229,22 +1249,21 @@ int ark_get(ARK *ark, uint64_t klen, void *key,
       ((vbuflen > 0) && (vbuf == NULL)) ||
       (rval == NULL))
   {
-    KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %"PRIu64" key %p "
-                     "vbuflen %"PRIu64" vbuf %p rval %p",
+    KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %ld key %p "
+                     "vbuflen %ld vbuf %p rval %p",
                      _arkp, klen, key, vbuflen, vbuf, rval);
     return EINVAL;
   }
 
-  *rval = -1;
-  rcb = ark_get_async_tag(_arkp, klen, key, vbuflen, vbuf, voff);
+  ark_enq_cmd(K_GET,_arkp,klen,key,vbuflen,vbuf,voff,NULL,0,-1,NULL,&rcb);
   if (!rcb)
   {
-      KV_TRC_IO(pAT, "EAGAIN: ark_get_async_tag failed");
+      KV_TRC_IO(pAT, "EAGAIN");
       return EAGAIN;
   }
 
   // Will wait here for command to complete
-  rc = ark_wait_tag(_arkp, rcb, &errcode, &res);
+  rc = ark_wait_cmd(_arkp, rcb, &errcode, &res);
   if (rc == 0)
   {
       if (errcode != 0)
@@ -1272,25 +1291,22 @@ int ark_del(ARK *ark, uint64_t klen, void *key, int64_t *rval)
   int64_t res     = 0;
   _ARK   *_arkp   = (_ARK *)ark;
 
-  if ((_arkp == NULL) ||
-      ((klen > 0) && (key == NULL)) ||
-      (rval == NULL))
+  if (!_arkp || ((klen > 0) && !key) || !rval)
   {
-    KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %"PRIu64" key %p rval %p",
-                _arkp, klen, key, rval);
-    return EINVAL;
+      KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %ld key %p rval %p",
+                      _arkp, klen, key, rval);
+      return EINVAL;
   }
 
-  *rval = -1;
-  rcb = ark_del_async_tag(_arkp, klen, key);
+  ark_enq_cmd(K_DEL, _arkp, klen,key,0,0,0,NULL,0, -1,NULL,&rcb);
   if (!rcb)
   {
-      KV_TRC_IO(pAT, "EAGAIN: ark_del_async_tag");
+      KV_TRC_IO(pAT, "EAGAIN");
       return EAGAIN;
   }
 
   // Will wait here for command to complete
-  rc = ark_wait_tag(_arkp, rcb, &errcode, &res);
+  rc = ark_wait_cmd(_arkp, rcb, &errcode, &res);
   if (rc == 0)
   {
       if (errcode != 0)
@@ -1313,74 +1329,71 @@ int ark_random(ARK *ark, uint64_t kbuflen, uint64_t *klen, void *kbuf)
 {
   uint64_t i       = 0;
   int32_t  rc      = 0;
-  int32_t  done    = 0;
-  int32_t  ptid    = -1;
   int      errcode = 0;
   rcb_t   *rcb     = NULL;
   int64_t  res     = 0;
   _ARK    *_arkp   = (_ARK *)ark;
+  int      start   = 1;
 
-  if (_arkp == NULL || 0 >= kbuflen || NULL == klen || NULL == kbuf)
+  if (!_arkp || 0 >= kbuflen || !klen || !kbuf)
   {
     KV_TRC_FFDC(pAT, "rc = EINVAL ark %p,  kbuflen %ld, klen %p, kbuf %p",
                 _arkp, kbuflen, klen, kbuf);
-    return EINVAL;
+    rc = EINVAL;
+    goto done;
   }
 
   *klen = -1;
-  ptid  = _arkp->rthread;
+
+  KV_TRC_DBG(pAT, "start   tid:%3d htI:%ld btI:%d",
+                  _arkp->rand_thdI,
+                  _arkp->poolthreads[_arkp->rand_thdI].rand_htI,
+                  _arkp->poolthreads[_arkp->rand_thdI].rand_btI);
 
   // Because the keys are stored in a hash table, their order
   // by nature is random.  Therefore, let's just pick a pool
   // thread and see if it has any k/v pairs that it is monitoring
   // and return those.  THen move on to the next pool thread
   // once done with the first thread...and so on.
-  for (i = 0; (i <= _arkp->nthrds) && (!done); i++)
+  for (i=0; i<_arkp->nthrds; i++)
   {
-      rcb = ark_rand_async_tag(_arkp, kbuflen, kbuf, ptid);
+      ark_enq_cmd(K_RAND, _arkp, kbuflen, kbuf,
+                      0,NULL,0,NULL,0, _arkp->rand_thdI, &start,&rcb);
+      start = 0;
       if (!rcb)
       {
-        KV_TRC_IO(pAT, "ark_rand_async_tag failed rc = %d", rc);
-        rc   = EAGAIN;
-        done = 1;
+          KV_TRC_IO(pAT, "EAGAIN");
+          rc = EAGAIN;
+          goto done;
+      }
+      rc = ark_wait_cmd(_arkp, rcb, &errcode, &res);
+      if (rc == 0 && errcode == 0)
+      {
+          // found a key
+          *klen = res;
+          break;
+      }
+      else if (rc == 0 && errcode == EAGAIN)
+      {
+          // try the next pool thread and see if it has any keys
+          KV_TRC_DBG(pAT, "errcode:%d thdI:%3d i:%ld", errcode,_arkp->rand_thdI,i);
+          continue;
       }
       else
       {
-        // Will wait here for command to complete
-        rc = ark_wait_tag(_arkp, rcb, &errcode, &res);
-        if (rc == 0)
-        {
-
-          // If EAGAIN is returned, we need to try the next
-          // pool thread and see if it has any keys.  All
-          // other errors (or success) we stop looking.
-          if (errcode != EAGAIN)
-          {
-            *klen = res;
-            done = 1;
-
-            // Remember what thread we left off on
-            _arkp->rthread = ptid;
-          }
-        }
-      }
-
-      ptid++;
-      if (ptid == _arkp->nthrds)
-      {
-        // Loop back around to pool thread 0 and continue looking.
-        ptid = 0;
+          // error
+          goto done;
       }
   }
 
-  // If done is not set, that means we didn't find a single
-  // key/value pair.
-  if (!done)
+  // If done is not set, that means we didn't find a single key/value pair.
+  if (i == _arkp->nthrds)
   {
       rc = ENOENT;
-      KV_TRC(pAT, "No more key/value pairs rc = %d", ENOENT);
+      KV_TRC_DBG(pAT, "No more key/value pairs rc = %d", ENOENT);
   }
 
+done:
   return rc;
 }
 
@@ -1390,94 +1403,45 @@ int ark_random(ARK *ark, uint64_t kbuflen, uint64_t *klen, void *kbuf)
  ******************************************************************************/
 ARI *ark_first(ARK *ark, uint64_t kbuflen, int64_t *klen, void *kbuf)
 {
-  _ARK    *_arkp   = (_ARK *)ark;
-  _ARI    *_arip   = NULL;
-  uint64_t i       = 0;
-  int32_t  rc      = 0;
-  int32_t  done    = 0;
-  int      errcode = 0;
-  rcb_t   *rcb     = 0;
-  int64_t  res     = 0;
+  _ARK   *_arkp = (_ARK *)ark;
+  _ARI   *_arip = NULL;
+  int32_t rc    = 0;
+  int     tid   = 0;
+  int64_t kl    = -1;
 
-  errno = 0;
+  KV_TRC_DBG(pAT, "start   tid:%3d", 0);
 
-  if ((_arkp   == NULL) ||
-      (klen    == NULL) ||
-      (kbuf    == NULL) ||
-      (kbuflen == 0))
+  if (!_arkp || !klen || !kbuf || kbuflen == 0)
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: ark %p kbuflen %ld klen %p kbuf %p",
-              _arkp, kbuflen, klen, kbuf);
-    errno = EINVAL;
-    goto error;
+      KV_TRC_FFDC(pAT, "rc = EINVAL: ark %p kbuflen %ld klen %p kbuf %p",
+                      _arkp, kbuflen, klen, kbuf);
+      errno = EINVAL;
+      goto done;
   }
 
   _arip = am_malloc(sizeof(_ARI));
   if (!_arip)
   {
-      KV_TRC_FFDC(pAT, "Out of memory on allocation of %"PRIu64" bytes for random index control block", sizeof(_ARI));
+      KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for ARI control block", sizeof(_ARI));
       *klen = -1;
       errno = ENOMEM;
-      goto error;
+      goto done;
   }
+  memset(_arip,0,sizeof(_ARI));
 
-  *klen = -1;
+  _arip->ark = _arkp;
+  *klen      = -1;
 
-  // Start with the first thread.  We start with the first pool
-  // thread and get it's first key.  If by chance the first thread
-  // does not have any key's in it's control, we move on to the next
-  // pool thread.
-  for (i = 0; (i < _arkp->nthrds) && (!done); i++)
+  if ((rc=ark_next((ARI*)_arip, kbuflen, klen, kbuf)) != 0)
   {
-    rcb = ark_first_async_tag(_arkp, kbuflen, kbuf, _arip, i);
-    if (!rcb)
-    {
-          am_free(_arip);
-          _arip = NULL;
-          rc = EAGAIN;
-          done = 1;
-          KV_TRC_IO(pAT, "ark_first_async_tag failed rc = %d", rc);
-    }
-    else
-    {
-        // Will wait here for command to complete
-        rc = ark_wait_tag(_arkp, rcb, &errcode, &res);
-        if (rc == 0)
-        {
-            // If EAGAIN is returned, we need to try the next
-            // pool thread and see if it has any keys.  All
-            // other errors (or success) we stop looking.
-            if (errcode != EAGAIN)
-            {
-              *klen = res;
-              done = 1;
-
-              // Remember what thread we left off on
-              _arip->ithread = i;
-            }
-        }
-    }
-  }
-
-  // If done is not set, that means we didn't find a single
-  // key/value pair.
-  if (!done)
-  {
-      am_free(_arip);
       _arip = NULL;
-      rc = ENOENT;
-      KV_TRC(pAT, "No more key/value pairs in the store: rc = %d", rc);
   }
-  else
-  {
-      if (rc)
-      {
-        am_free(_arip);
-        _arip = NULL;
-      }
-  }
+  else {tid=_arip->thdI;}
 
-error:
+  kl = *klen;
+
+done:
+  KV_TRC_DBG(pAT, "DONE    tid:%3d klen:%ld arip:%p rc:%d", tid, kl, _arip, rc);
   return (ARI *)_arip;
 }
 
@@ -1488,70 +1452,122 @@ error:
 int ark_next(ARI *iter, uint64_t kbuflen, int64_t *klen, void *kbuf)
 {
   _ARI    *_arip   = (_ARI *)iter;
-  uint64_t i       = 0;
   int32_t  rc      = 0;
-  int32_t  done    = 0;
   int      errcode = 0;
   rcb_t   *rcb     = 0;
   int64_t  res     = 0;
   _ARK    *_arkp   = NULL;
+  int      found   = 0;
+  int      start   = 1;
 
-  if ((_arip == NULL) || 
-      (_arip->ark == NULL) || 
-      (klen == NULL) || 
-      (kbuf == NULL) ||
-      (kbuflen == 0))
+  if (!_arip || !_arip->ark || klen == 0 || !kbuf || kbuflen == 0)
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: ari %p kbuflen %ld klen %p kbuf %p",
-              _arip, kbuflen, klen, kbuf);
-    return EINVAL;
+      KV_TRC_FFDC(pAT, "rc = EINVAL: ari %p kbuflen %ld klen %p kbuf %p",
+                      _arip, kbuflen, klen, kbuf);
+      rc = EINVAL;
+      goto done;
   }
 
   _arkp = _arip->ark;
   *klen = -1;
 
-  // Start with the thread we left off on last time and then loop
-  // to the end
-  for (i = _arip->ithread; (i < _arkp->nthrds) && (!done); i++)
+  // Start with the thread we left off on last time and then loop to the end
+  while (_arip->thdI < _arkp->nthrds)
   {
-      rcb = ark_next_async_tag(_arkp, kbuflen, kbuf, _arip, i);
+      KV_TRC_DBG(pAT, "ENQ_CMD tid:%3d", _arip->thdI);
+      rc = ark_enq_cmd(K_NEXT, _arkp, kbuflen, kbuf,
+                       0, _arip, 0, NULL, 0, _arip->thdI, &start, &rcb);
+      start = 0;
       if (!rcb)
       {
-        rc = EAGAIN;
-        KV_TRC_IO(pAT, "ark_next_async_tag failed rc = %d", rc);
-        done = 1;
+          am_free(_arip);
+          _arip = NULL;
+          rc    = EAGAIN;
+          KV_TRC_IO(pAT, "ark_next_async_tag failed rc = %d", rc);
+          goto done;
+      }
+
+      rc = ark_wait_cmd(_arkp, rcb, &errcode, &res);
+
+      _arip->vbep = rcb->vbep;
+      _arip->cnt  = rcb->cnt;
+
+      if (rc == 0 && errcode == 0)
+      {
+          found = 1;
+          if (_arip->getN && rcb->full) {break;}
+          else
+          {
+              // found a key
+              *klen = res;
+              break;
+          }
+      }
+      else if (rc == 0 && errcode == EAGAIN)
+      {
+          if (_arip->getN && rcb->full) {break;}
+          // try the next pool thread and see if it has any keys
+          KV_TRC_DBG(pAT, "errcode:%d tid:%3d", errcode,_arip->thdI);
+          continue;
       }
       else
       {
-        // Will wait here for command to complete
-        rc = ark_wait_tag(_arkp, rcb, &errcode, &res);
-        if (rc == 0)
-        {
-          // If EAGAIN is returned, we need to try the next
-          // pool thread and see if it has any keys.  All
-          // other errors (or success) we stop looking.
-          if (errcode != EAGAIN)
-          {
-            *klen = res;
-            done = 1;
-
-            // Remember what thread we left off on
-            _arip->ithread = i;
-          }
-        }
+          // error
+          am_free(_arip);
+          _arip = NULL;
+          goto done;
       }
   }
 
-  // If done is not set, that means we didn't find a single
-  // key/value pair.
-  if (!done)
+  if (!found)
   {
       am_free(_arip);
-      rc = ENOENT;
-      KV_TRC(pAT, "No more key/value pairs in the store: rc = %d", rc);
+      _arip = NULL;
+      rc    = ENOENT;
+      KV_TRC_DBG(pAT, "No key/value pairs in the store: rc = %d", rc);
+  }
+  else
+  {
+      KV_TRC(pAT, "FOUND   tid:%3d full:%d", _arip->thdI, _arip->full);
   }
 
+done:
   return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * Get as many keys from the Arkdb as will fit into kbuf (kbuflen)
+ * -num_keys is set to the number of keys that fit in kbuf
+ ******************************************************************************/
+int ark_nextN(ARI *iter, uint64_t kbuflen, void *kbuf, int64_t *num_keys)
+{
+    _ARI    *_arip = (_ARI *)iter;
+    int32_t  rc    = 0;
+
+    KV_TRC_DBG(pAT, "START");
+
+    if (!iter || !_arip->ark || !num_keys || !kbuf || !kbuflen)
+    {
+        KV_TRC_FFDC(pAT, "rc = EINVAL: ari:%p ark:%p kbuflen:%ld num_keys:%p kbuf:%p",
+                        iter, _arip?_arip->ark:NULL, kbuflen, num_keys, kbuf);
+        rc = EINVAL;
+        goto done;
+    }
+
+    _arip->getN = 1;
+    _arip->cnt  = 0;
+    _arip->vbep = kbuf;
+    _arip->full = 0;
+    *num_keys   = 0;
+
+    rc = ark_next(iter, kbuflen, num_keys, kbuf);
+    *num_keys = _arip->cnt;
+
+done:
+    KV_TRC_DBG(pAT, "DONE    rc:%d num_keys:%ld", rc,num_keys?*num_keys:-1);
+    return rc;
 }
 
 /**
@@ -1585,7 +1601,7 @@ int ark_set_async_cb(ARK *ark,
 {
   if (NULL == ark || ((vlen > 0) && (val == NULL)) || (cb == NULL))
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: vlen %"PRIu64", val %p, cb %p",
+    KV_TRC_FFDC(pAT, "rc = EINVAL: vlen %ld, val %p, cb %p",
             vlen, val, cb);
     return EINVAL;
   }
@@ -1606,7 +1622,7 @@ int ark_get_async_cb(ARK *ark,
 {
   if (NULL == ark || ((vbuflen > 0) && (vbuf == NULL)) || (cb == NULL))
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: vbuflen %"PRIu64", vbuf %p, cb %p",
+    KV_TRC_FFDC(pAT, "rc = EINVAL: vbuflen %ld, vbuf %p, cb %p",
             vbuflen, vbuf, cb);
     return EINVAL;
   }
@@ -1657,198 +1673,33 @@ int ark_exists_async_cb(ARK *ark,
  *******************************************************************************
  * \brief
  ******************************************************************************/
-rcb_t* ark_set_async_tag(_ARK *_arkp,
-                         uint64_t klen, void *key,
-                         uint64_t vlen, void *val)
-{
-  int    tag = -1;
-  rcb_t *rcb = NULL;
-  (void)ark_enq_cmd(K_SET, _arkp, klen,key,vlen,val,0,NULL,0, -1, &tag,&rcb);
-  return rcb;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-rcb_t* ark_get_async_tag(_ARK *_arkp,
-                         uint64_t klen,   void *key,
-                         uint64_t vbuflen,void *vbuf, uint64_t voff)
-{
-  int tag = -1;
-  rcb_t *rcb = NULL;
-  (void)ark_enq_cmd(K_GET,_arkp,klen,key,vbuflen,vbuf,voff,NULL,0,-1,&tag,&rcb);
-  return rcb;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-rcb_t*  ark_del_async_tag(_ARK *_arkp,  uint64_t klen, void *key)
-{
-  int    tag = -1;
-  rcb_t *rcb = NULL;
-  ark_enq_cmd(K_DEL, _arkp, klen,key,0,0,0,NULL,0, -1, &tag,&rcb);
-  return rcb;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-rcb_t* ark_exists_async_tag(_ARK *_arkp, uint64_t klen, void *key)
-{
-  int    tag = -1;
-  rcb_t *rcb = NULL;
-  (void)ark_enq_cmd(K_EXI, _arkp, klen,key,0,0,0,NULL,0, -1, &tag,&rcb);
-  return rcb;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-rcb_t* ark_rand_async_tag(_ARK *_arkp, uint64_t klen, void *key, int32_t ptid)
-{
-  int    tag = -1;
-  rcb_t *rcb = NULL;
-  (void)ark_enq_cmd(K_RAND, _arkp, klen,key,0,NULL,0,NULL,0, ptid, &tag,&rcb);
-  return rcb;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-rcb_t* ark_first_async_tag(_ARK *_arkp,
-                           uint64_t klen, void *key,
-                           _ARI *_arip, int32_t ptid)
-{
-  int    tag;
-  rcb_t *rcb = NULL;
-  (void)ark_enq_cmd(K_FIRST, _arkp, klen, key, 0,
-                   (void *)_arip, 0, NULL,0, ptid, &tag,&rcb);
-  return rcb;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-rcb_t* ark_next_async_tag(_ARK *_arkp,
-                          uint64_t klen, void *key, _ARI *_arip, int32_t ptid)
-{
-  int    tag;
-  rcb_t *rcb = NULL;
-  (void)ark_enq_cmd(K_NEXT, _arkp, klen, key, 0,
-                    (void *)_arip, 0, NULL,0, ptid, &tag,&rcb);
-  return rcb;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-int ark_count(ARK *ark, int64_t *count)
-{
-  uint32_t i;
-  int32_t  rc = 0;
-  _ARK *_arkp = (_ARK *)ark;
-
-  if ((_arkp == NULL) || (count == NULL))
-  {
-    KV_TRC_FFDC(pAT, "rc = EINVAL ark %p, count %p", _arkp, count);
-    rc = EINVAL;
-  }
-  else
-  {
-    *count = _arkp->pers_stats.kv_cnt;
-
-    for (i = 0; i < _arkp->nthrds; i++)
-    {
-      *count += _arkp->poolthreads[i].poolstats.kv_cnt;
-    }
-  }
-
-  return rc;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
 int ark_flush(ARK *ark)
 {
-  int     rc    = 0;
   _ARK   *_arkp = (_ARK *)ark;
-  hash_t *ht    = NULL;
-  BL     *bl    = NULL;
-  BL     *blu   = NULL;
   int     i     = 0;
+  int     rc    = 0;
 
   if (ark == NULL)
   {
-    rc = EINVAL;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
-    goto ark_flush_err;
+      rc = EINVAL;
+      KV_TRC_FFDC(pAT, "rc = %d", rc);
+      goto ark_flush_err;
   }
 
-  // recreate the hash and block lists first
-  ht = hash_new(_arkp->hcount);
-  if (ht == NULL)
-  {
-    if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-    rc = errno;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
-    goto ark_flush_err;
-  }
+  KV_TRC(pAT, "ark:%p",ark);
 
-  bl = bl_new(_arkp->bcount, _arkp->blkbits);
-  if (bl == NULL)
-  {
-    if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-    rc = errno;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
-    goto ark_flush_err;
-  }
-  // Create the unmap block list
-  blu = bl_new(_arkp->bcount, _arkp->blkbits);
-  if (blu == NULL)
-  {
-    if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
-    rc = errno;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
-    goto ark_flush_err;
-  }
+  ark_thd_stop_all(_arkp);
 
-  // If we've made it here then we delete the old
-  // hash and block list structures and set the new ones
-  hash_free(_arkp->ht);
-  bl_delete(_arkp->bl);
-  bl_delete(_arkp->blu);
-
-  _arkp->ht  = ht;
-  _arkp->bl  = bl;
-  _arkp->blu = blu;
-
-  // We need to reset the counts for each pool thread
   for (i=0; i<_arkp->nthrds; i++)
   {
-    _arkp->poolthreads[i].poolstats.blk_cnt  = 0;
-    _arkp->poolthreads[i].poolstats.kv_cnt   = 0;
-    _arkp->poolthreads[i].poolstats.byte_cnt = 0;
+      ark_thd_free_res(_arkp, i);
+      if ((rc=ark_thd_init_res(_arkp, i))) {break;}
   }
 
+  rc = ark_thd_start_all(_arkp);
+
 ark_flush_err:
-  if (rc)
-  {
-    // If we ran into an error, delete the newly
-    // created hash and block lists structures
-    if (ht)  {hash_free(ht);}
-    if (bl)  {bl_delete(bl);}
-    if (blu) {bl_delete(blu);}
-  }
+  KV_TRC(pAT, "ark:%p rc:%d errno:%d",ark,rc,errno);
   return rc;
 }
 
@@ -1858,13 +1709,16 @@ ark_flush_err:
  ******************************************************************************/
 pid_t ark_fork(ARK *ark)
 {
+  scb_t *scbp = NULL;
+  pid_t  cpid = -1;
+  int    i    = 0;
+
   _ARK *_arkp = (_ARK *)ark;
 
   // Let's start with an error just incase we don't make it
   // to the fork() system call and the -1 will tell the
   // caller an error was encountered and a child process
   // was not created.
-  pid_t cpid = -1;
 
   if (ark == NULL)
   {
@@ -1872,10 +1726,13 @@ pid_t ark_fork(ARK *ark)
     return cpid;
   }
 
-  // Tell the store to hold all "to be freed" blocks.  This
-  // will be undid in ark_fork_done() or in the error
-  // case of fork below.
-  bl_hold(_arkp->bl);
+  for (i=0; i<_arkp->nthrds; i++)
+  {
+      // Tell the store to hold all "to be freed" blocks.  This
+      // will be undid in ark_fork_done() or in the error
+      // case of fork below.
+      bl_hold(_arkp->poolthreads[i].bl);
+  }
 
   cpid = fork();
 
@@ -1883,7 +1740,13 @@ pid_t ark_fork(ARK *ark)
   {
     // Ran into an error, perform any cleanup before returning
     case -1 :
-      bl_release(_arkp->bl);
+      for (i=0; i<_arkp->nthrds; i++)
+      {
+          // Tell the store to hold all "to be freed" blocks.  This
+          // will be undid in ark_fork_done() or in the error
+          // case of fork below.
+          bl_release(_arkp->poolthreads[i].bl);
+      }
       break;
 
     // This is the child process.
@@ -1895,34 +1758,45 @@ pid_t ark_fork(ARK *ark)
       _arkp->pcmd = PT_RUN;
       _arkp->ark_exit = 0;
 
+      /* clear any waiters, they are the parent ark threads */
       for (i=0; i<_arkp->nthrds; i++)
       {
-        PT *pt = am_malloc(sizeof(PT)); //TODO: handle malloc fail
-        pt->id = i;
-        pt->ark = _arkp;
-
-        _arkp->poolthreads[i].poolstate = PT_OFF;
-        pthread_mutex_init(&(_arkp->poolthreads[i].lock),NULL);
-        pt->id = i;
-        pt->ark = _arkp;
-        pthread_create(&(_arkp->poolthreads[i].pooltid), NULL, pool_function, pt);
+          scbp = &_arkp->poolthreads[i];
+          scbp->reqQ->waiters=0;
+          pthread_cond_init (&scbp->reqQ->cond,NULL);
+          pthread_mutex_init(&scbp->reqQ->m,   NULL);
       }
 
-      if (_arkp->ea->st_type != EA_STORE_TYPE_MEMORY)
+      /* create new ark threads for the child */
+      for (i=0; i<_arkp->nthrds; i++)
       {
-        int c_rc = 0;
+          PT *pt          = am_malloc(sizeof(PT)); //TODO: handle malloc fail
+          pt->id          = i;
+          pt->ark         = _arkp;
+          scbp            = &_arkp->poolthreads[i];
+          scbp->poolstate = PT_OFF;
+          pt->id          = i;
+          pt->ark         = _arkp;
+          pthread_mutex_init(&scbp->lock,NULL);
+          pthread_create(&(scbp->pooltid), NULL, pool_function, pt);
 
-        c_rc = cblk_cg_clone_after_fork(_arkp->ea->st_flash,
-                                        O_RDONLY, CBLK_GROUP_RAID0);
+          if (scbp->ea->st_type != EA_STORE_TYPE_MEMORY)
+          {
+              int c_rc = 0;
 
-        // If we encountered an error, force the child to
-        // exit with a non-zero status code
-        if (c_rc != 0)
-        {
-            KV_TRC_FFDC(pAT, "FFDC, rc = %d", c_rc);
-            _exit(c_rc);
-        }
+              c_rc = cblk_cg_clone_after_fork(scbp->ea->st_flash,
+                                              O_RDONLY, CBLK_GROUP_RAID0);
+
+              // If we encountered an error, force the child to
+              // exit with a non-zero status code
+              if (c_rc != 0)
+              {
+                  KV_TRC_FFDC(pAT, "FFDC, rc = %d", c_rc);
+                  _exit(c_rc);
+              }
+          }
       }
+
       break;
     }
 
@@ -1942,6 +1816,8 @@ pid_t ark_fork(ARK *ark)
 int ark_fork_done(ARK *ark)
 {
   int rc = 0;
+  int i  = 0;
+
   _ARK *_arkp = (_ARK *)ark;
 
   if (ark == NULL)
@@ -1951,9 +1827,40 @@ int ark_fork_done(ARK *ark)
     return rc;
   }
 
-  bl_release(_arkp->bl);
-
+  for (i=0; i<_arkp->nthrds; i++)
+  {
+      bl_release(_arkp->poolthreads[i].bl);
+  }
   return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+int ark_count(ARK *ark, int64_t *count)
+{
+    _ARK    *_arkp = (_ARK *)ark;
+    uint32_t i     = 0;
+    int32_t  rc    = 0;
+
+    if (!_arkp || !count)
+    {
+        KV_TRC_FFDC(pAT, "rc = EINVAL ark %p, count %p", _arkp, count);
+        rc = EINVAL;
+    }
+    else
+    {
+        *count = 0;
+        for (i=0; i<_arkp->nthrds; i++)
+        {
+            *count += _arkp->poolthreads[i].poolstats.kv_cnt;
+        }
+    }
+
+    KV_TRC_DBG(pAT, "count:%ld rc:%d ark:%p", *count, rc, _arkp);
+
+    return rc;
 }
 
 /**
@@ -1962,24 +1869,24 @@ int ark_fork_done(ARK *ark)
  ******************************************************************************/
 int ark_inuse(ARK *ark, uint64_t *size)
 {
-  _ARK *_arkp = (_ARK *)ark;
-  int rc = 0;
-  uint64_t i;
+  _ARK    *_arkp = (_ARK *)ark;
+  int      rc    = 0;
+  uint64_t i     = 0;
 
-  if ((ark == NULL) || (size == NULL))
+  if (!ark || !size)
   {
-    rc = EINVAL;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
+      rc = EINVAL;
+      KV_TRC_FFDC(pAT, "rc:%d ark:%p size:%p", rc,ark,size);
   }
   else
   {
-    *size = _arkp->pers_stats.blk_cnt;
-    for (i = 0; i < _arkp->nthrds; i++)
-    {
-      *size += _arkp->poolthreads[i].poolstats.blk_cnt;
-    }
+      *size = _arkp->pers_max_blocks;
+      for (i=0; i<_arkp->nthrds; i++)
+      {
+          *size += _arkp->poolthreads[i].poolstats.blk_cnt;
+      }
 
-    *size = *size * _arkp->bsize;
+      *size = *size * _arkp->bsize;
   }
 
   return rc;
@@ -1991,20 +1898,28 @@ int ark_inuse(ARK *ark, uint64_t *size)
  ******************************************************************************/
 int ark_allocated(ARK *ark, uint64_t *size)
 {
-  int rc = 0;
-  _ARK *_arkp = (_ARK *)ark;
+    int      rc    = 0;
+    uint64_t i     = 0;
+    _ARK    *_arkp = (_ARK *)ark;
 
-  if ((ark == NULL) || (size == NULL))
-  {
-    rc = EINVAL;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
-  }
-  else
-  {
-    *size = _arkp->ea->size;
-  }
-
-  return rc;
+    if (!ark || !size)
+    {
+        rc = EINVAL;
+        KV_TRC_FFDC(pAT, "rc:%d ark:%p size:%p", rc,ark,size);
+    }
+    else
+    {
+        *size  = _arkp->poolthreads[0].ea->size;
+        *size += _arkp->pers_max_blocks * _arkp->bsize;
+        if (_arkp->flags & ARK_KV_VIRTUAL_LUN)
+        {
+            for (i=1; i<_arkp->nthrds; i++)
+            {
+                *size += _arkp->poolthreads[i].ea->size;
+            }
+        }
+    }
+    return rc;
 }
 
 /**
@@ -2013,25 +1928,25 @@ int ark_allocated(ARK *ark, uint64_t *size)
  ******************************************************************************/
 int ark_actual(ARK *ark, uint64_t *size)
 {
-  int32_t  rc = 0;
-  _ARK *_arkp = (_ARK *)ark;
-  uint64_t i;
+    int32_t  rc    = 0;
+    _ARK    *_arkp = (_ARK *)ark;
+    uint64_t i;
 
-  if ((ark == NULL) || (size == NULL))
-  {
-    rc = EINVAL;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
-  }
-  else
-  {
-    *size = _arkp->pers_stats.byte_cnt;
-    for (i = 0; i < _arkp->nthrds; i++)
+    if (!ark || !size)
     {
-      *size += _arkp->poolthreads[i].poolstats.byte_cnt;
+        rc = EINVAL;
+        KV_TRC_FFDC(pAT, "rc:%d ark:%p size:%p", rc,ark,size);
     }
-  }
+    else
+    {
+        *size = _arkp->pers_max_blocks * _arkp->bsize;
+        for (i=0; i<_arkp->nthrds; i++)
+        {
+          *size += _arkp->poolthreads[i].poolstats.byte_cnt;
+        }
+    }
 
-  return rc;
+    return rc;
 }
 
 /**
@@ -2040,28 +1955,137 @@ int ark_actual(ARK *ark, uint64_t *size)
  ******************************************************************************/
 int ark_stats(ARK *ark, uint64_t *ops, uint64_t *ios)
 {
-  int rc = 0;
-  int i = 0;
-  _ARK *_arkp = (_ARK *)ark;
+    int   rc    = 0;
+    int   i     = 0;
+    _ARK *_arkp = (_ARK *)ark;
 
-  if ( (ark == NULL) || (ops == NULL) || (ios == NULL) )
-  {
-    rc = EINVAL;
-    KV_TRC_FFDC(pAT, "rc = %d", rc);
-  }
-  else
-  {
-    *ops = 0;
-    *ios = 0;
-
-    // Go through the pool threads and collect each
-    // threads counts
-    for (i = 0; i < _arkp->nthrds; i++)
+    if (!ark || !ops || !ios)
     {
-      *ops += _arkp->poolthreads[i].poolstats.ops_cnt;
-      *ios += _arkp->poolthreads[i].poolstats.io_cnt;
+        rc = EINVAL;
+        KV_TRC_FFDC(pAT, "rc = %d", rc);
     }
-  }
+    else
+    {
+        *ops = 0;
+        *ios = 0;
 
-  return rc;
+        // Go through the pool threads and collect each
+        // threads counts
+        for (i=0; i<_arkp->nthrds; i++)
+        {
+            *ops += _arkp->poolthreads[i].poolstats.ops_cnt;
+            *ios += _arkp->poolthreads[i].poolstats.io_cnt;
+        }
+    }
+
+    return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * fortran interface
+ ******************************************************************************/
+void open_vlun_(char *path, ARK **ark)
+{
+    if (path && ark)
+    {
+        ark_create_verbose(path, ark,
+                           ARK_VERBOSE_SIZE_DEF,
+                           ARK_VERBOSE_BSIZE_DEF,
+                           100*1024,
+                           ARK_VERBOSE_NTHRDS_DEF,
+                           ARK_MAX_NASYNCS,
+                           ARK_MAX_BASYNCS,
+                           ARK_KV_VIRTUAL_LUN | ARK_KV_HTC);
+    }
+    return;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * fortran interface
+ ******************************************************************************/
+void close_vlun_(ARK **ark)
+{
+    if (ark && *ark) {ark_delete(*ark);}
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * fortran interface
+ ******************************************************************************/
+int write_vlun_(ARK **ark, uint64_t klen, void *key, uint64_t vlen, void *val)
+{
+    int     rc   = 0;
+    int64_t rval = 0;
+
+    if (!ark || !*ark || !key || !val) {return -1;}
+
+    rc=ark_set(*ark,klen,key,vlen,val,&rval);
+
+    return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * fortran interface
+ ******************************************************************************/
+int read_vlun_(ARK **ark, uint64_t klen, void *key, uint64_t vbuflen, void *vbuf)
+{
+    int      rc   = 0;
+    int64_t  rval = 0;
+    uint64_t voff = 0;
+
+    if (!ark || !*ark || !key || !vbuf) {return -1;}
+
+    rc=ark_get(*ark,klen,key,vbuflen,vbuf,voff,&rval);
+
+    return rc;
+}
+
+void dummy_cb(int errcode, uint64_t dt, int64_t res)
+{
+    if (dt)
+    {
+        uint64_t *done = (uint64_t*)dt;
+        *done = 1;
+    }
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * fortran interface
+ ******************************************************************************/
+int awrite_vlun_(ARK **ark, uint64_t klen, void *key, uint64_t vlen, void *val,
+                 uint64_t *done)
+{
+    int rc = 0;
+
+    if (!ark || !*ark || !key || !val || !done) {return -1;}
+
+    rc=ark_set_async_cb(*ark,klen,key,vlen,val,dummy_cb,(uint64_t)done);
+
+    return rc;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ * fortran interface
+ ******************************************************************************/
+int aread_vlun_(ARK **ark, uint64_t klen, void *key, uint64_t vbuflen, void *vbuf,
+                 uint64_t *done)
+{
+    int rc = 0;
+
+    if (!ark || !*ark || !key || !vbuf || !done) {return -1;}
+
+    rc=ark_get_async_cb(*ark,klen,key,vbuflen,vbuf,0,dummy_cb,(uint64_t)done);
+
+    return rc;
 }

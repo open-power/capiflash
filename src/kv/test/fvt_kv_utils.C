@@ -70,8 +70,8 @@ void fvt_kv_utils_sload(ARK     *ark,
                                      vlen,
                                      val,
                                      &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
-        EXPECT_EQ(vlen, res);
+        ASSERT_EQ(0, rc);
+        ASSERT_EQ(vlen, res);
     }
     free(key);
     free(val);
@@ -112,8 +112,8 @@ void fvt_kv_utils_squery(ARK     *ark,
                                      gval,
                                      0,
                                      &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
-        EXPECT_EQ(vlen, res);
+        ASSERT_EQ(0, rc);
+        ASSERT_EQ(vlen, res);
         if (0 != memcmp(val,gval,vlen))
         {
             KV_TRC    (pAT, "MISCOMPARE");
@@ -125,7 +125,7 @@ void fvt_kv_utils_squery(ARK     *ark,
                                         klen,
                                         key,
                                         &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
+        ASSERT_EQ(0, rc);
     }
 exit:
     free(key);
@@ -156,7 +156,7 @@ void fvt_kv_utils_squery_empty(ARK     *ark,
                                         klen,
                                         key,
                                         &res))) {usleep(10);}
-        EXPECT_EQ(ENOENT, rc);
+        ASSERT_EQ(ENOENT, rc);
     }
     free(key);
 }
@@ -186,8 +186,8 @@ void fvt_kv_utils_sdel(ARK     *ark,
                                      klen,
                                      key,
                                      &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
-        EXPECT_EQ(vlen, res);
+        ASSERT_EQ(0, rc);
+        ASSERT_EQ(vlen, res);
     }
     free(key);
 }
@@ -237,8 +237,8 @@ void fvt_kv_utils_load(ARK *ark, kv_t *db, uint32_t LEN)
                                      db[i].vlen,
                                      db[i].value,
                                      &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
-        EXPECT_EQ(db[i].vlen, res);
+        ASSERT_EQ(0, rc);
+        ASSERT_EQ(db[i].vlen, res);
     }
 }
 
@@ -260,7 +260,7 @@ void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
 
     for (i=0; i<LEN; i++)
     {
-        EXPECT_TRUE(db[i].vlen <= vbuflen);
+        ASSERT_TRUE(db[i].vlen <= vbuflen);
         while (EAGAIN == (rc=ark_get(ark,
                                      db[i].klen,
                                      db[i].key,
@@ -268,8 +268,8 @@ void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
                                      gvalue,
                                      0,
                                      &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
-        EXPECT_EQ(db[i].vlen, res);
+        ASSERT_EQ(0, rc);
+        ASSERT_EQ(db[i].vlen, res);
         if (0 != memcmp(db[i].value,gvalue,db[i].vlen))
         {
             KV_TRC(pAT, "MISCOMPARE");
@@ -282,7 +282,7 @@ void fvt_kv_utils_query(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
                                         db[i].klen,
                                         db[i].key,
                                         &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
+        ASSERT_EQ(0, rc);
     }
     free(gvalue);
 }
@@ -304,15 +304,15 @@ void fvt_kv_utils_query_empty(ARK *ark, kv_t *db, uint32_t vbuflen,uint32_t LEN)
 
     for (i=0; i<LEN; i++)
     {
-        EXPECT_TRUE(db[i].vlen <= vbuflen);
-        EXPECT_EQ(ENOENT, ark_get(ark,
+        ASSERT_TRUE(db[i].vlen <= vbuflen);
+        ASSERT_EQ(ENOENT, ark_get(ark,
                              db[i].klen,
                              db[i].key,
                              db[i].vlen,
                              gvalue,
                              0,
                              &res));
-        EXPECT_EQ(ENOENT, ark_exists(ark, db[i].klen, db[i].key, &res));
+        ASSERT_EQ(ENOENT, ark_exists(ark, db[i].klen, db[i].key, &res));
     }
     free(gvalue);
 }
@@ -336,18 +336,18 @@ void fvt_kv_utils_query_off(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
 
     for (i=0; i<LEN; i++)
     {
-        EXPECT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
-        EXPECT_TRUE(db[i].vlen <= vbuflen);
-        EXPECT_EQ(0, ark_get(ark,
+        ASSERT_EQ(0, ark_exists(ark, db[i].klen, db[i].key, &res));
+        ASSERT_TRUE(db[i].vlen <= vbuflen);
+        ASSERT_EQ(0, ark_get(ark,
                              db[i].klen,
                              db[i].key,
                              db[i].vlen-offset,
                              gvalue,
                              offset,
                              &res));
-        EXPECT_EQ(db[i].vlen, res);
+        ASSERT_EQ(db[i].vlen, res);
         pval = (uint8_t*)db[i].value;
-        EXPECT_EQ(0, memcmp(pval+offset, gvalue, db[i].vlen - offset));
+        ASSERT_EQ(0, memcmp(pval+offset, gvalue, db[i].vlen - offset));
     }
     free(gvalue);
 }
@@ -370,8 +370,8 @@ void fvt_kv_utils_del(ARK *ark, kv_t *db, uint32_t LEN)
                                      db[i].klen,
                                      db[i].key,
                                      &res))) {usleep(10);}
-        EXPECT_EQ(0, rc);
-        EXPECT_EQ(db[i].vlen, res);
+        ASSERT_EQ(0, rc);
+        ASSERT_EQ(db[i].vlen, res);
     }
 }
 
@@ -489,15 +489,15 @@ void fvt_kv_utils_read(ARK *ark, kv_t *db, uint32_t vbuflen, uint32_t LEN)
 
     for (i=0; i<LEN; i++)
     {
-        EXPECT_TRUE(db[i].vlen <= vbuflen);
-        EXPECT_EQ(0, ark_get(ark,
+        ASSERT_TRUE(db[i].vlen <= vbuflen);
+        ASSERT_EQ(0, ark_get(ark,
                              db[i].klen,
                              db[i].key,
                              db[i].vlen,
                              gvalue,
                              0,
                              &res));
-        EXPECT_EQ(db[i].vlen, res);
+        ASSERT_EQ(db[i].vlen, res);
     }
     free(gvalue);
 }

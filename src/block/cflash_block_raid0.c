@@ -61,22 +61,20 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
     flags &= ~CBLK_GROUP_RAID0;
 
     /*--------------------------------------------------------------------------
-     * parse the colon separated /dev/sgX:...
+     * parse a colon separated list (device1:device2:...)
      *------------------------------------------------------------------------*/
-    if (pdevs && strncmp(pdevs,"/dev",4)==0)
+    if (pdevs && strncmp(pdevs,"RAID0",5)!=0 && strchr(pdevs,':'))
     {
-
         dbuf = strdup(pdevs);
         sprintf(dbuf,"%s",pdevs);
         while ((pstr=strsep((&dbuf),":")))
         {
             strcat(buf, pstr); strcat(buf, " ");
             sprintf(devstr[devN],"%s",pstr);
+            CBLK_TRACE_LOG_FILE(2, "devstr[%d] (%s)", devN,devstr[devN]);
             if (++devN == CFLASH_R0_MAX_DEV) {break;}
         }
-        CBLK_TRACE_LOG_FILE(2, "parsed RAID0 (%s)", buf);
     }
-
 #ifndef _AIX
     /*--------------------------------------------------------------------------
      * RAID0 is passed in, use a script to gather a list of devices
@@ -112,6 +110,7 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
             memset(devstr[devN],0,CFLASH_R0_MAX_BUF);
             strcpy(devstr[devN], device);
             memset(device,0,CFLASH_R0_MAX_BUF);
+            CBLK_TRACE_LOG_FILE(2, "devstr[%d] (%s)", devN,devstr[devN]);
             if (++devN == CFLASH_R0_MAX_DEV) {break;}
         }
         fclose(fp);
@@ -128,9 +127,8 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
         }
     }
 #endif /* !_AIX */
-
     /*--------------------------------------------------------------------------
-     * use whatever this is
+     * use pdevs
      *------------------------------------------------------------------------*/
     else if (pdevs)
     {
@@ -244,7 +242,8 @@ int cblk_r0_read(chunk_r0_id_t   id,
     rc = cblk_read(cid, buf, clba, nblocks, flags);
 
 done:
-    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
+    if (rc<0 && errno!=EAGAIN)
+        {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d errno:%d", id, rc,errno);}
     return rc;
 }
 
@@ -275,7 +274,8 @@ int cblk_r0_write(chunk_r0_id_t   id,
     rc = cblk_write(cid, pbuf, clba, nblocks, flags);
 
 done:
-    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
+    if (rc<0 && errno!=EAGAIN)
+        {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d errno:%d", id, rc,errno);}
     return rc;
 }
 
@@ -315,7 +315,8 @@ int cblk_r0_aread(chunk_r0_id_t      id,
     else         {tag->tag = -1;}
 
 done:
-    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
+    if (rc<0 && errno!=EAGAIN)
+        {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d errno:%d", id, rc,errno);}
     return rc;
 }
 
@@ -355,7 +356,8 @@ int cblk_r0_awrite(chunk_r0_id_t      id,
     else         {tag->tag = -1;}
 
 done:
-    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
+    if (rc<0 && errno!=EAGAIN)
+        {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d errno:%d", id, rc,errno);}
     return rc;
 }
 
@@ -395,7 +397,8 @@ int cblk_r0_aunmap(chunk_r0_id_t      id,
     else         {tag->tag = -1;}
 
 done:
-    if (rc<0) {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d", id, rc);}
+    if (rc<0 && errno!=EAGAIN)
+        {CBLK_TRACE_LOG_FILE(2,"FFDC id:%d rc:%d errno:%d", id, rc,errno);}
     return rc;
 }
 

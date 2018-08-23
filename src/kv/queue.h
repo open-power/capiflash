@@ -56,7 +56,8 @@ void queue_unlock(queue_t *q);
 void queue_wait(queue_t *q);
 void queue_wakeup(queue_t *q);
 
-#define queue_empty(q) ((q)->c==0)
-#define queue_count(q) ((q)->c)
+#define Q_EMPTY(q) ((q)->c==0)
+#define Q_FULL(q) ((q)->c==(q)->n)
+#define Q_CNT(q) ((q)->c)
 
 #endif

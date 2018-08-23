@@ -28,34 +28,69 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
+#ifndef _AIX
+#include <sys/syscall.h>
+#endif
+#include <pthread.h>
 
-#ifdef DBGTRC_ON
+#ifdef DBGTRC_VERBOSITY
 
-#define DBGTRC(fmt,...)                                         \
-  do                                                            \
-  {                                                             \
-      printf("%-30s %-5d ", (char *)__FUNCTION__, __LINE__);    \
-      printf(fmt, ##__VA_ARGS__);                               \
-      printf("\n");                                             \
-      fflush(stdout);                                           \
+#ifdef _AIX
+
+#define DBGTRC(fmt,...)                                                               \
+  do                                                                                  \
+  {                                                                                   \
+      int  tid    =0;                                                                 \
+      char b1[200]={0};                                                               \
+      char b2[200]={0};                                                               \
+      pthread_t my_pthread = pthread_self();                                          \
+      pthread_getunique_np(&my_pthread,&tid);                                         \
+      sprintf(b1,"%-40s %-30s %-5d ", (char *)__FILE__,(char *)__FUNCTION__,__LINE__);\
+      sprintf(b2,fmt, ##__VA_ARGS__);                                                 \
+      printf("%-8ld %s%s\n",tid,b1,b2);                                               \
+      fflush(stdout);                                                                 \
   } while (0);
 
-#define DBGTRCV(V,v,fmt,...)                                    \
+#define DBGTRCV(V,fmt,...)                                      \
   do                                                            \
   {                                                             \
-    if (v >= V)                                                 \
+    if (DBGTRC_VERBOSITY >= V)                                  \
     {                                                           \
-      printf("%-30s %-5d ", (char *)__FUNCTION__, __LINE__);    \
-      printf(fmt, ##__VA_ARGS__);                               \
-      printf("\n");                                             \
-      fflush(stdout);                                           \
+        DBGTRC(fmt,## __VA_ARGS__);                             \
     }                                                           \
   } while (0);
 
 #else
 
+#define DBGTRC(fmt,...)                                                               \
+  do                                                                                  \
+  {                                                                                   \
+      int  tid    =0;                                                                 \
+      char b1[200]={0};                                                               \
+      char b2[200]={0};                                                               \
+      tid=syscall(SYS_gettid);                                                        \
+      sprintf(b1,"%-40s %-30s %-5d ", (char *)__FILE__,(char *)__FUNCTION__,__LINE__);\
+      sprintf(b2,fmt, ##__VA_ARGS__);                                                 \
+      printf("%-8d %s%s\n",tid,b1,b2);                                                \
+      fflush(stdout);                                                                 \
+  } while (0);
+
+#define DBGTRCV(V,fmt,...)                                      \
+  do                                                            \
+  {                                                             \
+    if (DBGTRC_VERBOSITY >= V)                                  \
+    {                                                           \
+        DBGTRC(fmt,## __VA_ARGS__);                             \
+    }                                                           \
+  } while (0);
+
+#endif
+
+#else
+
 #define DBGTRC(fmt,...)
-#define DBGTRCV(V,v,fmt,...)
+#define DBGTRCV(V,fmt,...)
 
 #endif
 

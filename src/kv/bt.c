@@ -48,7 +48,7 @@ BT *bt_new(uint64_t dlen, uint64_t vmx, uint64_t vdf, BT **bt_orig)
     bt->def  = vdf;
   }
   KV_TRC_DBG(pAT, "BT_NEW: bt:%p bt_orig:%p len:%ld tot:%ld vmx:%ld vdf:%ld",
-             bt, *bt_orig, bt->len, dlen, vmx, vdf);
+             bt, *bt_orig, (uint64_t)bt->len, dlen, vmx, vdf);
   return bt;
 }
 
@@ -394,8 +394,8 @@ void bt_dump(BT *bt)
   uint64_t vl;
   uint64_t i,j;
 
-  printf("    ----\n    Bkt: len:%ld cnt:%ld max:%ld def:%ld\n",
-          bt->len, bt->cnt, bt->max, bt->def);
+  printf("    ----\n    Bkt: len:%ld cnt:%d max:%d def:%d\n",
+          (uint64_t)bt->len, bt->cnt, bt->max, bt->def);
 
   if (bt->cnt==0)
   {
@@ -434,8 +434,8 @@ void bt_cstr(BT *bt)
   uint64_t vl;
   uint64_t i,j;
 
-  printf("    ----\n    Bkt: len:%ld tot:%ld cnt:%ld max:%ld def:%ld\n",
-          bt->len, sizeof(bt), bt->cnt, bt->max, bt->def);
+  printf("    ----\n    Bkt: len:%ld tot:%ld cnt:%d max:%d def:%d\n",
+                  (uint64_t)bt->len, sizeof(bt), bt->cnt, bt->max, bt->def);
 
   if (bt->cnt==0)
   {

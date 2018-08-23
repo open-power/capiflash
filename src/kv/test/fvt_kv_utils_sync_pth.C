@@ -227,7 +227,7 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
                               uint32_t *p_ops,
                               uint32_t *p_ios)
 {
-    run_multi_ctxt(num_ctxt, num_pth, 1,
+    run_multi_ctxt(num_ctxt, num_pth, 2,
                    ARK_MAX_NASYNCS,
                    ARK_MAX_BASYNCS, vlen, LEN, secs, p_ops, p_ios);
 }
@@ -269,13 +269,13 @@ void Sync_pth::run_multi_ctxt(uint32_t  num_ctxt,
     for (ctxt_i=0; ctxt_i<num_ctxt; ctxt_i++)
     {
         ASSERT_EQ(0, ark_create_verbose(getenv("FVT_DEV"), &ark[ctxt_i],
-                                        1048576,
-                                        4096,
-                                        1048576,
-                                        npool,
-                                        nasync,
-                                        basync,
-                                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
+                        ARK_VERBOSE_SIZE_DEF*100,
+                        ARK_VERBOSE_BSIZE_DEF,
+                        ARK_VERBOSE_HASH_DEF,
+                        npool,
+                        nasync,
+                        basync,
+                        ARK_KV_VIRTUAL_LUN));
         ASSERT_TRUE(NULL != ark[ctxt_i]);
     }
 
@@ -372,13 +372,13 @@ void Sync_pth::run_multi_ctxt_rd(uint32_t  num_ctxt,
     for (ctxt_i=0; ctxt_i<num_ctxt; ctxt_i++)
     {
         ASSERT_EQ(0, ark_create_verbose(getenv("FVT_DEV"), &ark[ctxt_i],
-                                        1048576,
-                                        4096,
-                                        1048576,
-                                        npool,
-                                        256,
-                                        8*1024,
-                                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
+                        ARK_VERBOSE_SIZE_DEF*100,
+                        ARK_VERBOSE_BSIZE_DEF,
+                        ARK_VERBOSE_HASH_DEF,
+                        npool,
+                        ARK_MAX_NASYNCS,
+                        ARK_MAX_BASYNCS,
+                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
         ASSERT_TRUE(NULL != ark[ctxt_i]);
     }
 
@@ -467,13 +467,13 @@ void Sync_pth::run_multi_ctxt_wr(uint32_t  num_ctxt,
     for (ctxt_i=0; ctxt_i<num_ctxt; ctxt_i++)
     {
         ASSERT_EQ(0, ark_create_verbose(getenv("FVT_DEV"), &ark[ctxt_i],
-                                        1048576,
-                                        4096,
-                                        1048576,
-                                        npool,
-                                        256,
-                                        8*1024,
-                                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
+                        ARK_VERBOSE_SIZE_DEF*100,
+                        ARK_VERBOSE_BSIZE_DEF,
+                        ARK_VERBOSE_HASH_DEF,
+                        npool,
+                        ARK_MAX_NASYNCS,
+                        ARK_MAX_BASYNCS,
+                        ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
         ASSERT_TRUE(NULL != ark[ctxt_i]);
     }
 

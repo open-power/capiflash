@@ -631,17 +631,20 @@ int cblk_cg_get_size(chunk_cg_id_t cgid, size_t *nblocks, int flags)
 
     if (p_cg->flags & CBLK_GROUP_RAID0)
     {
+        uint64_t smallest=0;
         for (i=0; i<p_cg->num_chunks; i++)
         {
             rc = cblk_get_size(p_cg->chunk_list[i].id, &blks, 0);
             if (rc) {goto done;}
-            *nblocks += blks;
+            if      (smallest==0)   {smallest=blks;}
+            else if (blks<smallest) {smallest=blks;}
         }
+        *nblocks = smallest * p_cg->num_chunks;
     }
     else {rc = cblk_get_size(p_cg->chunk_list[0].id, nblocks, 0);}
 
 done:
-    CBLK_TRACE_LOG_FILE(4, "cgid:%d *nblocks:%d flags:%x rc:%d",
+    CBLK_TRACE_LOG_FILE(4, "cgid:%d *nblocks:%ld flags:%x rc:%d",
                         cgid, *nblocks, flags, rc);
     return rc;
 }

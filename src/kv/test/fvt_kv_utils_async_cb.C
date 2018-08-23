@@ -151,8 +151,8 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
 
     if (IS_GTEST)
     {
-        EXPECT_EQ(0,   errcode);
-        EXPECT_EQ(tag, pCB->tag);
+        ASSERT_EQ(0,   errcode);
+        ASSERT_EQ(tag, pCB->tag);
     }
     p_kv = pCB->db + pCB->len_i;
     ++pCB->len_i;
@@ -168,7 +168,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
                              "(res:%ld != vlen:%d)",
                         pCB, pCB->len_i, pCB->len, res, p_kv->vlen);
         }
-        if (IS_GTEST) {EXPECT_EQ(res, p_kv->vlen);}
+        if (IS_GTEST) {ASSERT_EQ(res, p_kv->vlen);}
 
         KV_TRC_IO(pAT, "KV_ASYNC_CB_SET, %p %d %d vlen:%d",
                   pCB, pCB->len_i, pCB->len, p_kv->vlen);
@@ -205,7 +205,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
                              "(res:%ld != vlen:%d)",
                         pCB, pCB->len_i, pCB->len, res, p_kv->vlen);
         }
-        if (IS_GTEST) {EXPECT_TRUE(0 == miscompare);}
+        if (IS_GTEST) {ASSERT_TRUE(0 == miscompare);}
 
         KV_TRC_IO(pAT, "KV_ASYNC_CB_GET, %p %d %d vlen:%d",
                   pCB, pCB->len_i, pCB->len, p_kv->vlen);
@@ -234,7 +234,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
         if (0   != errcode)    printf("ark_exists failed,errcode=%d\n",errcode);
         if (tag != pCB->tag)   printf("ark_exists bad tag\n");
         if (res != p_kv->vlen) printf("ark_exists bad vlen\n");
-        if (IS_GTEST) {        EXPECT_EQ(res, p_kv->vlen);}
+        if (IS_GTEST) {        ASSERT_EQ(res, p_kv->vlen);}
 
         /* if end of db len sequence, move to next step */
         if (pCB->len_i == pCB->len)
@@ -273,7 +273,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
             else
             {
                 /* should not be here */
-                EXPECT_TRUE(0);
+                ASSERT_TRUE(0);
             }
         }
         kv_async_EXISTS_KEY(pCB);
@@ -285,7 +285,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
         if (0   != errcode)    printf("ark_del failed, errcode=%d\n",errcode);
         if (tag != pCB->tag)   printf("ark_del bad tag\n");
         if (res != p_kv->vlen) printf("ark_del bad vlen\n");
-        if (IS_GTEST) {        EXPECT_EQ(res, p_kv->vlen);}
+        if (IS_GTEST) {        ASSERT_EQ(res, p_kv->vlen);}
 
         /* end of db len sequence, move to next step */
         if (pCB->len_i == pCB->len)
@@ -314,7 +314,7 @@ static void kv_async_cb(int errcode, uint64_t dt, int64_t res)
     else
     {
         /* should not be here */
-        EXPECT_TRUE(0);
+        ASSERT_TRUE(0);
     }
 
 done:
@@ -347,7 +347,7 @@ static void kv_async_SET_KEY(async_CB_t *pCB)
     }
     else
     {
-        EXPECT_EQ(0, rc);
+        ASSERT_EQ(0, rc);
     }
 }
 
@@ -378,7 +378,7 @@ static void kv_async_GET_KEY(async_CB_t *pCB)
     }
     else
     {
-        EXPECT_EQ(0, rc);
+        ASSERT_EQ(0, rc);
     }
 }
 
@@ -406,7 +406,7 @@ static void kv_async_EXISTS_KEY(async_CB_t *pCB)
     }
     else
     {
-        EXPECT_EQ(0, rc);
+        ASSERT_EQ(0, rc);
     }
 }
 
@@ -434,7 +434,7 @@ static void kv_async_DEL_KEY(async_CB_t *pCB)
     }
     else
     {
-        EXPECT_EQ(0, rc);
+        ASSERT_EQ(0, rc);
     }
 }
 
@@ -517,13 +517,13 @@ void kv_async_init_ctxt(uint32_t ctxt, uint32_t secs)
     memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
 
     ASSERT_EQ(0, ark_create_verbose(env_FVT, &pCT->ark,
-                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF*100,
                                     ARK_VERBOSE_BSIZE_DEF,
                                     ARK_VERBOSE_SIZE_DEF,
-                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    6,
                                     ARK_MAX_NASYNCS,
                                     ARK_MAX_BASYNCS,
-                                    ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
+                                    ARK_KV_VIRTUAL_LUN));
     ASSERT_TRUE(NULL != pCT->ark);
 
     pCT->flags |= KV_ASYNC_CT_RUNNING;
@@ -548,10 +548,10 @@ void kv_async_init_ctxt_starve(uint32_t ctxt,
     memset(pCT->pCBs, 0, sizeof(async_CB_t)*KV_ASYNC_JOB_Q);
 
     ASSERT_EQ(0, ark_create_verbose(env_FVT, &pCT->ark,
-                                    ARK_VERBOSE_SIZE_DEF,
+                                    ARK_VERBOSE_SIZE_DEF*100,
                                     ARK_VERBOSE_BSIZE_DEF,
                                     ARK_VERBOSE_SIZE_DEF,
-                                    ARK_VERBOSE_NTHRDS_DEF,
+                                    6,
                                     nasync,
                                     basync,
                                     ARK_KV_VIRTUAL_LUN|ARK_KV_HTC));
@@ -1071,7 +1071,7 @@ static void kv_async_dispatch(async_CB_t *pCB)
     }
     else
     {
-        EXPECT_TRUE(0);
+        ASSERT_TRUE(0);
     }
 }
 
@@ -1241,7 +1241,7 @@ void kv_async_run_jobs(void)
         KV_TRC(pAT, "PERF ark%p ops:%ld ios:%ld",
                pCTs[i].ark, ops, ios);
 
-        EXPECT_EQ(0, ark_delete(pCTs[i].ark));
+        ASSERT_EQ(0, ark_delete(pCTs[i].ark));
     }
 
     if (!perf)

@@ -30,7 +30,7 @@ SUBDIRS  = bin.d test.d
 
 OBJS   = ut.o cl.o ea.o ll.o bv.o iv.o si.o vi.o bl.o bt.o arkdb.o am.o  \
          arp.o arp_set.o arp_get.o arp_del.o arp_exist.o tag.o ea_mod.o queue.o \
-         hash.o tg.o ht.o kv_inject.o
+         tg.o kv_inject.o
 
 MODULE          = arkdb
 EXPFLAGS        = -bexpall

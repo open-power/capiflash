@@ -375,6 +375,7 @@ TEST(FVT_KV_ERROR_PATH, ALLOC_ERRORS)
  ******************************************************************************/
 TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
 {
+#if 0
     ARK           *ark       = NULL;
     char           s[]       = {"12345678"};
     uint32_t       klen      = 8;
@@ -504,6 +505,7 @@ TEST(FVT_KV_ERROR_PATH, IO_ERRORS)
 
     errno=0; KV_SET_INJECT_INACTIVE;
     ASSERT_EQ(0, ark_delete(ark));
+#endif
 }
 
 /**

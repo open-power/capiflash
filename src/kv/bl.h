@@ -45,14 +45,14 @@ typedef struct ark_io_list
 
 typedef struct _bl
 {
-  int64_t  n;           // number of block list elements
-  int64_t  w;
-  int64_t  head;
-  int64_t  count;
-  int64_t  hold;
   pthread_rwlock_t iv_rwlock;
-  IV *list;
-  int64_t  top;         // index of the next block list element to initialize
+  int64_t          n;           // number of block list elements
+  int64_t          w;
+  int64_t          head;
+  int64_t          count;
+  int64_t          hold;
+  int64_t          top;         // index of the next block list element to initialize
+  IV              *iv;
 } BL;
 
 // initializes/adds BL_INITN blocks to make them available for a take,
@@ -66,8 +66,8 @@ BL *bl_new(int64_t n, int w);
 // must be called before any take,
 int bl_reserve(BL *bl, uint64_t resN);
 
-BL *bl_resize(BL *bl, int64_t n, int w);
-void bl_delete(BL *bl);
+BL *bl_resize(BL *bl, int64_t n, int64_t w);
+void bl_free(BL *bl);
 
 // take returns a root to a chain of n blocks, neagative is error
 int64_t bl_take(BL *bl, int64_t n);
@@ -98,18 +98,19 @@ void bl_hold (BL *bl);
 void bl_release(BL *bl);
 
 // Return an array of linked blocks starting at b
-ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len);
-
-ark_io_list_t *bl_chain_blocks(BL *bl, int64_t start, int64_t len);
-
-ark_io_list_t *bl_chain_no_bl(int64_t start, int64_t len);
+ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len, int64_t offset);
 
 // realloc an ark_io_list if required, setup the list starting at b
 int bl_rechain(ark_io_list_t **aiol,
                BL             *bl,
                int64_t         b,
                int64_t         n,
-               int64_t         o);
+               int64_t         o,
+               int64_t         offset);
+
+ark_io_list_t *bl_chain_blocks(BL *bl, int64_t len, int64_t offset);
+
+ark_io_list_t *bl_chain_no_bl(int64_t len, int64_t offset);
 
 // generate a graph of the blocks
 void bl_dot(BL *bl, int n, int *bcnt, int ccnt, int64_t *chain);

@@ -23,31 +23,126 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-
 #ifndef __HASH_H__
-#define __HASHH__
+#define __HASH_H__
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <string.h>
+#include <iv.h>
 
-typedef struct _hash {
-  uint64_t n;
-  uint64_t h[];
+#include <errno.h>
+
+typedef struct
+{
+  pthread_rwlock_t l;
+  uint64_t         n;
+  uint64_t         m;
+  uint64_t         lba_mask;
+  IV              *iv;
 } hash_t;
 
-hash_t *hash_new(uint64_t n);
-void hash_free(hash_t *hash);
+#define HASH_SET(htp, _pos, _lck, _lba) hash_set(htp,_pos,_lck,_lba)
+#define HASH_GET(htp, _pos, _lck, _lba) hash_get(htp,_pos,_lck,_lba)
+#define HASH_POS(_htN, _buf, _blen)     hash_pos(_htN,_buf,_blen)
 
-uint64_t hash_hash(uint8_t *buf, uint64_t n);
-uint64_t hash_pos(hash_t *hash, uint8_t *buf, uint64_t n);
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline uint64_t hash_hash(uint8_t *buf, uint64_t n)
+{
+  uint64_t sum = 0;
+  uint64_t i;
+  for (i=0; i<n; i++) sum = sum * 65559 + buf[i];
+  return sum;
+}
 
-#define HASH_GET(htb, pos) ((htb)->h[pos])
-#define HASH_SET(htb, pos, val) ((htb)->h[pos] = val)
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline uint64_t hash_pos(uint64_t htN, uint8_t *buf, uint64_t blen)
+{
+    return hash_hash(buf, blen) % htN;
+}
 
-#define HASH_MAKE(lck,tag,lba) ((((uint64_t)(lck))<<56) | (((uint64_t)(tag))<<40) | ((uint64_t)(lba)))
-#define HASH_LCK(x) ((x)>>56)
-#define HASH_TAG(x) (0x000000000000FFFFULL & ((x)>>40))
-#define HASH_LBA(x) (0x000000FFFFFFFFFFULL & (x))
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline hash_t *hash_new(uint64_t n, uint64_t m)
+{
+  hash_t *ht = (hash_t*)am_malloc(sizeof(hash_t));
+  if (!ht)
+  {
+    KV_TRC_FFDC(pAT, "n %ld m %ld ENOMEM", n, m);
+    errno = ENOMEM;
+  }
+  else
+  {
+    pthread_rwlock_init(&ht->l, NULL);
+    ht->n        = n;
+    ht->m        = m;
+    ht->lba_mask = 1;
+    ht->lba_mask = (ht->lba_mask<<(m-1))-1;
+    ht->iv     = iv_new(n,m);
+    KV_TRC(pAT, "n %ld m %ld lba_mask:%16lx", n, m, ht->lba_mask);
+  }
+  return ht;
+}
 
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline void hash_free(hash_t *ht)
+{
+  KV_TRC(pAT, "ht %p iv %p", ht, ht->iv);
+  if (ht)
+  {
+      iv_delete(ht->iv);
+      am_free(ht);
+  }
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline void hash_set(hash_t  *ht,
+                            uint64_t pos,
+                            uint8_t  lck,
+                            uint64_t lba)
+{
+  uint64_t val = (((uint64_t)lck)<<(ht->m-1)) | (uint64_t)lba;
+  pthread_rwlock_wrlock(&ht->l);
+  iv_set(ht->iv, pos, val);
+  pthread_rwlock_unlock(&ht->l);
+  KV_TRC_DBG(pAT, "HASHSET iv[%ld]=%lx iv[0]=%lx", pos,val,ht->iv->data[0]);
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline void hash_get(hash_t   *ht,
+                            uint64_t  pos,
+                            uint8_t  *lck,
+                            uint64_t *lba)
+{
+    int64_t v=0;
+    pthread_rwlock_rdlock(&ht->l);
+    if ((v=iv_get(ht->iv,pos)) < 0)
+    {
+        KV_TRC_FFDC(pAT, "invalid pos:%ld", pos);
+    }
+    pthread_rwlock_unlock(&ht->l);
+    *lck = v >> (ht->m-1);
+    *lba = v & ht->lba_mask;
+    KV_TRC_DBG(pAT, "HASHGET iv[%ld]=%lx lck:%x lba:%ld", pos,v,*lck,*lba);
+    return;
+}
 
 #endif

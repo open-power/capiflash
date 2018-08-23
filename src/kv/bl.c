@@ -62,7 +62,7 @@ int bl_init_chain_link(BL *bl)
     // create a chain
     for (i=bl->top; i<chain_end; i++)
     {
-        if (iv_set(bl->list, i, i+1) < 0)
+        if (iv_set(bl->iv, i, i+1) < 0)
         {
             KV_TRC_FFDC(pAT, "invalid index:%ld", i);
             goto exception;
@@ -99,8 +99,8 @@ BL *bl_new(int64_t n, int w)
         goto exception;
     }
 
-    bl->list = iv_new(n,w);
-    if (NULL == bl->list)
+    bl->iv = iv_new(n,w);
+    if (NULL == bl->iv)
     {
         KV_TRC_FFDC(pAT, "n %ld w %d, iv_new() failed", n, w);
         am_free(bl);
@@ -108,7 +108,7 @@ BL *bl_new(int64_t n, int w)
         goto exception;
     }
 
-    iv_set(bl->list,0,0); //reserve 0
+    iv_set(bl->iv,0,0); //reserve 0
     bl->n     = n;
     bl->top   = 1;
     bl->count = 0;
@@ -117,8 +117,8 @@ BL *bl_new(int64_t n, int w)
     bl->w     = w;
     pthread_rwlock_init(&(bl->iv_rwlock), NULL);
 
-    KV_TRC_DBG(pAT, "BL_NEW  bl:%p list:%p n:%ld count:%ld w:%ld",
-               bl, bl->list, bl->n, bl->count, bl->w);
+    KV_TRC(pAT, "BL_NEW  bl:%p iv:%p n:%ld count:%ld w:%ld",
+           bl, bl->iv, bl->n, bl->count, bl->w);
 
 exception:
     return bl;
@@ -147,7 +147,7 @@ int bl_reserve(BL *bl, uint64_t resN)
 
     for (i=1; i<=resN; i++)
     {
-        if (iv_set(bl->list,i,i) < 0)
+        if (iv_set(bl->iv,i,i) < 0)
         {
             KV_TRC_FFDC(pAT, "invalid index bl:%p resN:%ld i:%d", bl, resN, i);
             goto exception;
@@ -169,11 +169,11 @@ exception:
  *******************************************************************************
  * \brief
  ******************************************************************************/
-void bl_delete(BL *bl)
+void bl_free(BL *bl)
 {
-  KV_TRC_DBG(pAT, "DELETE  bl:%p", bl);
+  KV_TRC_DBG(pAT, "FREE  bl:%p", bl);
   if (!bl) return;
-  iv_delete(bl->list);
+  iv_delete(bl->iv);
   pthread_rwlock_destroy(&(bl->iv_rwlock));
   am_free(bl);
 }
@@ -182,7 +182,7 @@ void bl_delete(BL *bl)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-BL *bl_resize(BL *bl, int64_t n, int w)
+BL *bl_resize(BL *bl, int64_t n, int64_t w)
 {
   int64_t b4 = bl->n;
 
@@ -193,22 +193,21 @@ BL *bl_resize(BL *bl, int64_t n, int w)
   }
   if (w != bl->w)
   {
-      KV_TRC_FFDC(pAT, "blkbits do not match bl:%p bl->w:%ld w:%d",
-                  bl, bl->w, w);
+      KV_TRC_FFDC(pAT, "blkbits do not match bl:%p bl->w:%ld w:%ld",bl,bl->w,w);
       return NULL;
   }
   if (n - bl->n == 0)
   {
-      KV_TRC_FFDC(pAT, "No size difference bl %p n %ld w %d", bl, n, w);
+      KV_TRC_FFDC(pAT, "No size difference bl %p n %ld w %ld", bl, n, w);
       return bl;
   }
 
   pthread_rwlock_wrlock(&(bl->iv_rwlock));
 
-  bl->list = iv_resize(bl->list, n, w);
-  if (bl->list == NULL)
+  bl->iv = iv_resize(bl->iv, n, w);
+  if (bl->iv == NULL)
   {
-    KV_TRC_FFDC(pAT, "bl %p n %ld w %d", bl, n, w);
+    KV_TRC_FFDC(pAT, "bl %p n %ld w %ld", bl, n, w);
     bl = NULL;
     goto exception;
   }
@@ -260,7 +259,7 @@ int64_t bl_end(BL *bl, int64_t b)
 
   if (i >= 0)
   {
-    while ((r=iv_get(bl->list,i)) > 0) {i = r;}
+    while ((r=iv_get(bl->iv,i)) > 0) {i = r;}
   }
 
   pthread_rwlock_unlock(&(bl->iv_rwlock));
@@ -324,8 +323,8 @@ int64_t bl_take(BL *bl, int64_t n)
 
     if (n > bl->count)
     {
-        KV_TRC_FFDC(pAT, "Not enough free blocks bl %p n %ld bl->count %ld",
-                    bl, n, bl->count);
+        KV_TRC_FFDC(pAT, "avail:%ld < needed:%ld bl:%p total:%ld top:%ld",
+                    n, bl->count, bl, bl->n, bl->top);
         return -1;
     }
     if (n == 0)
@@ -341,7 +340,7 @@ int64_t bl_take(BL *bl, int64_t n)
     m  = n - 1;
     while (m > 0)
     {
-      if ((tl=iv_get(bl->list,tl)) < 0)
+      if ((tl=iv_get(bl->iv,tl)) < 0)
       {
           KV_TRC_FFDC(pAT, "invalid index bl:%p n:%ld tl:%ld", bl, n, tl);
           hd = -1;
@@ -349,13 +348,13 @@ int64_t bl_take(BL *bl, int64_t n)
       }
       m--;
     }
-    if ((bl->head=iv_get(bl->list,tl)) < 0)
+    if ((bl->head=iv_get(bl->iv,tl)) < 0)
     {
         KV_TRC_FFDC(pAT, "invalid index bl:%p n:%ld tl:%ld", bl, n, tl);
         hd = -1;
         goto exception;
     }
-    if (iv_set(bl->list,tl,0) < 0)
+    if (iv_set(bl->iv,tl,0) < 0)
     {
         KV_TRC_FFDC(pAT, "invalid index bl:%p n:%ld tl:%ld", bl, n, tl);
         hd = -1;
@@ -392,14 +391,14 @@ int64_t bl_drop(BL *bl, int64_t b)
 
   if (bl->hold == -1)
   {
-    if (iv_set(bl->list,i,bl->head) < 0)
+    if (iv_set(bl->iv,i,bl->head) < 0)
     {
         n = -1;
         KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld i:%ld n:%ld hd:%ld",
                     bl, b, i, n, bl->head);
         goto exception;
     }
-    bl->head = b;
+    bl->head   = b;
     bl->count += n;
   }
   else if (bl->hold == 0)
@@ -408,7 +407,7 @@ int64_t bl_drop(BL *bl, int64_t b)
   }
   else
   {
-    if (iv_set(bl->list, i, bl->hold) < 0)
+    if (iv_set(bl->iv, i, bl->hold) < 0)
     {
         n = -1;
         KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld i:%ld n:%ld hd:%ld",
@@ -441,7 +440,7 @@ int64_t bls_add(BL *bl, int64_t b)
 
   pthread_rwlock_rdlock(&(bl->iv_rwlock));
 
-  if (iv_set(bl->list,b,bl->head) < 0)
+  if (iv_set(bl->iv,b,bl->head) < 0)
   {
       KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld hd:%ld",
                   bl, b, bl->head);
@@ -487,13 +486,13 @@ int64_t bls_rem(BL *bl)
 
     ret = bl->head;
 
-    if ((new_hd=iv_get(bl->list,ret)) < 0)
+    if ((new_hd=iv_get(bl->iv,ret)) < 0)
     {
         KV_TRC_FFDC(pAT, "invalid index bl:%p ret:%ld", bl, ret);
         ret = -1;
         goto exception;
     }
-    if (iv_set(bl->list,ret,0) < 0)
+    if (iv_set(bl->iv,ret,0) < 0)
     {
         KV_TRC_FFDC(pAT, "invalid index bl:%p ret:%ld", bl, ret);
         ret = -1;
@@ -552,7 +551,7 @@ void bl_release(BL *bl)
 
     if (n > 0)
     {
-      if (iv_set(bl->list, i, bl->head) < 0)
+      if (iv_set(bl->iv, i, bl->head) < 0)
       {
           KV_TRC_FFDC(pAT, "invalid idx bl:%p i:%ld n:%ld", bl, i, n);
           goto exception;
@@ -591,7 +590,7 @@ int64_t bl_len(BL *bl, int64_t b)
   while (i > 0)
   {
     n++;
-    i = iv_get(bl->list,i);
+    i = iv_get(bl->iv,i);
   }
   pthread_rwlock_unlock(&(bl->iv_rwlock));
   if (i<0)
@@ -618,7 +617,7 @@ int64_t bl_next(BL *bl, int64_t b)
   }
 
   pthread_rwlock_rdlock(&(bl->iv_rwlock));
-  blk = iv_get(bl->list, b);
+  blk = iv_get(bl->iv, b);
   pthread_rwlock_unlock(&(bl->iv_rwlock));
 
   return blk;
@@ -628,20 +627,21 @@ int64_t bl_next(BL *bl, int64_t b)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int bl_iochain(ark_io_list_t *aiol, BL *bl, int64_t b)
+int bl_iochain(ark_io_list_t *aiol, BL *bl, int64_t b, int64_t offset)
 {
-  int rc = 0;
-  int i  = 0;
+  int     rc  = 0;
+  int     i   = 0;
+  int64_t blk = b;
 
   pthread_rwlock_rdlock(&(bl->iv_rwlock));
 
-  while (b > 0)
+  while (blk > 0)
   {
-      aiol[i].blkno     = b;
+      aiol[i].blkno     = blk + offset;
       aiol[i].a_tag.tag = -1;
-      if ((b=iv_get(bl->list, b)) < 0)
+      if ((blk=iv_get(bl->iv, blk)) < 0)
       {
-          KV_TRC_FFDC(pAT, "invalid chain index:%ld", b);
+          KV_TRC_FFDC(pAT, "invalid chain index:%ld", blk);
           rc = -1;
           goto exception;
       }
@@ -657,7 +657,7 @@ exception:
  *******************************************************************************
  * \brief
  ******************************************************************************/
-ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len)
+ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len, int64_t offset)
 {
   ark_io_list_t *bl_array = NULL;
 
@@ -670,7 +670,7 @@ ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len)
   bl_array = (ark_io_list_t *)am_malloc(sizeof(ark_io_list_t) * len);
   if (bl_array)
   {
-      if (bl_iochain(bl_array, bl, b))
+      if (bl_iochain(bl_array, bl, b, offset))
       {
           am_free(bl_array);
           bl_array = NULL;
@@ -688,7 +688,8 @@ int bl_rechain(ark_io_list_t **aiol,
                BL             *bl,
                int64_t         b,
                int64_t         n,
-               int64_t         o)
+               int64_t         o,
+               int64_t         offset)
 {
   int rc   = 0;
   int size = sizeof(ark_io_list_t);
@@ -710,7 +711,7 @@ int bl_rechain(ark_io_list_t **aiol,
       if (!(*aiol=am_realloc(*aiol, size*n))) {rc=-3; goto exception;}
   }
 
-  rc = bl_iochain(*aiol, bl, b);
+  rc = bl_iochain(*aiol, bl, b, offset);
 
 exception:
   return rc;
@@ -720,7 +721,7 @@ exception:
  *******************************************************************************
  * \brief
  ******************************************************************************/
-ark_io_list_t *bl_chain_blocks(BL *bl, int64_t start, int64_t len)
+ark_io_list_t *bl_chain_blocks(BL *bl, int64_t len, int64_t offset)
 {
   ark_io_list_t *bl_array = NULL;
   int            i        = 0;
@@ -735,15 +736,15 @@ ark_io_list_t *bl_chain_blocks(BL *bl, int64_t start, int64_t len)
 
   if (bl != NULL)
   {
-    bl_array = (ark_io_list_t *)am_malloc(sizeof(ark_io_list_t) * len);
-    if (bl_array != NULL)
-    {
-      for (i = 0; i < len; i++)
+      bl_array = (ark_io_list_t *)am_malloc(sizeof(ark_io_list_t) * len);
+      if (!bl_array)
       {
-        bl_array[i].blkno = start + i;
-        bl_array[i].a_tag.tag = -1;
+          for (i=0; i<len; i++)
+          {
+              bl_array[i].blkno     = offset + i;
+              bl_array[i].a_tag.tag = -1;
+          }
       }
-    }
   }
 
   pthread_rwlock_unlock(&(bl->iv_rwlock));
@@ -756,19 +757,22 @@ exception:
  *******************************************************************************
  * \brief
  ******************************************************************************/
-ark_io_list_t *bl_chain_no_bl(int64_t start, int64_t len)
+ark_io_list_t *bl_chain_no_bl(int64_t len, int64_t offset)
 {
   ark_io_list_t *bl_array = NULL;
-  int             i = 0;
+
+  KV_TRC_DBG(pAT, "C_NO_BL len:%ld offset:%ld", len, offset);
 
   bl_array = (ark_io_list_t *)am_malloc(sizeof(ark_io_list_t) * len);
-  if (bl_array != NULL)
+  if (bl_array)
   {
-    for (i = 0; i < len; i++)
-    {
-      bl_array[i].blkno = start + i;
-      bl_array[i].a_tag.tag = -1;
-    }
+      int i=0;
+      for (i=0; i<len; i++)
+      {
+          bl_array[i].blkno     = offset + i;
+          bl_array[i].a_tag.tag = -1;
+          KV_TRC_DBG(pAT, "C_NO_BL blkno[%d]=%ld", i,bl_array[i].blkno);
+      }
   }
 
   return bl_array;
@@ -790,19 +794,19 @@ void bl_dot(BL *bl, int i, int *bcnt, int ccnt, int64_t *chains) {
   int64_t b = bl->head;
   if (0<=b) fprintf(F,"   head -> b%"PRIi64"_%d;\n", b, bcnt[b]);
   while (0<=b) {
-    if (0<iv_get(bl->list,b))
+    if (0<iv_get(bl->iv,b))
     {
         fprintf(F,"   b%"PRIi64"_%d -> b%"PRIi64"_%d;\n",
-                b, bcnt[b], iv_get(bl->list,b), bcnt[iv_get(bl->list,b)]);
+                b, bcnt[b], iv_get(bl->iv,b), bcnt[iv_get(bl->iv,b)]);
     }
-    b = iv_get(bl->list,b);
+    b = iv_get(bl->iv,b);
   }
 
   for(i=i; i<ccnt; i++) {
     int64_t b = chains[i];
     if (0<=b) fprintf(F,"  chain -> b%"PRIi64"_%d;\n", b, bcnt[b]);
     while (0<=b) {
-      int64_t bn = iv_get(bl->list,b);
+      int64_t bn = iv_get(bl->iv,b);
       if (0<=bn) fprintf(F,"  b%"PRIi64"_%d -> b%"PRIi64"_%d;\n", b, bcnt[b], bn, bcnt[bn]);
       b = bn;
     }

@@ -97,8 +97,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_2_PTH_1_CONTEXT)
 {
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 2;
-    uint32_t vlen     = 73;
-    uint32_t LEN      = 100000;
+    uint32_t vlen     = 17;
+    uint32_t LEN      = 50000;
     uint32_t secs     = 3;
 
     Sync_pth sync_pth;
@@ -114,8 +114,8 @@ TEST(FVT_KV_GOOD_PATH, SYNC_64_PTH_BIG_BLOCKS)
 {
     uint32_t num_ctxt = 1;
     uint32_t num_pth  = 64;
-    uint32_t vlen     = KV_500K;
-    uint32_t LEN      = 50;
+    uint32_t vlen     = KV_250K;
+    uint32_t LEN      = 20;
     uint32_t secs     = 3;
 
     Sync_pth sync_pth;

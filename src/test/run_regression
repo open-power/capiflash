@@ -96,7 +96,6 @@ do_kv_fvt()
   export FVT_DEV=$1
   export FVT_DEV_PERSIST=$1
 
-  [[ $gtp ]] && parms="--gtest_filter=-*_fork_*"
   run_fvt_kv $parms | tee -a $out
   [[ $? -ne 0 ]] && success=0
 }
@@ -110,7 +109,6 @@ do_kv_raid0_fvt()
     export FVT_DEV=$1
     export FVT_DEV_PERSIST=$1
 
-    [[ $gtp ]] && parms="--gtest_filter=-*_fork_*"
     run_fvt_kv $parms | tee -a $out
     [[ $? -ne 0 ]] && success=0
   fi

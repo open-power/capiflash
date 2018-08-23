@@ -53,9 +53,24 @@
 #endif
 
 #define ARK_CREATE \
-    ASSERT_EQ(0, ark_create(getenv("FVT_DEV"), &ark,           \
-                            ARK_KV_VIRTUAL_LUN | ARK_KV_HTC)); \
-    ASSERT_TRUE(ark != NULL);
+  do                                                            \
+  {                                                             \
+    uint64_t flags = 0;                                         \
+    char    *dev   = getenv("FVT_DEV");                         \
+    if (dev && strlen(dev)>0 &&                                 \
+               (!(strncmp("/dev/", dev, 5)==0 ||                \
+                  strncmp("RAID",  dev, 4)==0)))                \
+    {                                                           \
+        /* this is a file */                                    \
+        flags = ARK_KV_HTC;                                     \
+    }                                                           \
+    else                                                        \
+    {                                                           \
+        flags = ARK_KV_VIRTUAL_LUN | ARK_KV_HTC;                \
+    }                                                           \
+    ASSERT_EQ(0, ark_create(getenv("FVT_DEV"), &ark, flags));   \
+    ASSERT_TRUE(ark != NULL);                                   \
+  } while (0)
 
 #define ARK_CREATE_PERSIST_READONLY \
     ASSERT_EQ(0, ark_create(getenv("FVT_DEV_PERSIST"), &ark,    \

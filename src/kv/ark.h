@@ -45,7 +45,6 @@
 #include <arkdb_trace.h>
 #include <am.h>
 #include <hash.h>
-#include <bv.h>
 #include <bl.h>
 #include <ea.h>
 #include <vi.h>
@@ -77,24 +76,24 @@
 
 #define ARK_UQ_SIZE 255
 
-#define ARK_VERBOSE_SIZE_DEF   (1024*1024)
-#define ARK_VERBOSE_BSIZE_DEF         4096
-#define ARK_VERBOSE_HASH_DEF   (1024*1024)
-#define ARK_VERBOSE_HTC_DEF     (200*1024)
-#define ARK_VERBOSE_VLIMIT_DEF         256
-#define ARK_VERBOSE_BLKBITS_DEF         34
-#define ARK_VERBOSE_GROW_DEF          8192
-#define ARK_VERBOSE_NTHRDS_DEF           8
+#define ARK_VERBOSE_SIZE_DEF         (5*1024*1024)
+#define ARK_VERBOSE_BSIZE_DEF                 4096
+#define ARK_VERBOSE_HASH_DEF           (1024*1024)
+#define ARK_VERBOSE_HTC_MAX            (1024*1024)
+#define ARK_VERBOSE_VLIMIT_DEF                 256
+#define ARK_VERBOSE_BLKBITS_DEF                 35
+#define ARK_VERBOSE_GROW_DEF                  1024
+#define ARK_VERBOSE_NTHRDS_DEF                  20
 
-#define ARK_MAX_TASK_OPS                40
-#define ARK_MIN_NASYNCS   ARK_MAX_TASK_OPS
-#define ARK_MAX_NASYNCS                256
-#define ARK_MAX_BASYNCS               8192
-#define ARK_MIN_BASYNCS               1024
+#define ARK_MAX_TASK_OPS                        48
+#define ARK_MIN_NASYNCS           ARK_MAX_TASK_OPS
+#define ARK_MAX_NASYNCS                        512
+#define ARK_MAX_BASYNCS                       8192
+#define ARK_MIN_BASYNCS                       1024
 
-#define ARK_MIN_BT                       1
-#define ARK_MIN_VB                       1
-#define ARK_MIN_AIOL                    10
+#define ARK_MIN_BT    1
+#define ARK_MIN_VB    1
+#define ARK_MIN_AIOL 10
 
 #define PT_OFF  0
 #define PT_IDLE 1
@@ -116,9 +115,9 @@ typedef struct
 
 #define HTC_GET(_htc, _bt, _sz)    memcpy(_bt,    _htc.p, _sz)
 #define HTC_PUT(_htc, _bt, _sz)    memcpy(_htc.p, _bt,    _sz)
-#define HTC_HIT(_ark, _pos, _blks) (_ark->htc_blks && _ark->htc[_pos].p && _blks<=_ark->htc_blks)
-#define HTC_INUSE(_ark, _htc)      (_ark->htc_blks && _htc.p)
-#define HTC_AVAIL(_ark, _blks)     (_ark->htc_blks && _blks <= _ark->htc_blks)
+#define HTC_HIT(_scb, _pos, _blks) (_scb->htc_blks && _scb->htc[_pos].p && _blks<=_scb->htc_blks)
+#define HTC_INUSE(_scb, _htc)      (_scb->htc_blks && _htc.p)
+#define HTC_AVAIL(_scb, _blks)     (_scb->htc_blks && _blks <= _scb->htc_blks)
 
 #define HTC_NEW(_htc, _bt, _sz)                 \
   do                                            \
@@ -151,7 +150,7 @@ typedef struct
   {                                                                            \
     uint32_t _ii;                                                              \
     uint8_t *_cc=(uint8_t*)_p;                                                 \
-    if (_s) {printf("%s", _s);}                                                \
+    printf("%s", _s);                                                \
     for (_ii=0; _ii<(uint32_t)((_l>64)?64:_l); _ii++){printf("%02x",_cc[_ii]);}\
     printf("\n");                                                              \
   } while (0)
@@ -220,6 +219,8 @@ typedef struct ark_stats
 
 #define ARK_P_VERSION_1       1
 #define ARK_P_VERSION_2       2
+#define ARK_P_VERSION_3       3
+#define ARK_P_VERSION_4       4
 
 #define ARK_PERSIST_CONFIG    1
 #define ARK_PERSIST_END       2
@@ -238,80 +239,73 @@ typedef struct p_cntr
   uint64_t p_cntr_size;
   uint64_t p_cntr_cfg_offset;
   uint64_t p_cntr_cfg_size;
+  uint64_t p_cntr_st_offset;
+  uint64_t p_cntr_st_size;
   uint64_t p_cntr_ht_offset;
   uint64_t p_cntr_ht_size;
   uint64_t p_cntr_bl_offset;
   uint64_t p_cntr_bl_size;
-  uint64_t p_cntr_bliv_offset;
-  uint64_t p_cntr_bliv_size;
   char     p_cntr_data[];
 } p_cntr_t;
 
 /* persistent store data, do not modify */
 typedef struct p_ark
 {
-  uint64_t flags;
-  uint64_t pblocks;
-  uint64_t size;
-  uint64_t bsize;
-  uint64_t bcount;
-  uint64_t blkbits;
-  uint64_t grow;
-  uint64_t hcount;
-  uint64_t vlimit;
-  uint64_t blkused;
-  ark_stats_t  pstats;
-  int      nasyncs;
-  int      basyncs;
-  int      nthrds;
-  int      ntasks;
+  uint64_t    flags;
+  uint64_t    pblocks;
+  uint64_t    max_blocks;
+  uint64_t    size;        // parm in create
+  uint64_t    hcount;      // parm in create
+  uint64_t    bsize;
+  uint64_t    blkbits;
+  uint64_t    grow;
+  uint64_t    vlimit;
+  int         nasyncs;
+  int         basyncs;
+  int         nthrds;
+  int         ntasks;
+  ark_stats_t pstats[];
 } P_ARK_t;
 
 typedef struct _ark
 {
   uint64_t flags;
   uint32_t persload;
-  uint64_t pers_cs_bytes;    // amt required for only the Control Structures
   uint64_t pers_max_blocks;  // amt required to persist a full ark
-  uint64_t size;
   uint64_t bsize;
-  uint64_t bcount;
   uint64_t blkbits;
   uint64_t grow;
-  uint64_t hcount;
   uint64_t vlimit;
   uint64_t blkused;
   uint64_t nasyncs;
   uint64_t ntasks;
 
+  uint64_t size;   // parm in create
+  uint64_t hcount; // parm in create
+  uint64_t hcount_per_thd;
+
+  void          *persist_orig;
+  p_cntr_t      *persist;
+
+  int st_type;
   int nthrds;
+  int nthrds_per_dev;
   int basyncs;
-  int npart;
   int nactive;
   int ark_exit;
   int pcmd;
-  int rthread;
   int astart;
-
-  pthread_mutex_t mainmutex;
+  int rand_thdI;
 
   struct _scb     *poolthreads;
   struct _pt      *pts;
-  struct _ea      *ea;          // in memory store space
 
-  hash_t          *ht;          // hashtable
-  htc_t           *htc;         // array of ptrs to hash cache elements
-  void            *htc_orig;    // base addr of malloc before align
-  uint32_t         htc_blks;    // blocks per htc element
-  uint32_t         htc_max;     // max total blocks allowed for htc
-
-  BL              *bl;          // block lists
-  BL              *blu;         // block lists waiting for unmap
+  char             devs[32][1024];
+  int              devN;
 
   uint32_t         min_bt;      // min size of inb/oub
 
   double           ns_per_tick;
-  ark_stats_t      pers_stats;
 } _ARK;
 
 #define _ARC _ARK
@@ -321,25 +315,34 @@ typedef struct _scb
   pthread_mutex_t  lock;
   pthread_t        pooltid;
 
+  struct _ea      *ea;      // in memory store space
+  hash_t          *ht;      // hashtable
+  BL              *bl;      // block lists
+  uint64_t         size;
+  uint64_t         bcount;
+  uint64_t         hcount;
+  uint64_t         offset;
+
   struct _rcb     *rcbs;    // request cbs
   struct _tcb     *tcbs;    // task cbs
   struct _iocb    *iocbs;   // io cbs
-  struct _tcb     *utcbs;   // unmap tcbs
-  struct _iocb    *ucbs;    // unmap iocbs
 
   struct _tags    *rtags;   // request tags
   struct _tags    *ttags;   // task/io tags
-  struct _tags    *utags;   // unmap tags
 
   queue_t         *reqQ;
   queue_t         *taskQ;
   queue_t         *scheduleQ;
   queue_t         *harvestQ;
   queue_t         *cmpQ;
-  queue_t         *uscheduleQ;
-  queue_t         *uharvestQ;
 
-  ticks            utime;        // time since last unmaps processes
+  uint32_t         htc_blks;    // blocks per htc element
+  uint64_t         htc_max;     // max total blocks allowed for htc
+  htc_t           *htc;         // array of ptrs to hash cache elements
+  void            *htc_orig;    // base addr of malloc before align
+
+  uint64_t         rand_htI;
+  int              rand_btI;
 
   /* perf stats */
   uint32_t         issT;
@@ -349,20 +352,15 @@ typedef struct _scb
   uint64_t         get_latT;
   uint64_t         exi_latT;
   uint64_t         del_latT;
-  uint64_t         um_latT;
   uint64_t         set_opsT;
   uint64_t         get_opsT;
   uint64_t         exi_opsT;
   uint64_t         del_opsT;
-  uint64_t         um_opsT;
   uint64_t         htc_hits;    // ht cache hits
   uint64_t         htc_disc;    // ht cache discards
   uint32_t         htcN;        // current allocated ht cache elements
 
-  struct _ea      *ea;          // in memory store space
-
   ticks            perflogtime;  // time since last perf log
-  int32_t          rlast;
   int32_t          poolstate;
   ark_stats_t      poolstats;
 } scb_t;
@@ -389,48 +387,66 @@ typedef struct _pt
 #define A_COMPLETE 2
 #define A_FINAL    3
 
+typedef struct
+{
+    uint64_t len;
+    uint8_t  p[];
+} vbe_t;
 
-// operation 
+#define BMP_VBE(_vbe) ((vbe_t*)((_vbe)->p + (_vbe)->len))
+
+typedef struct _ari
+{
+  _ARK   *ark;
+  int64_t btI;
+  int64_t htI;
+  int32_t thdI;
+  int32_t getN;
+  int32_t cnt;
+  int32_t full;
+  vbe_t  *vbep;
+} _ARI;
+
 typedef struct _rcb
 {
   _ARK       *ark;
+  _ARI       *ari;
   uint64_t    klen;
   void       *key;
   uint64_t    vlen;
   void       *val;
   uint64_t    voff;
 
-  uint64_t    pos;
-  uint64_t    hash;
+  uint64_t    posI;
+
+  uint64_t    htI;
+  uint64_t    btI;
+  int32_t     thdI;
+  uint64_t    bt_cnt;
+  int32_t     getN;
+  int32_t     full;
+  vbe_t      *vbep;
+  uint8_t    *end;
+  uint64_t    cnt;
 
   int64_t     res;
   uint64_t    dt;
+  uint64_t    stime;
   int32_t     rc;
 
-  uint64_t    rnum;
   int32_t     rtag;
   int32_t     ttag;
   int32_t     sthrd;
   int32_t     cmd;
   int32_t     stat;
-  uint64_t    stime;
+  int32_t     state;
 
-  void        (*cb)(int errcode, uint64_t dt,int64_t res);
+  void (*cb)(int errcode, uint64_t dt,int64_t res);
+
   pthread_cond_t  acond;
   pthread_mutex_t alock;
 } rcb_t;
 
-typedef struct _ari
-{
-  _ARK     *ark;
-  int64_t  hpos;
-  int64_t  key;
-  int32_t  ithread;
-  uint64_t btsize;
-  BT      *bt;
-  BT      *bt_orig;
-  uint8_t *pos;
-} _ARI;
 
 #define ARK_CMD_INIT         1
 #define ARK_CMD_DONE         2
@@ -450,9 +466,12 @@ typedef struct _ari
 #define ARK_EXIST_START      16
 #define ARK_EXIST_FINISH     17
 #define ARK_RAND_START       18
-#define ARK_FIRST_START      19
-#define ARK_NEXT_START       20
-#define ARK_UNMAP_PROCESS    21
+#define ARK_RAND_FINISH      19
+#define ARK_FIRST_START      20
+#define ARK_FIRST_FINISH     21
+#define ARK_NEXT_START       22
+#define ARK_NEXT_FINISH      23
+#define ARK_UNMAP_PROCESS    24
 
 // operation 
 typedef struct _tcb
@@ -515,23 +534,15 @@ typedef struct _iocb
 int64_t ark_take_pool(_ARK *_arkp, int id, uint64_t n);
 void    ark_drop_pool(_ARK *_arkp, int id, uint64_t blk);
 
-rcb_t* ark_set_async_tag   (_ARK *ark, uint64_t klen, void *key, uint64_t vlen, void *val);
-rcb_t* ark_get_async_tag   (_ARK *ark, uint64_t klen, void *key, uint64_t vbuflen,void *vbuf,uint64_t voff);
-rcb_t* ark_del_async_tag   (_ARK *ark, uint64_t klen, void *key);
-rcb_t* ark_exists_async_tag(_ARK *ark, uint64_t klen, void *key);
-rcb_t* ark_rand_async_tag  (_ARK *ark, uint64_t klen, void *key, int32_t ptid);
-rcb_t* ark_first_async_tag (_ARK *ark, uint64_t klen, void *key, _ARI *_arip, int32_t ptid);
-rcb_t* ark_next_async_tag  (_ARK *ark, uint64_t klen, void *key, _ARI *_arip, int32_t ptid);
-
 void *pool_function(void *arg);
 
 int ark_enq_cmd(int cmd, _ARK *_arkp,
                 uint64_t klen,    void *key,
                 uint64_t vbuflen, void *vbuf, uint64_t voff,
                 void (*cb)(int errcode, uint64_t dt, int64_t res),
-                uint64_t dt, int32_t pthr, int *ptag, rcb_t **rcb);
+                uint64_t dt, int32_t pthr, int *p, rcb_t **rcb);
 
-int ark_wait_tag(_ARK *_arkp, rcb_t *rcbp, int *errcode, int64_t *res);
+int ark_wait_cmd(_ARK *_arkp, rcb_t *rcbp, int *errcode, int64_t *res);
 
 void ark_set_finish     (_ARK *_arkp, int tid, tcb_t *tcbp);
 void ark_set_write      (_ARK *_arkp, int tid, tcb_t *tcbp);

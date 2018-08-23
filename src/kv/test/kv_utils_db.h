@@ -95,6 +95,13 @@ void* kv_db_find(kv_t *db, uint32_t num_keys, void *key, uint32_t klen);
 /**
  *******************************************************************************
  * \brief
+ *   lookup key and delete value if found, else return 0
+ ******************************************************************************/
+int kv_db_delete(kv_t *db, uint32_t num_keys, void *key, uint32_t klen);
+
+/**
+ *******************************************************************************
+ * \brief
  *   print an array of bytes in hex, with newline=1, or without=0
  ******************************************************************************/
 void disp(void *p, uint32_t len, uint32_t newline);

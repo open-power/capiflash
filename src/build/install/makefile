@@ -181,6 +181,7 @@ ifneq ($(TARGET_PLATFORM),x86_64)
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/cxl_afu_status ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/flashgt_temp ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/flashgt_vpd_access ${BIN_DIR}
+	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blk_eras ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlfd ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/cxlflashutil ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${PGMDIR}/provtool ${BIN_DIR}
@@ -208,7 +209,6 @@ endif
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockr0sio ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blocklistio ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blockplistio ${BIN_DIR}
-	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/blk_eras ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_sync ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_async ${BIN_DIR}
 	${INSTALL} ${STRIP_FLAG} ${TESTDIR}/run_kv_persist ${BIN_DIR}
@@ -281,6 +281,7 @@ ifeq ($(UNAME),AIX)
 	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_async.c ${EXAMPLES_DIR}
 	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_sync.c ${EXAMPLES_DIR}
 	${INSTALL} ${ROOTPATH}/src/kv/bin/run_kv_persist.c ${EXAMPLES_DIR}
+	${INSTALL} ${ROOTPATH}/src/kv/bin/kv_fileload.c ${EXAMPLES_DIR}
 else
 ifneq (yes,${RPMBUILD})
 	${INSTALL} -m 644 ${ROOTPATH}/src/block/bin/blockio.c ${EXAMPLES_DIR}
@@ -289,6 +290,7 @@ ifneq (yes,${RPMBUILD})
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_async.c ${EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_sync.c ${EXAMPLES_DIR}
 	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/run_kv_persist.c ${EXAMPLES_DIR}
+	${INSTALL} -m 644 ${ROOTPATH}/src/kv/bin/kv_fileload.c ${EXAMPLES_DIR}
 endif
 	@#SystemD Daemons
 	${INSTALL} -m 644 ${RESOURCEDIR}/cxlflash.service ${SYSTEMD_DIR}

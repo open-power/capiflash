@@ -93,6 +93,8 @@ TEST(FVT_KV_GOOD_PATH, ASYNC_CB_BIG_BLOCKS)
 {
     uint32_t secs = 5;
 
+    TESTCASE_SKIP_IF_FILE;
+
     kv_async_init_ctxt          (ASYNC_SINGLE_CONTEXT, secs);
     kv_async_init_job_BIG_BLOCKS(ASYNC_SINGLE_CONTEXT);
     kv_async_run_jobs();
@@ -105,6 +107,8 @@ TEST(FVT_KV_GOOD_PATH, ASYNC_CB_BIG_BLOCKS)
 TEST(FVT_KV_GOOD_PATH, ASYNC_CB_BIG_BLOCKS_STARVE)
 {
     uint32_t secs = 5;
+
+    TESTCASE_SKIP_IF_FILE;
 
     kv_async_init_ctxt_starve   (ASYNC_SINGLE_CONTEXT, 20, 256, secs);
     kv_async_init_job_BIG_BLOCKS(ASYNC_SINGLE_CONTEXT);
@@ -131,6 +135,8 @@ TEST(FVT_KV_GOOD_PATH, ASYNC_CB_STRESS_LOW)
 TEST(FVT_KV_GOOD_PATH, ASYNC_CB_STRESS_HIGH)
 {
     uint32_t secs = 5;
+
+    TESTCASE_SKIP_IF_FILE;
 
     kv_async_init_ctxt           (ASYNC_SINGLE_CONTEXT, secs);
     kv_async_init_job_high_stress(ASYNC_SINGLE_CONTEXT);

@@ -35,7 +35,7 @@ VPATH   += $(ROOTPATH)/src/kv
 
 BTESTS   = _tst_ark _tst_persist test_perf \
            res_pers run_kv_async run_kv_sync run_kv_async_multi \
-           run_kv_benchmark run_kv_persist kv_perf
+           run_kv_benchmark run_kv_persist kv_perf kv_fileload
 
 _tst_ark_OFILES     = tst_ark.o
 _tst_persist_OFILES = tst_persist.o

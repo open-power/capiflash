@@ -60,8 +60,8 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         rc = cblk_init(NULL,0);
         if (rc)
         {
-            KV_TRC_FFDC(pAT, "cblk_init failed path %s bsize %"PRIu64" "
-                             "size %"PRIu64" bcount %"PRIu64", errno = %d",
+            KV_TRC_FFDC(pAT, "cblk_init failed path %s bsize %ld "
+                             "size %ld bcount %ld, errno = %d",
                              path, bsize, *size, *bcount, errno);
             goto error_exit;
         }
@@ -70,8 +70,8 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
     ea = am_malloc(sizeof(EA));
     if (NULL == ea)
     {
-        KV_TRC_FFDC(pAT, "Out of memory path %s bsize %"PRIu64" size %"PRIu64" "
-                         "bcount %"PRIu64", errno = %d",
+        KV_TRC_FFDC(pAT, "Out of memory path %s bsize %ld size %ld "
+                         "bcount %ld, errno = %d",
                          path, bsize, *size, *bcount, errno);
         goto error_exit;
     }
@@ -84,7 +84,7 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
     // We need to check the path parameter to see if
     // we are going to use memory or a file/capi
     // device (to be determined by the block layer)
-    if ( (NULL == path) || (strlen(path) == 0) )
+    if (!path || strlen(path)==0)
     {
         KV_TRC(pAT, "EA_STORE_TYPE_MEMORY");
         // Using memory for store
@@ -94,8 +94,8 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         if (NULL == store)
         {
             errno = ENOMEM;
-            KV_TRC_FFDC(pAT, "Out of memory for store path %s bsize %"PRIu64" "
-                             "size %"PRIu64" bcount %"PRIu64", errno = %d",
+            KV_TRC_FFDC(pAT, "Out of memory for store path %s bsize %ld "
+                             "size %ld bcount %ld, errno = %d",
                              path, bsize, *size, *bcount, errno);
             goto error_exit;
         }
@@ -104,9 +104,6 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         ea->st_memory = store;
         if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}
         else                                 goto error_exit;
-#ifdef MEM_UNMAP
-        ea->unmap=1;
-#endif
     }
     else
     {
@@ -123,7 +120,7 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         // we keyed off the size and if it was 0, then we
         // asked for the LUN to be physical.  Now, the user
         // can specify with a flag.
-        if ( vlun == 0 )
+        if (!vlun)
         {
             KV_TRC(pAT, "cblk_cg_open PHYSICAL LUN: %s", path);
             chkid = cblk_cg_open(path, basyncs, O_RDWR, 1, 0,
@@ -143,14 +140,16 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
                 // An error was encountered, close the chunk
                 cblk_cg_close(chkid, CBLK_GROUP_RAID0);
                 chkid = NULL_CHUNK_ID;
-                KV_TRC_FFDC(pAT, "cblk_cg_get_size failed path %s bsize %"PRIu64" "
-                                 "size %"PRIu64" bcount %"PRIu64", errno = %d",
+                KV_TRC_FFDC(pAT, "cblk_cg_get_size failed path %s bsize %ld "
+                                 "size %ld bcount %ld, errno = %d",
                                  path, bsize, *size, *bcount, errno);
                 goto error_exit;
             }
 
             // Set the size to be returned
-            *size = *bcount * bsize;
+            *size      = *bcount * bsize;
+            ea->size   = *size;
+            ea->bcount = *bcount;
         }
         else
         {
@@ -168,15 +167,17 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
 
             // A specific size was passed in so we try to set the
             // size of the chunk.
-            *bcount = *size / bsize;
+            *bcount    = *size / bsize;
+            ea->size   = *size;
+            ea->bcount = *bcount;
             rc = cblk_cg_set_size(chkid, (size_t)*bcount, CBLK_GROUP_RAID0);
             if ( rc != 0 )
             {
                 // An error was encountered, close the chunk
                 cblk_cg_close(chkid, CBLK_GROUP_RAID0);
                 chkid = NULL_CHUNK_ID;
-                KV_TRC_FFDC(pAT, "cblk_cg_set_size failed path %s bsize %"PRIu64" "
-                                 "size %"PRIu64" bcount %"PRIu64", errno = %d",
+                KV_TRC_FFDC(pAT, "cblk_cg_set_size failed path %s bsize %ld "
+                                 "size %ld bcount %ld, errno = %d",
                                  path, bsize, *size, *bcount, errno);
                 goto error_exit;
             }
@@ -194,25 +195,22 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
             goto error_exit;
         }
 
-        memset(ea->st_device, 0, plen);
+        memset (ea->st_device, 0, plen);
         strncpy(ea->st_device, path, plen);
+
+        chunk_attrs_t attrs;
+
+        bzero(&attrs, sizeof(attrs));
+        if ((rc=cblk_get_attrs(ea->st_flash, &attrs, CBLK_GROUP_RAID0)) == 0)
+        {
+            if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}
+            else                                 goto error_exit;
+        }
     }
 
-    chunk_attrs_t attrs;
+    KV_TRC_PERF2(pAT, "NEW     ea:%p size:%ld bcount:%ld errno:%d",
+                    ea, ea->size, ea->bcount,errno);
 
-    bzero(&attrs, sizeof(attrs));
-    if ((rc=cblk_get_attrs(ea->st_flash, &attrs, CBLK_GROUP_RAID0)) == 0)
-    {
-        if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}
-        else                                 goto error_exit;
-        ea->unmap = attrs.flags1 & CFLSH_ATTR_UNMAP;
-    }
-
-    /* disable unmap */
-    ea->unmap=0;
-
-    KV_TRC(pAT, "path(%s) id:%d bsize:%ld size:%ld bcount:%ld unmap:%ld",
-           path, ea->st_flash, bsize, *size, *bcount, ea->unmap);
     goto done;
 
 error_exit:
@@ -264,7 +262,7 @@ int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
     if (rc == 0)
     {
       ea->bcount = bcount;
-      ea->size = size;
+      ea->size   = size;
     }
     else
     {
@@ -332,7 +330,7 @@ int ea_write(EA *ea, uint64_t lba, void *src)
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, int nthrs)
+int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len)
 {
   int64_t  i       = 0;
   int64_t  j       = 0;
@@ -352,18 +350,14 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
   if (op == ARK_EA_READ) {ot="IO_RD";}
   else                   {ot="IO_WR";}
 
-  if ( ea->st_type == EA_STORE_TYPE_MEMORY)
+  if (ea->st_type == EA_STORE_TYPE_MEMORY)
   {
     // Loop through the block list to issue the IO
-    for(i = 0; i < len; i++)
+    for (i=0; i<len; i++)
     {
-
-      p_addr = ((uint8_t*)addr) + (i * ea->bsize);
-
-      // For in-memory Store, we issue the memcpy
-      // and wait for the return, no async here.
-      // Read out the value from the in-memor block
-      m_addr = ea->st_memory + (blist[i].blkno * ea->bsize);
+      p_addr  = addr;
+      p_addr += i * ea->bsize;
+      m_addr  = ea->st_memory + (blist[i].blkno * ea->bsize);
 
       if (op == ARK_EA_READ) {m_rc = memcpy(p_addr, m_addr, ea->bsize);}
       else                   {m_rc = memcpy(m_addr, p_addr, ea->bsize);}
@@ -382,16 +376,15 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
   {
     // divide up the cmd slots among
     // the threads and go 3 less
-    max_ops = (ARK_MAX_BASYNCS / nthrs) - 3;
+    max_ops = ARK_MAX_BASYNCS - 3;
 
     // Loop through the block list to issue the IO
-    while ((comps < len) && (rc == 0))
+    while (comps<len && rc==0)
     {
-      for(i = comps, num = 0; 
-             (i < len) && (num < max_ops); 
-              i++, num++)
+      for(i=comps, num=0; i<len && num<max_ops; i++, num++)
       {
-        p_addr = ((uint8_t*)addr) + (i * ea->bsize);
+        p_addr  = addr;
+        p_addr += i * ea->bsize;
 
         // Call out to the block layer and retrive a block
         // Do an async op for a single block and tell the block
@@ -489,7 +482,7 @@ int ea_async_io(EA *ea, int op, void *addr, ark_io_list_t *blist, int64_t len, i
  *******************************************************************************
  * \brief
  ******************************************************************************/
-int ea_delete(EA *ea)
+int ea_free(EA *ea)
 {
     int rc = 0;
 

@@ -475,7 +475,7 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_fork_single)
     uint32_t klen   = 8;
     uint32_t vlen   = 8;
     int32_t  LEN    = 500;
-    uint32_t secs   = 10;
+    uint32_t secs   = 7;
     pid_t    pid    =-1;
     int      cdone  = 0;
 
@@ -491,30 +491,31 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_fork_single)
     fvt_kv_utils_load (ark, db_f, LEN);
     fvt_kv_utils_query(ark, db_f, fvlen, LEN);
 
+    printf("fork child\n");
+
     pid = ark_fork(ark);
     ASSERT_TRUE(-1 != pid);
 
     if (0 == pid)
     {
-        uint32_t start,cur;
+        uint32_t start = time(0);
         printf("child start\n");
-        start = time(0);
         /* act like we are writing the ark contents to a backup */
         do
         {
+           // printf("child loop %ld < secs:%d\n", time(0)-start,secs);
             /* validate that the values in the forked ark do not change */
             fvt_kv_utils_query(ark, db_f, fvlen, LEN);
-            cur = time(0);
         }
-        while (cur-start < secs);
+        while (time(0)-start < secs);
         cdone = 1;
         printf("child done\n");
         _exit(0);
     }
 
-    EXPECT_EQ(0, ark_fork_done(ark));
+    printf("parent continue, child=%d\n", pid);
 
-    printf("parent start, child=%d\n", pid);
+    EXPECT_EQ(0, ark_fork_done(ark));
 
     /* replace the values for secs while child is doing backup */
     fvt_kv_utils_REP_LOOP(ark,
@@ -523,7 +524,7 @@ TEST(FVT_KV_GOOD_PATH, SCENARIO_fork_single)
                           klen,
                           vlen,
                           LEN,
-                          secs);
+                          secs-1);
 
     printf("parent wait\n");
 

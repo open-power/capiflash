@@ -40,6 +40,14 @@ typedef uint64_t ARK;
 #define ARC ARK
 typedef uint64_t ARI;
 
+typedef struct
+{
+    uint64_t len;
+    uint8_t  p[];
+} keye_t;
+
+#define BMP_KEYE(_keye) ((keye_t*)((_keye)->p + (_keye)->len))
+
 // Bits that can be set in the flags parameter of ark_create
 // and ark_create_verbose
 
@@ -317,7 +325,8 @@ int ark_exists(ARK *ark, uint64_t klen, void *key, int64_t *res);
  * will return NULL with errno set to one of the following:
  *
  * @retval EINVAL Invalid value for one of the parameters
- * @retval ENOSPC Not enough space left in key/value store
+ * @retval EAGAIN Retry this operation, the queue was full
+ * @retval ENOENT There are no keys
  */
 ARI *ark_first(ARK *ark, uint64_t kbuflen, int64_t *klen, void *kbuf);
 
@@ -346,9 +355,50 @@ ARI *ark_first(ARK *ark, uint64_t kbuflen, int64_t *klen, void *kbuf);
  * a return a non-zero value of one of the following errors:
  *
  * @retval EINVAL Invalid value for one of the parameters
- * @retval ENOSPC Not enough space left in key/value store
+ * @retval EAGAIN Retry this operation, the queue was full
+ * @retval ENOENT There are no more keys
  */
 int ark_next(ARI *iter, uint64_t kbuflen, int64_t *klen, void *kbuf);
+
+/**
+ * @brief Return the next N keys in the store
+ *
+ * The ark_nextN API will return the next N keys found in the store based
+ * on the iterator handle, iter, in the buffer, kbuf, and the size
+ * of the key in klen, as long as the key fits in kbuf.
+ *
+ * Upon successful completion, a handle will be returned to the caller
+ * to be used to retrieve the next N keys in the store by calling the
+ * ark_nextN API.  If the end of the store is reached, a NULL, value
+ * is returned and errno set to ENOENT. Because of the dynamic nature
+ * of the store, some recently written keys may not be returned.
+ *
+ * @param iter Iterator handle where to begin search in store
+ * @param kbuflen Length of the kbuf parameter
+ * @param kbuf Buffer to hold the key
+ * @param num_keys Number of keys returned in kbuf
+ *
+ * @return Upon successful completion, the ark_nextN API will return a
+ * handle to be used to iterate through the store on subsequent calls
+ * using the ark_nextN API.  If unsuccessful, the ark_nextN API will
+ * a return a non-zero value of one of the following errors:
+ *
+ * Iterate through kbuf with
+ *   char   *key;
+ *   int64_t klen;
+ *   keye_t *keye=(keye_t*)kbuf;
+ *   for (i=0; i<*num_keys; i++)
+ *   {
+ *       key  = keye->p;
+ *       klen = keye->len;
+ *       keye = BMP_KEYE(keye);
+ *   }
+ *
+ * @retval EINVAL Invalid value for one of the parameters
+ * @retval EAGAIN Retry this operation, the queue was full
+ * @retval ENOENT There are no more keys
+ */
+int ark_nextN(ARI *iter, uint64_t kbuflen, void *kbuf, int64_t *num_keys);
 
 /**
  * @brief Return the number of bytes allocated in the store

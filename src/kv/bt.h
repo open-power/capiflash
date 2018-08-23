@@ -25,12 +25,12 @@
 #ifndef __BT_H__
 #define __BT_H__
 
-typedef struct _bt
+typedef struct
 {
-  uint64_t len;     // used bytes
-  uint64_t cnt;     // #k/v
-  uint64_t max;     // largest inline value size
-  uint64_t def;     // vdf
+  uint64_t len;  // used bytes
+  uint32_t cnt;  // #k/v
+  uint16_t max;  // largest inline value size
+  uint8_t  def;  // vdf
   uint8_t  data[];
 } BT;
 

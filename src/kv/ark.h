@@ -77,6 +77,7 @@
 #define ARK_UQ_SIZE 255
 
 #define ARK_VERBOSE_SIZE_DEF         (5*1024*1024)
+#define ARK_VERBOSE_PLUN_SIZE_DEF (1024*1024*1024)
 #define ARK_VERBOSE_BSIZE_DEF                 4096
 #define ARK_VERBOSE_HASH_DEF           (1024*1024)
 #define ARK_VERBOSE_HTC_MAX            (1024*1024)
@@ -289,7 +290,6 @@ typedef struct _ark
 
   int st_type;
   int nthrds;
-  int nthrds_per_dev;
   int basyncs;
   int nactive;
   int ark_exit;

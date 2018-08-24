@@ -42,15 +42,15 @@ int bl_init_chain_link(BL *bl)
 
     if (!bl)
     {
-        KV_TRC_FFDC(pAT, "NULL bl");
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p NULL",bl);
         return rc;
     }
 
     availN = bl->n - bl->top -1;
     if (availN <= 0)
     {
-        KV_TRC_IO(pAT, "no available blocks to chain n:%ld top:%ld",
-                bl->n, bl->top);
+        KV_TRC_IO(pAT, "ERROR   bl:%p no avail blks to chain n:%ld top:%ld",
+                        bl, bl->n, bl->top);
         return rc;
     }
 
@@ -64,7 +64,7 @@ int bl_init_chain_link(BL *bl)
     {
         if (iv_set(bl->iv, i, i+1) < 0)
         {
-            KV_TRC_FFDC(pAT, "invalid index:%ld", i);
+            KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index:%ld", bl, i);
             goto exception;
         }
     }
@@ -95,14 +95,14 @@ BL *bl_new(int64_t n, int w)
     if (!bl)
     {
         errno = ENOMEM;
-        KV_TRC_FFDC(pAT, "n %ld w %d, rc = %d", n, w, errno);
+        KV_TRC_FFDC(pAT, "ERROR   n %ld w %d, rc = %d", n, w, errno);
         goto exception;
     }
 
     bl->iv = iv_new(n,w);
     if (NULL == bl->iv)
     {
-        KV_TRC_FFDC(pAT, "n %ld w %d, iv_new() failed", n, w);
+        KV_TRC_FFDC(pAT, "ERROR   n %ld w %d, iv_new() failed", n, w);
         am_free(bl);
         bl = NULL;
         goto exception;
@@ -136,12 +136,13 @@ int bl_reserve(BL *bl, uint64_t resN)
 
     if (!bl)
     {
-        KV_TRC_FFDC(pAT, "NULL bl");
+        KV_TRC_FFDC(pAT, "ERROR   NULL bl");
         goto exception;
     }
     if (resN >= bl->n)
     {
-        KV_TRC_FFDC(pAT, "not enough blocks available bl:%p resN:%ld", bl,resN);
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p not enough blks avail resN:%ld",
+                    bl,resN);
         goto exception;
     }
 
@@ -149,7 +150,8 @@ int bl_reserve(BL *bl, uint64_t resN)
     {
         if (iv_set(bl->iv,i,i) < 0)
         {
-            KV_TRC_FFDC(pAT, "invalid index bl:%p resN:%ld i:%d", bl, resN, i);
+            KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index resN:%ld i:%d",
+                        bl, resN, i);
             goto exception;
         }
     }
@@ -188,17 +190,19 @@ BL *bl_resize(BL *bl, int64_t n, int64_t w)
 
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl");
       return NULL;
   }
   if (w != bl->w)
   {
-      KV_TRC_FFDC(pAT, "blkbits do not match bl:%p bl->w:%ld w:%ld",bl,bl->w,w);
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p blkbits do not match bl->w:%ld w:%ld",
+                  bl,bl->w,w);
       return NULL;
   }
   if (n - bl->n == 0)
   {
-      KV_TRC_FFDC(pAT, "No size difference bl %p n %ld w %ld", bl, n, w);
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p No size difference n:%ld w:%ld",
+                  bl, n, w);
       return bl;
   }
 
@@ -207,9 +211,9 @@ BL *bl_resize(BL *bl, int64_t n, int64_t w)
   bl->iv = iv_resize(bl->iv, n, w);
   if (bl->iv == NULL)
   {
-    KV_TRC_FFDC(pAT, "bl %p n %ld w %ld", bl, n, w);
-    bl = NULL;
-    goto exception;
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p n:%ld w:%ld", bl, n, w);
+      bl = NULL;
+      goto exception;
   }
   bl->n = n;
 
@@ -229,7 +233,7 @@ int64_t bl_left(BL *bl)
 {
     if (!bl)
     {
-        KV_TRC_FFDC(pAT, "NULL bl");
+        KV_TRC_FFDC(pAT, "ERROR   NULL bl");
         return -1;
     }
     return bl->count;
@@ -246,12 +250,12 @@ int64_t bl_end(BL *bl, int64_t b)
 
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl");
       return -1;
   }
   if (b <= 0 || b >= bl->n)
   {
-      KV_TRC_FFDC(pAT, "bad blk:%ld n:%ld", b,bl->n);
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p bad blk:%ld n:%ld", bl,b,bl->n);
       return -1;
   }
 
@@ -265,7 +269,7 @@ int64_t bl_end(BL *bl, int64_t b)
   pthread_rwlock_unlock(&(bl->iv_rwlock));
   if (r == -1)
   {
-      KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld i:%ld", bl, b, i);
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index b:%ld i:%ld", bl, b, i);
   }
   return i;
 }
@@ -282,7 +286,7 @@ void bl_check_take(BL *bl, int64_t n)
 
     if (!bl)
     {
-        KV_TRC_FFDC(pAT, "NULL bl");
+        KV_TRC_FFDC(pAT, "ERROR   NULL bl");
         return;
     }
 
@@ -315,7 +319,7 @@ int64_t bl_take(BL *bl, int64_t n)
 
     if (!bl)
     {
-        KV_TRC_FFDC(pAT, "NULL bl");
+        KV_TRC_FFDC(pAT, "ERROR   NULL bl");
         return -1;
     }
 
@@ -323,13 +327,14 @@ int64_t bl_take(BL *bl, int64_t n)
 
     if (n > bl->count)
     {
-        KV_TRC_FFDC(pAT, "avail:%ld < needed:%ld bl:%p total:%ld top:%ld",
-                    n, bl->count, bl, bl->n, bl->top);
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p avail:%ld < need:%ld total:%ld "
+                         "top:%ld count:%ld",
+                         bl, bl->count, n, bl->n, bl->top, bl->count);
         return -1;
     }
     if (n == 0)
     {
-        KV_TRC_FFDC(pAT, "Zero block request bl %p n %ld", bl, n);
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p Zero block request n:%ld", bl, n);
         return 0;
     }
 
@@ -342,7 +347,8 @@ int64_t bl_take(BL *bl, int64_t n)
     {
       if ((tl=iv_get(bl->iv,tl)) < 0)
       {
-          KV_TRC_FFDC(pAT, "invalid index bl:%p n:%ld tl:%ld", bl, n, tl);
+          KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index n:%ld tl:%ld",
+                      bl, n, tl);
           hd = -1;
           goto exception;
       }
@@ -350,13 +356,15 @@ int64_t bl_take(BL *bl, int64_t n)
     }
     if ((bl->head=iv_get(bl->iv,tl)) < 0)
     {
-        KV_TRC_FFDC(pAT, "invalid index bl:%p n:%ld tl:%ld", bl, n, tl);
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index n:%ld tl:%ld",
+                    bl, n, tl);
         hd = -1;
         goto exception;
     }
     if (iv_set(bl->iv,tl,0) < 0)
     {
-        KV_TRC_FFDC(pAT, "invalid index bl:%p n:%ld tl:%ld", bl, n, tl);
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index n:%ld tl:%ld",
+                    bl, n, tl);
         hd = -1;
         goto exception;
     }
@@ -383,7 +391,8 @@ int64_t bl_drop(BL *bl, int64_t b)
 
   if (!bl || i == -1 || n == -1)
   {
-      KV_TRC_FFDC(pAT, "invalid parm bl:%p b:%ld i:%ld n:%ld", bl, b, i, n);
+      KV_TRC_FFDC(pAT, "ERROR   bl: %pinvalid parm b:%ld i:%ld n:%ld",
+                  bl, b, i, n);
       return -1;
   }
 
@@ -394,7 +403,7 @@ int64_t bl_drop(BL *bl, int64_t b)
     if (iv_set(bl->iv,i,bl->head) < 0)
     {
         n = -1;
-        KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld i:%ld n:%ld hd:%ld",
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index b:%ld i:%ld n:%ld hd:%ld",
                     bl, b, i, n, bl->head);
         goto exception;
     }
@@ -410,7 +419,7 @@ int64_t bl_drop(BL *bl, int64_t b)
     if (iv_set(bl->iv, i, bl->hold) < 0)
     {
         n = -1;
-        KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld i:%ld n:%ld hd:%ld",
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index b:%ld i:%ld n:%ld hd:%ld",
                     bl, b, i, n, bl->hold);
         goto exception;
     }
@@ -434,7 +443,7 @@ int64_t bls_add(BL *bl, int64_t b)
 {
   if (!bl || b<=0 || b>=bl->n)
   {
-      KV_TRC_FFDC(pAT, "invalid parm bl:%p b:%ld ", bl, b);
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid parm b:%ld ", bl, b);
       return -1;
   }
 
@@ -442,7 +451,7 @@ int64_t bls_add(BL *bl, int64_t b)
 
   if (iv_set(bl->iv,b,bl->head) < 0)
   {
-      KV_TRC_FFDC(pAT, "invalid index bl:%p b:%ld hd:%ld",
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index b:%ld hd:%ld",
                   bl, b, bl->head);
       return 0;
   }
@@ -468,13 +477,13 @@ int64_t bls_rem(BL *bl)
 
     if (!bl)
     {
-        KV_TRC_FFDC(pAT, "NULL bl");
+        KV_TRC_FFDC(pAT, "ERROR   NULL bl");
         return -1;
     }
 
     if (bl->count <= 0)
     {
-        KV_TRC_FFDC(pAT, "No free blocks bl:%p bl->count %ld",
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p No free blocks count:%ld",
                     bl, bl->count);
         return -1;
     }
@@ -488,13 +497,13 @@ int64_t bls_rem(BL *bl)
 
     if ((new_hd=iv_get(bl->iv,ret)) < 0)
     {
-        KV_TRC_FFDC(pAT, "invalid index bl:%p ret:%ld", bl, ret);
+        KV_TRC_FFDC(pAT, "iERROR   bl:%p invalid index ret:%ld", bl, ret);
         ret = -1;
         goto exception;
     }
     if (iv_set(bl->iv,ret,0) < 0)
     {
-        KV_TRC_FFDC(pAT, "invalid index bl:%p ret:%ld", bl, ret);
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index ret:%ld", bl, ret);
         ret = -1;
         goto exception;
     }
@@ -518,7 +527,7 @@ void bl_hold (BL *bl)
 {
     if (!bl)
     {
-        KV_TRC_FFDC(pAT, "NULL bl");
+        KV_TRC_FFDC(pAT, "ERROR   NULL bl");
         return;
     }
     if (bl->hold == -1) bl->hold = 0;
@@ -533,7 +542,7 @@ void bl_release(BL *bl)
 {
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl");
       return;
   }
 
@@ -545,7 +554,7 @@ void bl_release(BL *bl)
 
     if (i == -1 || n == -1)
     {
-        KV_TRC_FFDC(pAT, "invalid data bl:%p i:%ld n:%ld", bl, i, n);
+        KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid data i:%ld n:%ld", bl, i, n);
         goto exception;
     }
 
@@ -553,7 +562,7 @@ void bl_release(BL *bl)
     {
       if (iv_set(bl->iv, i, bl->head) < 0)
       {
-          KV_TRC_FFDC(pAT, "invalid idx bl:%p i:%ld n:%ld", bl, i, n);
+          KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid idx i:%ld n:%ld", bl, i, n);
           goto exception;
       }
       bl->head = bl->hold;
@@ -562,7 +571,7 @@ void bl_release(BL *bl)
   }
   bl->hold = -1;
 
-  KV_TRC_DBG(pAT, "CHAIN_RELEASE bl:%p cnt:%ld hold:%ld hd:%ld tl:%ld",
+  KV_TRC_DBG(pAT, "CHN_REL bl:%p cnt:%ld hold:%ld hd:%ld tl:%ld",
              bl, bl->count, bl->hold, bl->head, bl_len(bl,bl->head));
 
 exception:
@@ -582,7 +591,7 @@ int64_t bl_len(BL *bl, int64_t b)
 
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl");
       return 0;
   }
 
@@ -595,7 +604,7 @@ int64_t bl_len(BL *bl, int64_t b)
   pthread_rwlock_unlock(&(bl->iv_rwlock));
   if (i<0)
   {
-      KV_TRC_FFDC(pAT, "invalid index:%ld", b);
+      KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid index:%ld", bl, b);
       n=0;
   }
   return n;
@@ -612,7 +621,7 @@ int64_t bl_next(BL *bl, int64_t b)
 
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl");
       return -1;
   }
 
@@ -641,7 +650,7 @@ int bl_iochain(ark_io_list_t *aiol, BL *bl, int64_t b, int64_t offset)
       aiol[i].a_tag.tag = -1;
       if ((blk=iv_get(bl->iv, blk)) < 0)
       {
-          KV_TRC_FFDC(pAT, "invalid chain index:%ld", blk);
+          KV_TRC_FFDC(pAT, "ERROR   bl:%p invalid chain index:%ld", bl, blk);
           rc = -1;
           goto exception;
       }
@@ -663,7 +672,7 @@ ark_io_list_t *bl_chain(BL *bl, int64_t b, int64_t len, int64_t offset)
 
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl");
       return NULL;
   }
 
@@ -696,7 +705,7 @@ int bl_rechain(ark_io_list_t **aiol,
 
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl:%p aiol:%p", bl, aiol);
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl:%p aiol:%p", bl, aiol);
       return -1;
   }
 
@@ -728,7 +737,7 @@ ark_io_list_t *bl_chain_blocks(BL *bl, int64_t len, int64_t offset)
 
   if (!bl)
   {
-      KV_TRC_FFDC(pAT, "NULL bl");
+      KV_TRC_FFDC(pAT, "ERROR   NULL bl");
       goto exception;
   }
 

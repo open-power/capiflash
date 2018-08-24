@@ -566,9 +566,18 @@ int ark_thd_init_res(_ARK *ark, int tid)
     }
     else
     {
-        bcount       = (bcount - ark->pers_max_blocks) / ark->nthrds;
-        scbp->bcount = bcount;
-        scbp->offset = ark->pers_max_blocks + (bcount * (tid % ark->nthrds_per_dev));
+        if (scbp->ea->st_type == EA_STORE_TYPE_MEMORY)
+        {
+            scbp->bcount = bcount;
+        }
+        else
+        {
+            // plun to file or device
+            scbp->bcount = bcount / ark->nthrds;
+            scbp->size  /= ark->nthrds;
+            scbp->offset = ark->pers_max_blocks + (scbp->bcount * tid);
+        }
+
         KV_TRC_PERF2(pAT,"PLUN dev:%s tid:%3d size:%ld bcount:%ld offset:%ld",
                dev, tid, scbp->size, scbp->bcount, scbp->offset);
     }
@@ -720,8 +729,9 @@ int ark_thd_init_res(_ARK *ark, int tid)
     scbp->scheduleQ  = queue_new(ark->ntasks);
     scbp->harvestQ   = queue_new(ark->ntasks);
 
-    KV_TRC_PERF2(pAT, "THD:%d dev(%s) size:%ld bcount:%ld hcount:%ld errno:%d",
-                    tid, dev, scbp->size, scbp->bcount, scbp->hcount, errno);
+    KV_TRC_PERF2(pAT, "THD:%d size:%ld bcount:%ld hcount:%ld avail:%ld errno:%d",
+                    tid, scbp->size, scbp->bcount, scbp->hcount,
+                    scbp->bl->n-scbp->bl->head, errno);
 
     rc=0;
 
@@ -846,6 +856,12 @@ int ark_create_verbose(char *path, ARK **arkret,
       rc = EINVAL;
       goto ark_create_ark_err;
   }
+  // running to memory as plun, force minimum size to 1g
+  if ((!path || strlen(path)==0) && !vlun && size < ARK_VERBOSE_PLUN_SIZE_DEF)
+  {
+      KV_TRC_FFDC(pAT, "INFO:   using memory in plun mode, forcing size=1g");
+      size = size<ARK_VERBOSE_PLUN_SIZE_DEF ? ARK_VERBOSE_PLUN_SIZE_DEF : size;
+  }
 
   am_sz = sizeof(_ARK);
   ark   = am_malloc(am_sz);
@@ -930,26 +946,24 @@ int ark_create_verbose(char *path, ARK **arkret,
   else
   {
       KV_TRC(pAT, "NO PERSIST LOAD FLAG");
-      ark->nthrds              = ark->devN   * divup(nthrds,ark->devN);
-      ark->size                = ark->nthrds * divup(size,ark->nthrds);
-      ark->nasyncs             = nqueue <ARK_MIN_NASYNCS?ARK_MIN_NASYNCS:nqueue;
-      ark->basyncs             = basyncs<ARK_MIN_BASYNCS?ARK_MIN_BASYNCS:basyncs;
-      ark->ntasks              = ARK_MAX_TASK_OPS;
-      ark->hcount              = ark->nthrds * divup(hcount,ark->nthrds);
-      ark->vlimit              = ARK_VERBOSE_VLIMIT_DEF;
-      ark->blkbits             = ARK_VERBOSE_BLKBITS_DEF;
-      ark->grow                = ARK_VERBOSE_GROW_DEF;
+      ark->nthrds  = ark->devN   * divup(nthrds,ark->devN);
+      ark->size    = ark->nthrds * divup(size,ark->nthrds);
+      ark->nasyncs = nqueue <ARK_MIN_NASYNCS?ARK_MIN_NASYNCS:nqueue;
+      ark->basyncs = basyncs<ARK_MIN_BASYNCS?ARK_MIN_BASYNCS:basyncs;
+      ark->ntasks  = ARK_MAX_TASK_OPS;
+      ark->hcount  = ark->nthrds * divup(hcount,ark->nthrds);
+      ark->vlimit  = ARK_VERBOSE_VLIMIT_DEF;
+      ark->blkbits = ARK_VERBOSE_BLKBITS_DEF;
+      ark->grow    = ARK_VERBOSE_GROW_DEF;
   }
 
-  ark->nthrds_per_dev = ark->nthrds / ark->devN;
   ark->hcount_per_thd = ark->hcount / ark->nthrds;
 
   // if we are persisting for the first time, calc the max size for persist data
   if (persist_store && ark->pers_max_blocks==0) {ark_persistence_calc(ark);}
 
-  KV_TRC_PERF1(pAT,"path:%s nthrds:%d:%d hcount:%ld:%ld",
-                  path, ark->nthrds, ark->nthrds_per_dev,
-                  ark->hcount, ark->hcount_per_thd);
+  KV_TRC_PERF1(pAT,"path:%s nthrds:%d hcount:%ld:%ld",
+                  path, ark->nthrds, ark->hcount, ark->hcount_per_thd);
 
   ark->min_bt = ARK_MIN_BT*ark->bsize;
 
@@ -1073,7 +1087,7 @@ int ark_delete(ARK *ark)
   if (!ark)
   {
     rc = EINVAL;
-    KV_TRC_FFDC(pAT, "Invalid ARK control block parameter: %d", rc);
+    KV_TRC_FFDC(pAT, "ERROR   Invalid ARK control block parameter: %d", rc);
     goto ark_delete_ark_err;
   }
 
@@ -1086,7 +1100,7 @@ int ark_delete(ARK *ark)
   ark_free_resources(_arkp);
 
 ark_delete_ark_err:
-  KV_TRC_FFDC(pAT, "%p",ark);
+  KV_TRC_FFDC(pAT, "ERROR   %p",ark);
   KV_TRC_CLOSE(pAT);
   return rc;
 }
@@ -1154,7 +1168,7 @@ int ark_set(ARK *ark, uint64_t klen,
       ((vlen > 0) && (val == NULL)) || (vlen>ARK_MAX_LEN) ||
       (rval == NULL))
   {
-    KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %ld "
+    KV_TRC_FFDC(pAT, "ERROR   EINVAL: ark %p klen %ld "
                      "key %p vlen %ld val %p rval %p",
                      ark, klen, key, vlen, val, rval);
     return EINVAL;
@@ -1173,7 +1187,7 @@ int ark_set(ARK *ark, uint64_t klen,
   {
       if (errcode != 0)
       {
-          KV_TRC(pAT, "SET_ERR rc:%d", errcode);
+          KV_TRC(pAT, "ERROR   rc:%d", errcode);
           rc = errcode;
       }
 
@@ -1200,7 +1214,7 @@ int ark_exists(ARK *ark, uint64_t klen, void *key, int64_t *rval)
       ((klen > 0) && (key == NULL)) ||
       (rval == NULL))
   {
-    KV_TRC_FFDC(pAT, "FFDC: rc:EINVAL ark %p, klen %ld "
+    KV_TRC_FFDC(pAT, "ERROR   EINVAL ark %p, klen %ld "
                      "key %p, rval %p", ark, klen, key, rval);
     return EINVAL;
   }
@@ -1218,7 +1232,7 @@ int ark_exists(ARK *ark, uint64_t klen, void *key, int64_t *rval)
   {
       if (errcode != 0)
       {
-          KV_TRC(pAT, "EXI_ERR rc:%d", errcode);
+          KV_TRC(pAT, "ERROR   rc:%d", errcode);
           rc = errcode;
       }
 
@@ -1249,7 +1263,7 @@ int ark_get(ARK *ark, uint64_t klen, void *key,
       ((vbuflen > 0) && (vbuf == NULL)) ||
       (rval == NULL))
   {
-    KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %ld key %p "
+    KV_TRC_FFDC(pAT, "ERROR   EINVAL: ark %p klen %ld key %p "
                      "vbuflen %ld vbuf %p rval %p",
                      _arkp, klen, key, vbuflen, vbuf, rval);
     return EINVAL;
@@ -1268,7 +1282,7 @@ int ark_get(ARK *ark, uint64_t klen, void *key,
   {
       if (errcode != 0)
       {
-          KV_TRC(pAT, "GET_ERR rc:%d", errcode);
+          KV_TRC(pAT, "ERROR   rc:%d", errcode);
           rc = errcode;
       }
 
@@ -1293,7 +1307,7 @@ int ark_del(ARK *ark, uint64_t klen, void *key, int64_t *rval)
 
   if (!_arkp || ((klen > 0) && !key) || !rval)
   {
-      KV_TRC_FFDC(pAT, "FFDC: EINVAL: ark %p klen %ld key %p rval %p",
+      KV_TRC_FFDC(pAT, "ERROR   EINVAL: ark %p klen %ld key %p rval %p",
                       _arkp, klen, key, rval);
       return EINVAL;
   }
@@ -1311,7 +1325,7 @@ int ark_del(ARK *ark, uint64_t klen, void *key, int64_t *rval)
   {
       if (errcode != 0)
       {
-          KV_TRC(pAT, "DEL_ERR rc:%d", errcode);
+          KV_TRC(pAT, "ERROR   rc:%d", errcode);
           rc = errcode;
       }
 
@@ -1337,7 +1351,7 @@ int ark_random(ARK *ark, uint64_t kbuflen, uint64_t *klen, void *kbuf)
 
   if (!_arkp || 0 >= kbuflen || !klen || !kbuf)
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL ark %p,  kbuflen %ld, klen %p, kbuf %p",
+    KV_TRC_FFDC(pAT, "ERROR   EINVAL ark %p,  kbuflen %ld, klen %p, kbuf %p",
                 _arkp, kbuflen, klen, kbuf);
     rc = EINVAL;
     goto done;
@@ -1413,7 +1427,7 @@ ARI *ark_first(ARK *ark, uint64_t kbuflen, int64_t *klen, void *kbuf)
 
   if (!_arkp || !klen || !kbuf || kbuflen == 0)
   {
-      KV_TRC_FFDC(pAT, "rc = EINVAL: ark %p kbuflen %ld klen %p kbuf %p",
+      KV_TRC_FFDC(pAT, "ERROR   EINVAL: ark %p kbuflen %ld klen %p kbuf %p",
                       _arkp, kbuflen, klen, kbuf);
       errno = EINVAL;
       goto done;
@@ -1462,7 +1476,7 @@ int ark_next(ARI *iter, uint64_t kbuflen, int64_t *klen, void *kbuf)
 
   if (!_arip || !_arip->ark || klen == 0 || !kbuf || kbuflen == 0)
   {
-      KV_TRC_FFDC(pAT, "rc = EINVAL: ari %p kbuflen %ld klen %p kbuf %p",
+      KV_TRC_FFDC(pAT, "ERROR   EINVAL: ari %p kbuflen %ld klen %p kbuf %p",
                       _arip, kbuflen, klen, kbuf);
       rc = EINVAL;
       goto done;
@@ -1550,7 +1564,8 @@ int ark_nextN(ARI *iter, uint64_t kbuflen, void *kbuf, int64_t *num_keys)
 
     if (!iter || !_arip->ark || !num_keys || !kbuf || !kbuflen)
     {
-        KV_TRC_FFDC(pAT, "rc = EINVAL: ari:%p ark:%p kbuflen:%ld num_keys:%p kbuf:%p",
+        KV_TRC_FFDC(pAT, "ERROR   EINVAL: ari:%p ark:%p kbuflen:%ld "
+                         "num_keys:%p kbuf:%p",
                         iter, _arip?_arip->ark:NULL, kbuflen, num_keys, kbuf);
         rc = EINVAL;
         goto done;
@@ -1581,7 +1596,7 @@ int ark_null_async_cb(ARK *ark,
 {
   if (NULL == ark || cb == NULL)
   {
-    KV_TRC_FFDC(pAT, "FFDC EINVAL, ark %p cb %p", ark, cb);
+    KV_TRC_FFDC(pAT, "ERROR   EINVAL, ark %p cb %p", ark, cb);
     return EINVAL;
   }
 
@@ -1601,7 +1616,7 @@ int ark_set_async_cb(ARK *ark,
 {
   if (NULL == ark || ((vlen > 0) && (val == NULL)) || (cb == NULL))
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: vlen %ld, val %p, cb %p",
+    KV_TRC_FFDC(pAT, "ERROR   rc = EINVAL: vlen %ld, val %p, cb %p",
             vlen, val, cb);
     return EINVAL;
   }
@@ -1622,7 +1637,7 @@ int ark_get_async_cb(ARK *ark,
 {
   if (NULL == ark || ((vbuflen > 0) && (vbuf == NULL)) || (cb == NULL))
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: vbuflen %ld, vbuf %p, cb %p",
+    KV_TRC_FFDC(pAT, "ERROR   rc = EINVAL: vbuflen %ld, vbuf %p, cb %p",
             vbuflen, vbuf, cb);
     return EINVAL;
   }
@@ -1642,7 +1657,7 @@ int ark_del_async_cb(ARK *ark,
 {
   if (NULL == ark || cb == NULL)
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: cb %p", cb);
+    KV_TRC_FFDC(pAT, "ERROR   rc = EINVAL: cb %p", cb);
     return EINVAL;
   }
 
@@ -1661,7 +1676,7 @@ int ark_exists_async_cb(ARK *ark,
 {
   if (NULL == ark || cb == NULL)
   {
-    KV_TRC_FFDC(pAT, "rc = EINVAL: cb %p", cb);
+    KV_TRC_FFDC(pAT, "ERROR   rc = EINVAL: cb %p", cb);
     return EINVAL;
   }
 
@@ -1682,7 +1697,7 @@ int ark_flush(ARK *ark)
   if (ark == NULL)
   {
       rc = EINVAL;
-      KV_TRC_FFDC(pAT, "rc = %d", rc);
+      KV_TRC_FFDC(pAT, "ERROR   rc = %d", rc);
       goto ark_flush_err;
   }
 
@@ -1722,7 +1737,7 @@ pid_t ark_fork(ARK *ark)
 
   if (ark == NULL)
   {
-    KV_TRC_FFDC(pAT, "rc = %s", "EINVAL");
+    KV_TRC_FFDC(pAT, "rERROR   c = %s", "EINVAL");
     return cpid;
   }
 
@@ -1791,7 +1806,7 @@ pid_t ark_fork(ARK *ark)
               // exit with a non-zero status code
               if (c_rc != 0)
               {
-                  KV_TRC_FFDC(pAT, "FFDC, rc = %d", c_rc);
+                  KV_TRC_FFDC(pAT, "ERROR   rc = %d", c_rc);
                   _exit(c_rc);
               }
           }
@@ -1823,7 +1838,7 @@ int ark_fork_done(ARK *ark)
   if (ark == NULL)
   {
     rc = EINVAL;
-    KV_TRC_FFDC(pAT, "FFDC, rc = %s", "EINVAL");
+    KV_TRC_FFDC(pAT, "ERROR   rc = %s", "EINVAL");
     return rc;
   }
 
@@ -1846,7 +1861,7 @@ int ark_count(ARK *ark, int64_t *count)
 
     if (!_arkp || !count)
     {
-        KV_TRC_FFDC(pAT, "rc = EINVAL ark %p, count %p", _arkp, count);
+        KV_TRC_FFDC(pAT, "ERROR   rc = EINVAL ark %p, count %p", _arkp, count);
         rc = EINVAL;
     }
     else
@@ -1876,7 +1891,7 @@ int ark_inuse(ARK *ark, uint64_t *size)
   if (!ark || !size)
   {
       rc = EINVAL;
-      KV_TRC_FFDC(pAT, "rc:%d ark:%p size:%p", rc,ark,size);
+      KV_TRC_FFDC(pAT, "ERROR   rc:%d ark:%p size:%p", rc,ark,size);
   }
   else
   {
@@ -1905,18 +1920,14 @@ int ark_allocated(ARK *ark, uint64_t *size)
     if (!ark || !size)
     {
         rc = EINVAL;
-        KV_TRC_FFDC(pAT, "rc:%d ark:%p size:%p", rc,ark,size);
+        KV_TRC_FFDC(pAT, "ERROR   rc:%d ark:%p size:%p", rc,ark,size);
     }
     else
     {
-        *size  = _arkp->poolthreads[0].ea->size;
-        *size += _arkp->pers_max_blocks * _arkp->bsize;
-        if (_arkp->flags & ARK_KV_VIRTUAL_LUN)
+        *size = _arkp->pers_max_blocks * _arkp->bsize;
+        for (i=0; i<_arkp->nthrds; i++)
         {
-            for (i=1; i<_arkp->nthrds; i++)
-            {
-                *size += _arkp->poolthreads[i].ea->size;
-            }
+            *size += _arkp->poolthreads[i].size;
         }
     }
     return rc;
@@ -1935,7 +1946,7 @@ int ark_actual(ARK *ark, uint64_t *size)
     if (!ark || !size)
     {
         rc = EINVAL;
-        KV_TRC_FFDC(pAT, "rc:%d ark:%p size:%p", rc,ark,size);
+        KV_TRC_FFDC(pAT, "ERROR   rc:%d ark:%p size:%p", rc,ark,size);
     }
     else
     {
@@ -1962,7 +1973,7 @@ int ark_stats(ARK *ark, uint64_t *ops, uint64_t *ios)
     if (!ark || !ops || !ios)
     {
         rc = EINVAL;
-        KV_TRC_FFDC(pAT, "rc = %d", rc);
+        KV_TRC_FFDC(pAT, "ERROR   rc = %d", rc);
     }
     else
     {

@@ -86,8 +86,6 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
     // device (to be determined by the block layer)
     if (!path || strlen(path)==0)
     {
-        KV_TRC(pAT, "EA_STORE_TYPE_MEMORY");
-        // Using memory for store
         ea->st_type = EA_STORE_TYPE_MEMORY;
 
         store = am_malloc(*size);
@@ -99,9 +97,11 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
                              path, bsize, *size, *bcount, errno);
             goto error_exit;
         }
+        KV_TRC(pAT, "EA_STORE_TYPE_MEMORY %p",store);
 
         *bcount = ((*size) / bsize);
         ea->st_memory = store;
+        ea->bcount    = *bcount;
         if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}
         else                                 goto error_exit;
     }
@@ -228,54 +228,55 @@ done:
  ******************************************************************************/
 int ea_resize(EA *ea, uint64_t bsize, uint64_t bcount)
 {
-  uint64_t size = bcount * bsize;
-  int rc        = 0;
+    uint64_t size = bcount * bsize;
+    int rc        = 0;
 
-  KV_TRC(pAT, "EA_RESZ bsize:%ld old:%ld new:%ld", bsize, ea->bcount, bcount);
+    KV_TRC(pAT, "EA_RESZ bsize:%ld old:%ld new:%ld", bsize, ea->bcount, bcount);
 
-  ARK_SYNC_EA_WRITE(ea);
+    ARK_SYNC_EA_WRITE(ea);
 
-  if (ea->st_type == EA_STORE_TYPE_MEMORY)
-  {
-    // For an in-memory store, we simply "realloc"
-    // the memory.
-    uint8_t *store = am_realloc(ea->st_memory, size);
-    if (store)
+    if (ea->st_type == EA_STORE_TYPE_MEMORY)
     {
-      ea->bcount    = bcount;
-      ea->size      = size;
-      ea->st_memory = store;
-    } 
-    else
-    {
-      errno = ENOMEM;
-      rc    = 1;
-      KV_TRC_FFDC(pAT, "ENOMEM, resize ea %p bsize %lu bcount %lu, errno = %d",
-              ea, bsize, bcount, errno);
-    }
-  }
-  else
-  {
-    // Call down to the block layer to set the
-    // new size on the store.
-    rc = cblk_cg_set_size(ea->st_flash, bcount, CBLK_GROUP_RAID0);
-    if (rc == 0)
-    {
-      ea->bcount = bcount;
-      ea->size   = size;
+        // For an in-memory store, we simply "realloc"
+        // the memory.
+        uint8_t *store = am_realloc(ea->st_memory, size);
+        if (store)
+        {
+            KV_TRC(pAT, "EA_RESZ old:%p new:%p", ea->st_memory, store);
+            ea->bcount    = bcount;
+            ea->size      = size;
+            ea->st_memory = store;
+        }
+        else
+        {
+            errno = ENOMEM;
+            rc    = 1;
+            KV_TRC_FFDC(pAT, "ENOMEM, resize ea %p bsize %lu bcount %lu, errno = %d",
+                            ea, bsize, bcount, errno);
+        }
     }
     else
     {
-        errno = ENOSPC;
-        KV_TRC_FFDC(pAT, "cblk_cg_set_size failed ea %p bsize %lu bcount %lu, "
-                         "errno = %d",
-                         ea, bsize, bcount, errno);
+        // Call down to the block layer to set the
+        // new size on the store.
+        rc = cblk_cg_set_size(ea->st_flash, bcount, CBLK_GROUP_RAID0);
+        if (rc == 0)
+        {
+            ea->bcount = bcount;
+            ea->size   = size;
+        }
+        else
+        {
+            errno = ENOSPC;
+            KV_TRC_FFDC(pAT, "cblk_cg_set_size failed ea %p bsize %lu bcount %lu, "
+                             "errno = %d",
+                             ea, bsize, bcount, errno);
+        }
     }
-  }
 
-  ARK_SYNC_EA_UNLOCK(ea);
+    ARK_SYNC_EA_UNLOCK(ea);
 
-  return rc;
+    return rc;
 }
 
 /**

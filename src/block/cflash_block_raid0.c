@@ -46,7 +46,6 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
     int                    devN      = 0;
     chunk_r0_id_t          rid       = 0;
     char                  *pstr      = NULL;
-    char                  *dbuf      = NULL;
     char                   buf[2048] = {0};
     int                    i,j;
 
@@ -65,7 +64,9 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
      *------------------------------------------------------------------------*/
     if (pdevs && strncmp(pdevs,"RAID0",5)!=0 && strchr(pdevs,':'))
     {
-        dbuf = strdup(pdevs);
+        char *ptr  = NULL;
+        char *dbuf = NULL;
+        ptr = dbuf = strdup(pdevs);
         sprintf(dbuf,"%s",pdevs);
         while ((pstr=strsep((&dbuf),":")))
         {
@@ -74,6 +75,7 @@ chunk_r0_id_t cblk_r0_open(const char     *pdevs,
             CBLK_TRACE_LOG_FILE(2, "devstr[%d] (%s)", devN,devstr[devN]);
             if (++devN == CFLASH_R0_MAX_DEV) {break;}
         }
+        free(ptr);
     }
 #ifndef _AIX
     /*--------------------------------------------------------------------------

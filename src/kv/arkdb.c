@@ -883,6 +883,7 @@ int ark_create_verbose(char *path, ARK **arkret,
    *-------------------------------------------------------------------------*/
   char *pstr = NULL;
   char *dbuf = NULL;
+  char *ptr = NULL;
 
   memset(ark->devs,0,sizeof(ark->devs));
   if (path && strlen(path) != 0)
@@ -895,13 +896,14 @@ int ark_create_verbose(char *path, ARK **arkret,
               KV_TRC_FFDC(pAT, "Bad path with VLUN %s", path);
               goto ark_create_ark_err;
           }
-          dbuf = strdup(path);
+          ptr = dbuf = strdup(path);
           sprintf(dbuf,"%s",path);
           while ((pstr=strsep((&dbuf),"=")))
           {
               sprintf(ark->devs[ark->devN++],"%s",pstr);
               KV_TRC(pAT,"%d -> %s", ark->devN-1, ark->devs[ark->devN-1]);
           }
+          free(ptr);
       }
       else
       {

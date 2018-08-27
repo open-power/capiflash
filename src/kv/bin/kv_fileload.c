@@ -232,10 +232,10 @@ void* kv_fileload(void *p)
     loadkeyfn_t *parms         = p;
     FILE        *fp            = NULL;
     size_t       len           = MAX_LEN;          // max len of line from file
-    char         line[MAX_LEN] = {0};
+    char        *line          = NULL;
     char        *pstr          = NULL;
     int          cmdN          = 300;              // num cmds issued at a time
-    int          kvN           = 60000;            // num k/v read into buffer
+    int          kvN           = 40000;            // num k/v read into buffer
     kv_t        *kvs           = NULL;             // buffer to hold k/v's from file
     queue_t     *wq            = queue_new(kvN);   // work queue
     queue_t     *sq            = queue_new(cmdN);  // submission queue
@@ -244,23 +244,25 @@ void* kv_fileload(void *p)
     int32_t      tag           = 0;
     uint32_t     num           = 0;
 
-    fp  = fopen(parms->fn,"r");
-    kvs = malloc(sizeof(kv_t) * kvN);
+    fp   = fopen(parms->fn,"rt");
+    kvs  = malloc(sizeof(kv_t) * kvN);
 
     while (fp && rc != -1)
     {
         // load a buffer of k/v from the file
         for (i=0; i<kvN; i++)
         {
+            char *str=NULL;
             // get a csv line and parse it into key and value
             if ((rc=getline((char**)&line, &len, fp)) == -1) {break;}
-            pstr=strsep((char**)&line,",");
+            str=line;
+            pstr=strsep((char**)&str,",");
             kvs[i].key = atoll(pstr);
             int valI = 0;
             int j    = 0;
             for (j=1; j<=6; j++)
             {
-                pstr=strsep((char**)&line,",");
+                pstr=strsep((char**)&str,",");
                 kvs[i].val[valI++] = atoi(pstr);
             }
             // insert the k/v into the work queue
@@ -303,9 +305,11 @@ void* kv_fileload(void *p)
         }
     }
 
+    free(line);
     free(kvs);
     queue_free(wq);
     queue_free(sq);
+    fclose(fp);
     return 0;
 }
 

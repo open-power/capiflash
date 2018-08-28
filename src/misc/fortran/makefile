@@ -26,15 +26,20 @@
 ROOTPATH = ../../..
 
 PROGRAM=arkdb_async
-FCFLAGS=-L$(ROOTPATH)/lib
+ifeq (redhat,${TARGET_OS})
+LIBPATH=$(ROOTPATH)/lib64
+else
+LIBPATH=$(ROOTPATH)/lib
+endif
+FCFLAGS=-L$(LIBPATH)
 ARKLIB=arkdb-0
 LIBS=$(ARKLIB)
 FC=gfortran
 
 target : $(PROGRAM)
 
-$(ROOTPATH)/lib/lib$(ARKLIB).a:
-	@cp $(ROOTPATH)/lib/lib$(ARKLIB).so $(ROOTPATH)/lib/lib$(ARKLIB).a
+$(LIBPATH)/lib$(ARKLIB).a:
+	@cp $(LIBPATH)/lib$(ARKLIB).so $(LIBPATH)/lib$(ARKLIB).a
 
-$(PROGRAM) : $(PROGRAM).f $(ROOTPATH)/lib/lib$(ARKLIB).a
+$(PROGRAM) : $(PROGRAM).f $(LIBPATH)/lib$(ARKLIB).a
 	$(FC) -o $@ $@.f $(FCFLAGS) -l$(LIBS)

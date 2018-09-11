@@ -68,9 +68,9 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   // that contains the key
   tcbp->blen = bl_len(scbp->bl, tcbp->hblk);
 
-  if (kv_inject_flags && HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
+  if (kv_inject_flags && HTC_INUSE(scbp,rcbp->posI))
   {
-      HTC_FREE(scbp->htc[rcbp->posI]);
+      HTC_FREE(scbp,rcbp->posI);
   }
 
   if (tcbp->blen*_arkp->bsize > tcbp->inb_size)
@@ -94,12 +94,12 @@ void ark_get_start(_ARK *_arkp, int tid, tcb_t *tcbp)
   scbp->poolstats.hcl_cnt += 1;
   scbp->poolstats.hcl_tot += tcbp->blen;
 
-  if (HTC_HIT(scbp, rcbp->posI, tcbp->blen))
+  if (HTC_HIT(scbp, rcbp->posI))
   {
       ++scbp->htc_hits;
-      KV_TRC(pAT, "HTC_HIT tid:%3d ttag:%3d pos:%6ld blen:%ld",
-             tid, tcbp->ttag,rcbp->posI, tcbp->blen);
-      HTC_GET(scbp->htc[rcbp->posI], tcbp->inb, tcbp->blen*_arkp->bsize);
+      HTC_GET(scbp, rcbp->posI, tcbp->inb);
+      KV_TRC(pAT, "HTC_HIT tid:%3d ttag:%3d pos:%6ld len:%ld",
+             tid, tcbp->ttag,rcbp->posI, tcbp->inb->len);
       ark_get_process(_arkp, tid, tcbp);
       return;
   }
@@ -139,14 +139,14 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
   uint64_t          new_vbsize  = 0;
 
   KV_TRC_DBG(pAT, "INB_GET tid:%3d ttag:%3d pos:%6ld tot:%ld used:%ld",
-             tid, tcbp->ttag, rcbp->posI, tcbp->inb_size, (uint64_t)tcbp->inb->len);
+             tid, tcbp->ttag, rcbp->posI, tcbp->inb_size, tcbp->inb->len);
 
-  if (!HTC_INUSE(scbp,scbp->htc[rcbp->posI]) && HTC_AVAIL(scbp,tcbp->blen))
+  if (!HTC_INUSE(scbp,rcbp->posI) && HTC_AVAIL(scbp,tcbp->inb->len))
   {
       ++scbp->htcN;
-      KV_TRC(pAT, "HTC_NEW tid:%3d ttag:%3d pos:%6ld htcN:%d blen:%ld",
-             tid, tcbp->ttag,rcbp->posI, scbp->htcN, tcbp->blen);
-      HTC_NEW(scbp->htc[rcbp->posI], tcbp->inb, _arkp->bsize*scbp->htc_blks);
+      KV_TRC(pAT, "HTC_NEW tid:%3d ttag:%3d pos:%6ld htcN:%d len:%ld",
+             tid, tcbp->ttag,rcbp->posI, scbp->htcN, tcbp->inb->len);
+      HTC_SET(scbp, rcbp->posI, tcbp->inb);
   }
 
   // Find the key position in the read in bucket
@@ -168,15 +168,18 @@ void ark_get_process(_ARK *_arkp, int tid, tcb_t  *tcbp)
       // buffer is big enough to hold the value.
       if (tcbp->vvlen > tcbp->vbsize)
       {
-        new_vbsize = (tcbp->blen * _arkp->bsize);
-        KV_TRC_DBG(pAT, "RE_VB   tid:%3d ttag:%3d pos:%6ld old:%ld new:%ld",
-                   tid, tcbp->ttag, rcbp->posI, tcbp->vbsize, new_vbsize);
-        new_vb = am_realloc(tcbp->vb_orig, new_vbsize + ARK_ALIGN);
+        void *old_vb = tcbp->vb_orig;
+        new_vbsize   = (tcbp->blen * _arkp->bsize);
+        am_free(tcbp->vb_orig);
+        new_vb = am_malloc(new_vbsize + ARK_ALIGN);
+        KV_TRC_DBG(pAT, "RE_VB   tid:%3d ttag:%3d pos:%6ld old:%ld new:%ld "
+                         "old:%p new:%p",
+             tid, tcbp->ttag, rcbp->posI, tcbp->vbsize, new_vbsize, old_vb, new_vb);
         if (!new_vb)
         {
-          KV_TRC_FFDC(pAT, "am_realloc failed ttag:%d", tcbp->ttag);
-          rcbp->rc    = ENOMEM;
-          rcbp->res   = -1;
+          KV_TRC_FFDC(pAT, "am_malloc failed ttag:%d", tcbp->ttag);
+          rcbp->rc     = ENOMEM;
+          rcbp->res    = -1;
           iocbp->state = ARK_CMD_DONE;
           goto ark_get_process_err;
         }
@@ -257,8 +260,8 @@ void ark_get_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
   {
     memcpy(rcbp->val, (tcbp->vb + rcbp->voff), (tcbp->vvlen - rcbp->voff));
   }
-  rcbp->res = tcbp->vvlen;
 
+  rcbp->res    = tcbp->vvlen;
   iocbp->state = ARK_CMD_DONE;
 
   return;

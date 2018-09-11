@@ -74,7 +74,7 @@ void *am_realloc(void *ptr, size_t size)
 
     if (check_alloc_error_injects()) {return NULL;}
 
-    if (ptr && (int64_t)size > 0)
+    if ((int64_t)size > 0)
     {
 #ifdef _AIX
       p = realloc(ptr, size);

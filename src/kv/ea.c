@@ -53,6 +53,9 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
     EA             *ea    = NULL;
     chunk_id_t      chkid = NULL_CHUNK_ID;
 
+    KV_TRC(pAT, "path:%s bsize:%ld size:%ld bcount:%ld vlun:%ld",
+                    path,bsize,*size,*bcount,vlun);
+
     if (!(fetch_and_or(&cflsh_blk_lib_init,1)))
     {
         // We need to call cblk_init once before
@@ -99,7 +102,7 @@ EA *ea_new(const char *path, uint64_t bsize, int basyncs,
         }
         KV_TRC(pAT, "EA_STORE_TYPE_MEMORY %p",store);
 
-        *bcount = ((*size) / bsize);
+        *bcount       = ((*size) / bsize);
         ea->st_memory = store;
         ea->bcount    = *bcount;
         if ((ea->zbuf=am_malloc(ea->bsize))) {memset(ea->zbuf,0,ea->bsize);}

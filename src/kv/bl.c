@@ -712,12 +712,13 @@ int bl_rechain(ark_io_list_t **aiol,
   /* if old size is 0, malloc for the first time */
   if (o==0)
   {
-      if (!(*aiol=(ark_io_list_t *)am_malloc(size*n))) {rc=-2; goto exception;}
+      if (!(*aiol=am_malloc(size*n))) {rc=-2; goto exception;}
   }
   else if (n > o)
   {
       KV_TRC_DBG(pAT, "BL_RECH bl:%p b:%ld new:%ld old:%ld", bl, b, n, o);
-      if (!(*aiol=am_realloc(*aiol, size*n))) {rc=-3; goto exception;}
+      am_free(*aiol);
+      if (!(*aiol=am_malloc(size*n))) {rc=-3; goto exception;}
   }
 
   rc = bl_iochain(*aiol, bl, b, offset);

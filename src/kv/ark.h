@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <string.h>
+#include <strings.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -49,6 +50,7 @@
 #include <ea.h>
 #include <vi.h>
 #include <bt.h>
+#include <btca.h>
 #include <tag.h>
 #include <queue.h>
 #include <ht.h>
@@ -80,7 +82,7 @@
 #define ARK_VERBOSE_PLUN_SIZE_DEF (1024*1024*1024)
 #define ARK_VERBOSE_BSIZE_DEF                 4096
 #define ARK_VERBOSE_HASH_DEF           (1024*1024)
-#define ARK_VERBOSE_HTC_MAX            (1024*1024)
+#define ARK_VERBOSE_HTC_MAX       (1024*1024*1024)
 #define ARK_VERBOSE_VLIMIT_DEF                 256
 #define ARK_VERBOSE_BLKBITS_DEF                 35
 #define ARK_VERBOSE_GROW_DEF                  1024
@@ -88,13 +90,13 @@
 
 #define ARK_MAX_TASK_OPS                        48
 #define ARK_MIN_NASYNCS           ARK_MAX_TASK_OPS
-#define ARK_MAX_NASYNCS                        512
+#define ARK_MAX_NASYNCS                       1024
 #define ARK_MAX_BASYNCS                       8192
 #define ARK_MIN_BASYNCS                       1024
 
 #define ARK_MIN_BT    1
 #define ARK_MIN_VB    1
-#define ARK_MIN_AIOL 10
+#define ARK_MIN_AIOL  1
 
 #define PT_OFF  0
 #define PT_IDLE 1
@@ -103,57 +105,45 @@
 
 #define ARK_VERB_FN "/tmp/kv_verbosity"
 
-#define ARK_CLEANUP_DELAY 50
-
 #define ARK_ALIGN 128
 #define VDF_SZ    (sizeof(uint64_t))
 
-typedef struct
-{
-    void *p;
-    void *orig;
-} htc_t;
-
-#define HTC_GET(_htc, _bt, _sz)    memcpy(_bt,    _htc.p, _sz)
-#define HTC_PUT(_htc, _bt, _sz)    memcpy(_htc.p, _bt,    _sz)
-#define HTC_HIT(_scb, _pos, _blks) (_scb->htc_blks && _scb->htc[_pos].p && _blks<=_scb->htc_blks)
-#define HTC_INUSE(_scb, _htc)      (_scb->htc_blks && _htc.p)
-#define HTC_AVAIL(_scb, _blks)     (_scb->htc_blks && _blks <= _scb->htc_blks)
-
-#define HTC_NEW(_htc, _bt, _sz)                 \
-  do                                            \
-  {                                             \
-      _htc.orig = am_malloc(_sz+ARK_ALIGN);     \
-      if (_htc.orig)                            \
-      {                                         \
-          _htc.p = ptr_align(_htc.orig);        \
-          memcpy(_htc.p, _bt, _bt->len);        \
-      }                                         \
+#define HTC_INUSE(_scb, _pos)    (_scb->htc_tmax && _scb->htc->e[_pos])
+#define HTC_HIT(_scb, _pos)      HTC_INUSE(_scb,_pos)
+#define HTC_GET(_scb, _pos, _bt) btca_get(_scb->htc, _pos, _bt)
+#define HTC_AVAIL(_scb, _sz)     (_scb->htc_tmax && \
+                                  _scb->htc_tot+_sz <= _scb->htc_tmax)
+#define HTC_SET(_scb, _pos, _bt)                        \
+  do                                                    \
+  {                                                     \
+    BT *bt=(BT*)_scb->htc->e[_pos];                     \
+    _scb->htc_tot+=(bt)?_bt->len-bt->len:_bt->len;      \
+    btca_set(_scb->htc, _pos, _bt);                     \
   } while (0)
 
-#define HTC_FREE(_htc)      \
-  do                        \
-  {                         \
-      if (_htc.orig)        \
-      {                     \
-        am_free(_htc.orig); \
-        _htc.p    = NULL;   \
-        _htc.orig = NULL;   \
-      }                     \
+#define HTC_FREE(_scb, _pos)            \
+  do                                    \
+  {                                     \
+    if (_scb->htc_tmax)                 \
+    {                                   \
+        BT *bt=(BT*)_scb->htc->e[_pos]; \
+        _scb->htc_tot-=bt->len;         \
+        btca_free_e(_scb->htc,_pos);    \
+    }                                   \
   } while (0)
 
 /* _s - string to prepend to hex dump
  * _p - ptr to bytes to dump
  * _l - length in bytes to dump
  */
-#define DUMPX(_s, _p, _l)                                                      \
-  do                                                                           \
-  {                                                                            \
-    uint32_t _ii;                                                              \
-    uint8_t *_cc=(uint8_t*)_p;                                                 \
-    printf("%s", _s);                                                \
-    for (_ii=0; _ii<(uint32_t)((_l>64)?64:_l); _ii++){printf("%02x",_cc[_ii]);}\
-    printf("\n");                                                              \
+#define DUMPX(_s, _p, _l)                                                       \
+  do                                                                            \
+  {                                                                             \
+    uint32_t _ii;                                                               \
+    uint8_t *_cc=(uint8_t*)_p;                                                  \
+    printf("%s", _s);                                                           \
+    for (_ii=0; _ii<(uint32_t)((_l>64)?64:_l); _ii++){printf("%02x",_cc[_ii]);} \
+    printf("\n");                                                               \
   } while (0)
 
 #ifdef _AIX
@@ -336,10 +326,9 @@ typedef struct _scb
   queue_t         *harvestQ;
   queue_t         *cmpQ;
 
-  uint32_t         htc_blks;    // blocks per htc element
-  uint64_t         htc_max;     // max total blocks allowed for htc
-  htc_t           *htc;         // array of ptrs to hash cache elements
-  void            *htc_orig;    // base addr of malloc before align
+  uint64_t         htc_tot;     // current total bytes
+  uint64_t         htc_tmax;    // max bytes allowed for all htc
+  btca_t          *htc;         // array of ptrs to hash cache elements
 
   uint64_t         rand_htI;
   int              rand_btI;
@@ -483,7 +472,7 @@ typedef struct _tcb
   uint64_t        vbsize;
   uint8_t        *vb;       // value buffer space - aligned
   uint8_t        *vb_orig;  // value buffer space
-  uint8_t        *vval;     // value buffer space
+  uint8_t        *vval;
   uint64_t        vblkcnt;
   int64_t         vblk;
   uint64_t        hpos;
@@ -535,6 +524,7 @@ int64_t ark_take_pool(_ARK *_arkp, int id, uint64_t n);
 void    ark_drop_pool(_ARK *_arkp, int id, uint64_t blk);
 
 void *pool_function(void *arg);
+void tcb_cleanup(_ARK *_arkp, int tid, int ttag);
 
 int ark_enq_cmd(int cmd, _ARK *_arkp,
                 uint64_t klen,    void *key,

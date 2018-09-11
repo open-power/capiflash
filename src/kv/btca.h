@@ -1,7 +1,7 @@
 /* IBM_PROLOG_BEGIN_TAG                                                   */
 /* This is an automatically generated prolog.                             */
 /*                                                                        */
-/* $Source: src/kv/hash.h  $                                              */
+/* $Source: src/kv/btca.h  $                                              */
 /*                                                                        */
 /* IBM Data Engine for NoSQL - Power Systems Edition User Library Project */
 /*                                                                        */
@@ -23,130 +23,105 @@
 /*                                                                        */
 /* IBM_PROLOG_END_TAG                                                     */
 
-#ifndef __HASH_H__
-#define __HASH_H__
+#ifndef __BTCA_H__
+#define __BTCA_H__
 
 #include <stdlib.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <string.h>
-#include <iv.h>
 
 #include <errno.h>
 
 typedef struct
 {
-  pthread_rwlock_t l;
-  uint64_t         n;
-  uint64_t         m;
-  uint64_t         lba_mask;
-  IV              *iv;
-} hash_t;
-
-#define HASH_SET(htp, _pos, _lck, _lba) hash_set(htp,_pos,_lck,_lba)
-#define HASH_GET(htp, _pos, _lck, _lba) hash_get(htp,_pos,_lck,_lba)
-#define HASH_POS(_htN, _buf, _blen)     hash_pos(_htN,_buf,_blen)
+    uint64_t n;
+    void    *e[];
+} btca_t;
 
 /**
  *******************************************************************************
  * \brief
  ******************************************************************************/
-static inline uint64_t hash_hash(uint8_t *buf, uint64_t n)
+static inline btca_t *btca_new(uint64_t n)
 {
-  uint64_t sum = 0;
-  uint64_t i;
-  for (i=0; i<n; i++) sum = sum * 65559 + buf[i];
-  return sum;
-}
+    uint64_t size = sizeof(btca_t) + (sizeof(void*) * n);
+    btca_t  *btca = (btca_t*)am_malloc(size);
 
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-static inline uint64_t hash_pos(uint64_t htN, uint8_t *buf, uint64_t blen)
-{
-    return hash_hash(buf, blen) % htN;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-static inline hash_t *hash_new(uint64_t n, uint64_t m)
-{
-  hash_t *ht = (hash_t*)am_malloc(sizeof(hash_t));
-  if (!ht)
-  {
-    KV_TRC_FFDC(pAT, "n %ld m %ld ENOMEM", n, m);
-    errno = ENOMEM;
-  }
-  else
-  {
-    pthread_rwlock_init(&ht->l, NULL);
-    ht->n        = n;
-    ht->m        = m;
-    ht->lba_mask = 1;
-    ht->lba_mask = (ht->lba_mask<<(m-1))-1;
-    ht->iv     = iv_new(n,m);
-    KV_TRC(pAT, "n %ld m %ld lba_mask:%16lx", n, m, ht->lba_mask);
-  }
-  return ht;
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-static inline void hash_free(hash_t *ht)
-{
-  if (ht)
-  {
-      KV_TRC(pAT, "ht %p iv %p", ht, ht->iv);
-      iv_delete(ht->iv);
-      am_free(ht);
-  }
-  else
-  {
-      KV_TRC(pAT, "ht:%p", ht);
-  }
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-static inline void hash_set(hash_t  *ht,
-                            uint64_t pos,
-                            uint8_t  lck,
-                            uint64_t lba)
-{
-  uint64_t val = (((uint64_t)lck)<<(ht->m-1)) | (uint64_t)lba;
-  pthread_rwlock_wrlock(&ht->l);
-  iv_set(ht->iv, pos, val);
-  pthread_rwlock_unlock(&ht->l);
-  KV_TRC_DBG(pAT, "HASHSET iv[%ld]=%lx iv[0]=%lx", pos,val,ht->iv->data[0]);
-}
-
-/**
- *******************************************************************************
- * \brief
- ******************************************************************************/
-static inline void hash_get(hash_t   *ht,
-                            uint64_t  pos,
-                            uint8_t  *lck,
-                            uint64_t *lba)
-{
-    int64_t v=0;
-    pthread_rwlock_rdlock(&ht->l);
-    if ((v=iv_get(ht->iv,pos)) < 0)
+    if (!btca)
     {
-        KV_TRC_FFDC(pAT, "invalid pos:%ld", pos);
+        KV_TRC_FFDC(pAT, "n:%ld size:%ld ENOMEM", n,size);
+        errno = ENOMEM;
+        return NULL;
     }
-    pthread_rwlock_unlock(&ht->l);
-    *lck = v >> (ht->m-1);
-    *lba = v & ht->lba_mask;
-    KV_TRC_DBG(pAT, "HASHGET iv[%ld]=%lx lck:%x lba:%ld", pos,v,*lck,*lba);
-    return;
+
+    bzero(btca, size);
+    btca->n = n;
+    KV_TRC_DBG(pAT, "%p n:%ld size:%ld", btca, n, size);
+    return btca;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline void btca_free(btca_t *btca)
+{
+  KV_TRC_DBG(pAT, "%p", btca);
+  if (btca) {am_free(btca);}
+  return;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline int btca_set(btca_t *btca, uint64_t pos, BT *bt)
+{
+    if (!btca || !bt)
+    {
+        KV_TRC_FFDC(pAT,"%p %p",btca,bt);
+        return -1;
+    }
+    KV_TRC_DBG(pAT,"%p cpy(%p,%p,%ld",btca,btca->e[pos],bt,bt->len);
+    btca->e[pos] = am_realloc(btca->e[pos], bt->len);
+    memcpy(btca->e[pos],bt,bt->len);
+    return 0;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline int btca_get(btca_t *btca, uint64_t pos, BT *bt)
+{
+    if (!btca || !btca->e[pos] || !bt)
+    {
+        KV_TRC_FFDC(pAT,"%p %p",btca,bt);
+        return -1;
+    }
+    BT *e = (BT*)btca->e[pos];
+    KV_TRC_DBG(pAT,"%p cpy(%p,%p,%ld",btca,bt,e,e->len);
+    memcpy(bt,e,e->len);
+    return 0;
+}
+
+/**
+ *******************************************************************************
+ * \brief
+ ******************************************************************************/
+static inline int btca_free_e(btca_t *btca, uint64_t pos)
+{
+    if (!btca)
+    {
+        KV_TRC_FFDC(pAT,"%p",btca);
+        return -1;
+    }
+    BT **e = (BT**)&btca->e[pos];
+    KV_TRC_DBG(pAT,"%p free:%p pos:%ld",btca,*e,pos);
+    am_free(*e);
+    *e=NULL;
+    return 0;
 }
 
 #endif

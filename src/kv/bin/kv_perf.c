@@ -491,7 +491,7 @@ uint32_t kv_set(worker_t *w)
     ticks    tstart = getticks();
     KV_TRC(pAT, "START w:%p", &w);
 
-    while (SDELTA(tstart,ns_per_tick) < KV_MIN_SECS)
+    do
     {
         for (i=w->beg; i<=w->end; i++)
         {
@@ -508,7 +508,8 @@ uint32_t kv_set(worker_t *w)
             if (rc)             KV_ERR("set1",rc);
             if (w->vlen != res) KV_ERR("set2",0);
         }
-    }
+    } while (SDELTA(tstart,ns_per_tick) < KV_MIN_SECS);
+
     KV_TRC(pAT, "DONE w:%p", &w);
     return 0;
 }
@@ -525,7 +526,7 @@ uint32_t kv_get(worker_t *w)
     ticks    start = getticks();
     KV_TRC(pAT, "START w:%p", &w);
 
-    while (SDELTA(start,ns_per_tick) < KV_MIN_SECS)
+    do
     {
         for (i=w->beg; i<=w->end; i++)
         {
@@ -545,7 +546,8 @@ uint32_t kv_get(worker_t *w)
             if (MEMCMP &&
                 memcmp(w->genval,w->getval,w->vlen))   {KV_ERR("miscompare",0);}
         }
-    }
+    } while (SDELTA(start,ns_per_tick) < KV_MIN_SECS);
+
     KV_TRC(pAT, "DONE w:%p", &w);
 
     return 0;
@@ -612,6 +614,7 @@ void kv_sync_io(ARK     *ark,
         w[i].vlen = vlen;
         w[i].beg  = i==0 ? 0 : w[i-1].end+1;
         w[i].end  = w[i].beg + (len/QD)-1;
+        KV_TRC_DBG(pAT, "START   w[%d]:%p beg:%d end:%d", i,&w,w[i].beg,w[i].end);
         if (0==posix_memalign((void**)&w[i].keyval, 128, klen))
             {assert(w[i].keyval);}
         if (0==posix_memalign((void**)&w[i].genval, 128, vlen))
@@ -625,6 +628,7 @@ void kv_sync_io(ARK     *ark,
     for (i=0; i<QD; i++) {pthread_join(w[i].pth, NULL);}
 
     e_secs = SDELTA(start,ns_per_tick);
+    e_secs = e_secs==0?1:e_secs;
 
     /* sum perf ops for all contexts/jobs and delete arks */
     ark_stats(ark, &ops, &ios);
@@ -825,8 +829,9 @@ int main(int argc, char **argv)
     if (_thds) {thds        = atoi (_thds);}
     if (_getN) {getN        = atoi (_getN);}
 
-    QD         %= KV_NASYNC;
-    LEN         = LEN<QD ? QD : LEN;
+    QD          = QD>KV_NASYNC ? KV_NASYNC : QD;
+    hte         = hte<thds     ? thds      : hte;
+    LEN         = LEN<QD       ? QD        : LEN;
     LEN         = LEN - (LEN%QD);
     ns_per_tick = time_per_tick(1000, 100);
 

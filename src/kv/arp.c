@@ -553,63 +553,70 @@ void ark_next_finish(_ARK *_arkp, int id, tcb_t *tcbp)
  * \brief
  *  reduce memory footprint if possible after an io is complete
  ******************************************************************************/
-void cleanup_task_memory(_ARK *_arkp, int tid)
+void tcb_cleanup(_ARK *_arkp, int tid, int ttag)
 {
     int    i    = 0;
     scb_t *scbp = &(_arkp->poolthreads[tid]);
-    tcb_t *tcbp = NULL;
+    tcb_t *tcbp = &scbp->tcbs[ttag];
 
-    KV_TRC(pAT, "CHECK_CLEAN");
-    for (i=0; i<_arkp->ntasks; i++)
+    KV_TRC_DBG(pAT, "CHK_CLN tid:%3d",tid);
+    if (tcbp->aiol && tcbp->aiolN > ARK_MIN_AIOL)
     {
-        tcbp = scbp->tcbs + i;
-
-        if (tcbp->aiol && tcbp->aiolN > ARK_MIN_AIOL)
+        void *old   = tcbp->aiol;
+        tcbp->aiolN = ARK_MIN_AIOL;
+        tcbp->aiol  = am_malloc(sizeof(ark_io_list_t)*tcbp->aiolN);
+        am_free(old);
+        KV_TRC(pAT,"RED_IOL tid:%3d ttag:%3d %ld to %d old:%p new:%p",
+                tid, i, tcbp->aiolN, ARK_MIN_AIOL, old, tcbp->aiol);
+        if (!tcbp->aiol)
         {
-            KV_TRC(pAT,"REDUCE IOL: tid:%3d %ld to %d",
-                    tid, tcbp->aiolN, ARK_MIN_AIOL);
-            tcbp->aiolN = ARK_MIN_AIOL;
-            tcbp->aiol=am_realloc(tcbp->aiol,sizeof(ark_io_list_t)*tcbp->aiolN);
-            if (!tcbp->aiol)
-            {
-                KV_TRC(pAT,"FFDC    tid:%3d %ld to %d",
-                        tid, tcbp->aiolN, ARK_MIN_AIOL);
-            }
-        }
-        if (tcbp->inb_orig && tcbp->inb_size > _arkp->min_bt)
-        {
-            KV_TRC(pAT,"REDUCE INB: tid:%3d %ld to %d",
-                    tid, tcbp->inb_size, _arkp->min_bt);
-            bt_realloc(&tcbp->inb, &tcbp->inb_orig, _arkp->min_bt);
-            bt_clear(tcbp->inb);
-            tcbp->inb_size = _arkp->min_bt;
-        }
-        if (tcbp->oub_orig && tcbp->oub_size > _arkp->min_bt)
-        {
-            KV_TRC(pAT,"REDUCE OUB: tid:%3d %ld to %d",
-                    tid, tcbp->oub_size, _arkp->min_bt);
-            bt_realloc(&tcbp->oub, &tcbp->oub_orig, _arkp->min_bt);
-            bt_clear(tcbp->oub);
-            tcbp->oub_size = _arkp->min_bt;
-        }
-
-        if (tcbp->vb_orig && tcbp->vbsize > _arkp->bsize*ARK_MIN_VB)
-        {
-            KV_TRC(pAT,"REDUCE VAB: tid:%3d %ld to %ld",
-                    tid, tcbp->vbsize, _arkp->bsize*ARK_MIN_VB);
-            tcbp->vbsize  = _arkp->bsize*ARK_MIN_VB;
-            tcbp->vb_orig = am_realloc(tcbp->vb_orig, tcbp->vbsize + ARK_ALIGN);
-            if (tcbp->vb_orig) {tcbp->vb = ptr_align(tcbp->vb_orig);}
-            else
-            {
-                KV_TRC_FFDC(pAT,"REDUCE VAB: tid:%3d %ld to %ld",
-                            tid, tcbp->vbsize, _arkp->bsize*ARK_MIN_VB);
-                tcbp->vbsize  = 0;
-                tcbp->vb      = NULL;
-            }
+            KV_TRC(pAT,"FFDC    tid:%3d ttag:%3d %ld to %d",
+                    tid, i, tcbp->aiolN, ARK_MIN_AIOL);
         }
     }
-    KV_TRC_DBG(pAT, "CHECK_CLEAN: DONE");
+    if (tcbp->inb_orig && tcbp->inb_size > _arkp->min_bt)
+    {
+        KV_TRC(pAT,"RED_INB tid:%3d ttag:%3d %ld to %d",
+                tid, i, tcbp->inb_size, _arkp->min_bt);
+        bt_delete(tcbp->inb_orig);
+        tcbp->inb = bt_new(_arkp->min_bt,_arkp->vlimit,VDF_SZ,&tcbp->inb_orig);
+        if (!tcbp->inb)
+        {
+            KV_TRC(pAT,"RED_INB tid:%3d ttag:%3d sz:%d", tid,i,_arkp->min_bt);
+        }
+        tcbp->inb_size = _arkp->min_bt;
+    }
+    if (tcbp->oub_orig && tcbp->oub_size > _arkp->min_bt)
+    {
+        KV_TRC(pAT,"RED_OUB tid:%3d ttag:%3d %ld to %d",
+                        tid, i, tcbp->oub_size, _arkp->min_bt);
+        bt_delete(tcbp->oub_orig);
+        tcbp->oub = bt_new(_arkp->min_bt,_arkp->vlimit,VDF_SZ,&tcbp->oub_orig);
+        if (!tcbp->oub)
+        {
+            KV_TRC(pAT,"RED_INB tid:%3d ttag:%3d sz:%d", tid,i,_arkp->min_bt);
+        }
+        tcbp->oub_size = _arkp->min_bt;
+    }
+    if (tcbp->vb_orig && tcbp->vbsize > _arkp->bsize*ARK_MIN_VB)
+    {
+        void    *old   = tcbp->vb_orig;
+        uint64_t oldsz = tcbp->vbsize;
+        tcbp->vbsize   = _arkp->bsize*ARK_MIN_VB;
+        tcbp->vb_orig  = am_malloc(tcbp->vbsize + ARK_ALIGN);
+        am_free(old);
+        KV_TRC(pAT,"RED_VB  tid:%3d ttag:%3d %ld to %ld old:%p new:%p",
+                tid, i, oldsz, tcbp->vbsize, old, tcbp->vb_orig);
+        if (tcbp->vb_orig) {tcbp->vb = ptr_align(tcbp->vb_orig);}
+        else
+        {
+            KV_TRC_FFDC(pAT,"RED_VB  tid:%3d ttag:%3d %ld to %ld",
+                        tid, i, tcbp->vbsize, _arkp->bsize*ARK_MIN_VB);
+            tcbp->vbsize = 0;
+            tcbp->vb     = NULL;
+        }
+    }
+    KV_TRC_DBG(pAT, "END_CLN tid:%3d",tid);
 }
 
 /**
@@ -674,7 +681,8 @@ static __inline__ void PERF_LOG(_ARK *_arkp, scb_t *scbp, int id)
     uint64_t hcl_tot = scbp->poolstats.hcl_tot;
     double   cl      = (double)hcl_tot/(double)scbp->poolstats.hcl_cnt;
     KV_TRC_PERF2(pAT,"PSTATS  tid:%3d kv:%8ld ops:%8ld ios:%8ld cl:%5.1lf "
-                     "bytes:%10ld blks:%8ld avail:%8ld htcN:%8d hit:%9ld disc:%8ld",
+                     "bytes:%10ld blks:%8ld avail:%8ld htc_tot:%8ld hit:%9ld "
+                     "disc:%8ld",
                  id,
                  scbp->poolstats.kv_cnt,
                  scbp->poolstats.ops_cnt,
@@ -683,7 +691,7 @@ static __inline__ void PERF_LOG(_ARK *_arkp, scb_t *scbp, int id)
                  scbp->poolstats.byte_cnt,
                  scbp->poolstats.blk_cnt,
                  scbp->bl->n-1 - (scbp->bl->top-scbp->bl->count),
-                 scbp->htcN, scbp->htc_hits, scbp->htc_disc);
+                 scbp->htc_tot, scbp->htc_hits, scbp->htc_disc);
 
     /* reset all counters to recalc for the next window of time */
     scbp->set_latT  = 0;
@@ -802,7 +810,6 @@ void *pool_function(void *arg)
           // go to sleep waiting for new requests to come in
           queue_wait(rq);
           delta = MDELTA(iticks,_arkp->ns_per_tick);
-          if (delta > ARK_CLEANUP_DELAY) {cleanup_task_memory(_arkp,id);}
           KV_TRC_DBG(pAT, "IO:     tid:%3d IDLE_THREAD iticks:%ld", id, delta);
       }
 
@@ -1002,6 +1009,7 @@ void *pool_function(void *arg)
                   pthread_cond_signal(&(rcbp->acond));
                   pthread_mutex_unlock(&(rcbp->alock));
               }
+              tcb_cleanup(_arkp,id,ttag);
               tag_put(scbp->ttags, ttag);
           }
           else
@@ -1050,4 +1058,3 @@ void *pool_function(void *arg)
   KV_TRC(pAT, "exiting tid:%3d nactive:%d", id, _arkp->nactive);
   return NULL;
 }
-

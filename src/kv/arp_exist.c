@@ -85,18 +85,18 @@ void ark_exist_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       tcbp->inb_size = tcbp->blen*_arkp->bsize;
   }
 
-  if (kv_inject_flags && HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
+  if (kv_inject_flags && HTC_INUSE(scbp,rcbp->posI))
   {
-      HTC_FREE(scbp->htc[rcbp->posI]);
+      HTC_FREE(scbp,rcbp->posI);
   }
 
   scbp->poolstats.io_cnt += tcbp->blen;
 
-  if (HTC_HIT(scbp, rcbp->posI, tcbp->blen))
+  if (HTC_HIT(scbp, rcbp->posI))
   {
       ++scbp->htc_hits;
       KV_TRC(pAT, "HTC_HIT tid:%3d ttag:%3d pos:%ld", tid, tcbp->ttag,rcbp->posI);
-      HTC_GET(scbp->htc[rcbp->posI], tcbp->inb, tcbp->blen*_arkp->bsize);
+      HTC_GET(scbp, rcbp->posI, tcbp->inb);
       ark_exist_finish(_arkp, tid, tcbp);
       return;
   }

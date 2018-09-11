@@ -71,11 +71,13 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
       // to ensure enough space to hold value. We record
       // the size in a new variable and wait to make sure
       // the realloc succeeds before updating vbsize
+      void *old_vb = tcbp->vb_orig;
       new_vbsize = tcbp->vblkcnt * _arkp->bsize;
-      KV_TRC_DBG(pAT, "VB_REALLOC tid:%3d ttag:%3d pos:%6ld vlen:%5ld "
-                      "new_vbsize:%ld",
-                      tid, tcbp->ttag, rcbp->posI, rcbp->vlen, new_vbsize);
-      new_vb = am_realloc(tcbp->vb_orig, new_vbsize + ARK_ALIGN);
+      am_free(tcbp->vb_orig);
+      new_vb = am_malloc(new_vbsize + ARK_ALIGN);
+      KV_TRC_DBG(pAT, "RE_VB   tid:%3d ttag:%3d pos:%6ld vlen:%5ld "
+                      "newsz:%ld old:%p new:%p",
+          tid, tcbp->ttag, rcbp->posI, rcbp->vlen, new_vbsize, old_vb, new_vb);
       if (NULL == new_vb)
       {
         rcbp->res   = -1;
@@ -120,9 +122,9 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     // for this hash bucket.
     tcbp->blen = bl_len(scbp->bl, tcbp->hblk);
 
-    if (kv_inject_flags && HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
+    if (kv_inject_flags && HTC_INUSE(scbp,rcbp->posI))
     {
-        HTC_FREE(scbp->htc[rcbp->posI]);
+        HTC_FREE(scbp,rcbp->posI);
     }
 
     if (tcbp->blen*_arkp->bsize > tcbp->inb_size)
@@ -146,12 +148,12 @@ void ark_set_start(_ARK *_arkp, int tid, tcb_t *tcbp)
     scbp->poolstats.hcl_cnt += 1;
     scbp->poolstats.hcl_tot += tcbp->blen;
 
-    if (HTC_HIT(scbp, rcbp->posI, tcbp->blen))
+    if (HTC_HIT(scbp, rcbp->posI))
     {
         ++scbp->htc_hits;
         KV_TRC(pAT,"HTC_HIT tid:%3d ttag:%3d pos:%6ld hits:%ld",
                tid, tcbp->ttag, rcbp->posI, scbp->htc_hits);
-        HTC_GET(scbp->htc[rcbp->posI], tcbp->inb, tcbp->blen*_arkp->bsize);
+        HTC_GET(scbp, rcbp->posI, tcbp->inb);
         ark_set_process(_arkp, tid, tcbp);
         return;
     }
@@ -494,37 +496,32 @@ void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
   scb_t     *scbp     = &(_arkp->poolthreads[tid]);
   rcb_t     *rcbp     = &(scbp->rcbs[tcbp->rtag]);
   iocb_t    *iocbp    = &(scbp->iocbs[rcbp->ttag]);
-  uint64_t   blkcnt   = 0;
 
   HASH_SET(scbp->ht, rcbp->posI, 1, tcbp->nblk);
 
-  blkcnt = divceil(tcbp->oub->len, _arkp->bsize);
-  if (blkcnt <= scbp->htc_blks)
+  if (HTC_AVAIL(scbp, tcbp->oub->len))
   {
-      if (HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
+      if (HTC_INUSE(scbp,rcbp->posI))
       {
-          KV_TRC(pAT, "HTC_PUT tid:%3d ttag:%3d pos:%6ld htcN:%8d sz:%ld",
-                 tid, tcbp->ttag, rcbp->posI, scbp->htcN, blkcnt);
-          HTC_PUT(scbp->htc[rcbp->posI],
-                  tcbp->oub,
-                  _arkp->bsize*scbp->htc_blks);
+          KV_TRC(pAT, "HTC_SET tid:%3d ttag:%3d pos:%6ld htc_tot:%8ld sz:%ld",
+                 tid, tcbp->ttag, rcbp->posI, scbp->htc_tot, tcbp->oub->len);
+          HTC_SET(scbp, rcbp->posI, tcbp->oub);
       }
-      else if (HTC_AVAIL(scbp, blkcnt))
+      else
       {
           ++scbp->htcN;
-          KV_TRC(pAT, "HTC_NEW tid:%3d ttag:%3d pos:%6ld htcN:%8d sz:%ld",
-                 tid, tcbp->ttag, rcbp->posI, scbp->htcN, blkcnt);
-          HTC_NEW(scbp->htc[rcbp->posI], tcbp->oub,
-                  _arkp->bsize*scbp->htc_blks);
+          KV_TRC(pAT, "HTC_NEW tid:%3d ttag:%3d pos:%6ld htc_tot:%8ld sz:%ld",
+                 tid, tcbp->ttag, rcbp->posI, scbp->htc_tot, tcbp->oub->len);
+          HTC_SET(scbp, rcbp->posI, tcbp->oub);
       }
   }
-  else if (HTC_INUSE(scbp,scbp->htc[rcbp->posI]))
+  else if (HTC_INUSE(scbp,rcbp->posI))
   {
       --scbp->htcN;
       ++scbp->htc_disc;
-      KV_TRC(pAT, "HTCFREE tid:%3d ttag:%3d pos:%6ld htcN:%8d disc:%ld",
-                  tid, tcbp->ttag, rcbp->posI, scbp->htcN, scbp->htc_disc);
-      HTC_FREE(scbp->htc[rcbp->posI]);
+      KV_TRC(pAT, "HTCFREE tid:%3d ttag:%3d pos:%6ld htc_tot:%8ld disc:%ld",
+                  tid, tcbp->ttag, rcbp->posI, scbp->htc_tot, scbp->htc_disc);
+      HTC_FREE(scbp,rcbp->posI);
   }
 
   scbp->poolstats.kv_cnt   += tcbp->new_key;
@@ -536,6 +533,5 @@ void ark_set_finish(_ARK *_arkp, int tid, tcb_t *tcbp)
               "byte_cnt:%ld",
               tid, tcbp->ttag, rcbp->posI, tcbp->nblk, tcbp->bytes,
               scbp->poolstats.byte_cnt);
-
   return;
 }

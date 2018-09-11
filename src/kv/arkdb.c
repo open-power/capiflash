@@ -272,7 +272,7 @@ int ark_persist_load(_ARK *_arkp)
     if (!eap)
     {
         rc = errno;
-        goto error_exit;
+        goto done;
     }
 
     // malloc a single block for read
@@ -282,7 +282,7 @@ int ark_persist_load(_ARK *_arkp)
         KV_TRC_FFDC(pAT, "Out of memory allocating %ld bytes for the first "
                          "persistence block", _arkp->bsize);
         rc = ENOMEM;
-        goto error_exit;
+        goto done;
     }
 
     // read first block
@@ -290,7 +290,7 @@ int ark_persist_load(_ARK *_arkp)
     bl_array = bl_chain_no_bl(1, 0);
     rc       = ea_async_io(eap, ARK_EA_READ, p_data, bl_array, 1);
     am_free(bl_array);
-    if (rc != 0) {goto error_exit;}
+    if (rc) {goto done;}
 
     // check if persist data is valid
     pptr = (p_cntr_t *)p_data;
@@ -300,7 +300,7 @@ int ark_persist_load(_ARK *_arkp)
         // The magic number does not match so data is either
         // not present or is corrupted.
         rc = EINVAL;
-        goto error_exit;
+        goto done;
     }
 
     // check version
@@ -311,7 +311,7 @@ int ark_persist_load(_ARK *_arkp)
                          "version:%d",
                          pptr->p_cntr_version, ARK_P_VERSION_4);
         rc = EINVAL;
-        goto error_exit;
+        goto done;
     }
 
     // Read in the rest of the persistence data
@@ -325,7 +325,7 @@ int ark_persist_load(_ARK *_arkp)
             KV_TRC_FFDC(pAT, "Out of memory allocating %ld bytes for "
                             "full persistence block", rdblks * _arkp->bsize);
             rc = ENOMEM;
-            goto error_exit;
+            goto done;
         }
 
         p_data   = ptr_align(p_data_orig);
@@ -335,13 +335,13 @@ int ark_persist_load(_ARK *_arkp)
             KV_TRC_FFDC(pAT, "Out of memory allocating %ld blocks for "
                              "full persistence data", rdblks);
             rc = ENOMEM;
-            goto error_exit;
+            goto done;
         }
     }
     KV_TRC_PERF1(pAT, "PERSIST_RD rdblks:%ld", rdblks);
     rc = ea_async_io(eap, ARK_EA_READ, (void *)p_data, bl_array, rdblks);
     am_free(bl_array);
-    if (rc != 0) {goto error_exit;}
+    if (rc) {goto done;}
 
     // read was successful, parse the data
     pptr = (p_cntr_t *)p_data;
@@ -374,13 +374,15 @@ int ark_persist_load(_ARK *_arkp)
 
     _arkp->persist_orig = p_data_orig;
     _arkp->persist      = pptr;
-    goto success;
 
-error_exit:
-  ea_free(eap);
-  am_free(p_data_orig);
+done:
+    if (rc)
+    {
+        KV_TRC_FFDC(pAT, "ERROR   rc:%d", rc);
+        ea_free(eap);
+        am_free(p_data_orig);
+    }
 
-success:
   return rc;
 }
 
@@ -496,11 +498,10 @@ void ark_thd_free_res(_ARK *_arkp, int tid)
     KV_TRC_DBG(pAT, "ea_delete");
     ea_free(scbp->ea);
 
-    if (scbp->htc_orig)
+    if (scbp->htc)
     {
         KV_TRC_DBG(pAT, "free htc");
-        for (j=0; j<scbp->hcount; j++) {am_free(scbp->htc[j].orig);}
-        am_free(scbp->htc_orig);
+        btca_free(scbp->htc);
     }
     return;
 }
@@ -555,11 +556,12 @@ int ark_thd_init_res(_ARK *ark, int tid)
         if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
         rc = errno;
         KV_TRC_FFDC(pAT, "KV storage initialization failed: rc/errno:%d", rc);
-        goto error;
+        goto done;
     }
 
     if (ark->flags & ARK_KV_VIRTUAL_LUN)
     {
+        // ea_new set bcount to size per thread
         scbp->bcount = bcount;
         KV_TRC_PERF2(pAT,"VLUN dev:%s tid:%d size:%ld bcount:%ld",
                dev, tid, scbp->size, scbp->bcount);
@@ -568,11 +570,12 @@ int ark_thd_init_res(_ARK *ark, int tid)
     {
         if (scbp->ea->st_type == EA_STORE_TYPE_MEMORY)
         {
+            // ea_new set bcount to size per thread
             scbp->bcount = bcount;
         }
         else
         {
-            // plun to file or device
+            // plun, ea_new set size/bcount to total size of file or dev
             scbp->bcount = bcount / ark->nthrds;
             scbp->size  /= ark->nthrds;
             scbp->offset = ark->pers_max_blocks + (scbp->bcount * tid);
@@ -582,49 +585,46 @@ int ark_thd_init_res(_ARK *ark, int tid)
                dev, tid, scbp->size, scbp->bcount, scbp->offset);
     }
 
-    if (ark->flags & ARK_KV_HTC)
+    if (ark->flags & ARK_KV_HTC && scbp->ea->st_type != EA_STORE_TYPE_MEMORY)
     {
-        sz = scbp->hcount*sizeof(htc_t);
-        KV_TRC_PERF2(pAT,"htc sz:%ld hcount:%ld", sz, scbp->hcount);
-        scbp->htc_orig = am_malloc(sz + ARK_ALIGN);
-        if (!scbp->htc_orig)
+        scbp->htc_tmax = ARK_VERBOSE_HTC_MAX / ark->nthrds;
+        KV_TRC_PERF2(pAT,"htc_tmax:%ld hcount:%ld",
+                        scbp->htc_tmax, scbp->hcount);
+        scbp->htc = btca_new(scbp->hcount);
+        if (!scbp->htc)
         {
             rc = ENOMEM;
             KV_TRC_FFDC(pAT, "HTC initialization failed: %d", rc);
-            goto error;
+            goto done;
         }
-        scbp->htc_blks = 1;
-        scbp->htc      = ptr_align(scbp->htc_orig);
-        memset(scbp->htc,0,sz);
     }
-    else {scbp->htc_blks = 0;}
 
     // Create the hash table
     scbp->ht = hash_new(scbp->hcount, ark->blkbits);
-    if (scbp->ht == NULL)
+    if (!scbp->ht)
     {
         if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
         rc = errno;
         KV_TRC_FFDC(pAT, "Hash initialization failed: %d", rc);
-        goto error;
+        goto done;
     }
 
     // Create the block list
     scbp->bl = bl_new(scbp->bcount, ark->blkbits);
-    if (scbp->bl == NULL)
+    if (!scbp->bl)
     {
         if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
         rc = errno;
         KV_TRC_FFDC(pAT, "Block list initialization failed: %d", rc);
-        goto error;
+        goto done;
     }
 
     scbp->ttags = tag_new(ark->ntasks);
-    if ( NULL == scbp->ttags )
+    if (!scbp->ttags)
     {
         rc = ENOMEM;
         KV_TRC_FFDC(pAT, "Tag initialization for tasks failed: %d", rc);
-        goto error;
+        goto done;
     }
 
     sz         = ark->ntasks * sizeof(tcb_t);
@@ -633,7 +633,7 @@ int ark_thd_init_res(_ARK *ark, int tid)
     {
         rc = ENOMEM;
         KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for tcbs", sz);
-        goto error;
+        goto done;
     }
     memset(scbp->tcbs,0,sz);
 
@@ -646,46 +646,47 @@ int ark_thd_init_res(_ARK *ark, int tid)
         tcb_t *tcbp = &scbp->tcbs[num];
 
         tcbp->inb = bt_new(ark->min_bt, ark->vlimit, VDF_SZ, &tcbp->inb_orig);
-        if (tcbp->inb == NULL)
+        if (!tcbp->inb)
         {
           if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
           rc = errno;
           KV_TRC_FFDC(pAT, "Bucket allocation for inbuffer failed: %d", rc);
-          goto error;
+          goto done;
         }
         tcbp->inb_size = ark->min_bt;
 
         tcbp->oub = bt_new(ark->min_bt, ark->vlimit, VDF_SZ,
                                      &(tcbp->oub_orig));
-        if (tcbp->oub == NULL)
+        if (!tcbp->oub)
         {
           if (!errno) {KV_TRC_FFDC(pAT, "UNSET_ERRNO"); errno=ENOMEM;}
           rc = errno;
           KV_TRC_FFDC(pAT, "Bucket allocation for outbuffer failed: %d", rc);
-          goto error;
+          goto done;
         }
         tcbp->oub_size = ark->min_bt;
 
         tcbp->vbsize  = ark->bsize * ARK_MIN_VB;
         tcbp->vb_orig = am_malloc(tcbp->vbsize +ARK_ALIGN);
-        if (tcbp->vb_orig == NULL)
+        if (!tcbp->vb_orig)
         {
           rc = ENOMEM;
           KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for tcb->vb",
                       tcbp->vbsize);
-          goto error;
+          goto done;
         }
         tcbp->vb = ptr_align(tcbp->vb_orig);
-        KV_TRC_DBG(pAT, "num:%d VAB:%p %ld", num, tcbp->vb_orig, tcbp->vbsize);
+        KV_TRC_DBG(pAT, "NEW_VB  tid:%3d ttag:%d new:%p sz:%ld",
+                        tid, num, tcbp->vb_orig, tcbp->vbsize);
     }
 
     sz          = ark->ntasks * sizeof(iocb_t);
     scbp->iocbs = am_malloc(sz);
-    if ( NULL == scbp->iocbs )
+    if (!scbp->iocbs)
     {
       rc = ENOMEM;
       KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for iocbs", sz);
-      goto error;
+      goto done;
     }
     memset(scbp->iocbs,0,sz);
 
@@ -695,7 +696,7 @@ int ark_thd_init_res(_ARK *ark, int tid)
     {
       rc = ENOMEM;
       KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for rcbs",sz);
-      goto error;
+      goto done;
     }
     memset(scbp->rcbs,0,sz);
 
@@ -711,7 +712,7 @@ int ark_thd_init_res(_ARK *ark, int tid)
     {
         rc = ENOMEM;
         KV_TRC_FFDC(pAT, "Tag initialization for requests failed: %d", rc);
-        goto error;
+        goto done;
     }
 
     scbp->poolstate          = PT_RUN;
@@ -735,7 +736,7 @@ int ark_thd_init_res(_ARK *ark, int tid)
 
     rc=0;
 
-error:
+done:
   return rc;
 }
 
@@ -760,32 +761,34 @@ int ark_thd_start_all(_ARK *_arkp)
         rc      = pthread_create(&(scbp->pooltid), NULL, pool_function, pt);
         if (rc != 0)
         {
-          KV_TRC_FFDC(pAT, "pthread_create of server thread failed: %d", rc);
-          goto ark_create_poolloop_err;
+            KV_TRC_FFDC(pAT, "pthread_create of server thread failed: %d", rc);
+            break;
         }
         KV_TRC_DBG(pAT, "create thread%d success",i);
     }
 
-    goto success;
-
-ark_create_poolloop_err:
-
-      for (; --i >= 0; i--)
-      {
-        scbp = &_arkp->poolthreads[i];
-
-        KV_TRC_DBG(pAT, "abort/join pt:%d", i);
-
-        if (scbp->pooltid)
+    if (rc != 0)
+    {
+        --i;
+        // error, cleanup
+        for (; i>=0; i--)
         {
-            queue_lock  (scbp->reqQ);
-            queue_wakeup(scbp->reqQ);
-            queue_unlock(scbp->reqQ);
-            pthread_join(scbp->pooltid, NULL);
-        }
-      }
+            scbp = &_arkp->poolthreads[i];
 
-success:
+            KV_TRC_DBG(pAT, "abort/join pt:%d", i);
+
+            if (scbp->pooltid)
+            {
+                queue_lock  (scbp->reqQ);
+                scbp->poolstate = PT_EXIT;
+                queue_wakeup(scbp->reqQ);
+                queue_unlock(scbp->reqQ);
+                pthread_join(scbp->pooltid, NULL);
+                scbp->pooltid = 0;
+            }
+        }
+    }
+
     return rc;
 }
 
@@ -840,7 +843,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   {
       KV_TRC_FFDC(pAT, "Incorrect value for ARK control block: rc=EINVAL");
       rc = EINVAL;
-      goto ark_create_ark_err;
+      goto done;
   }
 
   if ((persist_load || persist_store) && (mem_store || vlun))
@@ -848,13 +851,13 @@ int ark_create_verbose(char *path, ARK **arkret,
       KV_TRC_FFDC(pAT, "Invalid persistence combination with ARK flags:%016lx "
                        "or store type path:%s",flags,path);
       rc = EINVAL;
-      goto ark_create_ark_err;
+      goto done;
   }
   if (nthrds <= 0)
   {
       KV_TRC_FFDC(pAT, "invalid nthrds:%d", nthrds);
       rc = EINVAL;
-      goto ark_create_ark_err;
+      goto done;
   }
   // running to memory as plun, force minimum size to 1g
   if ((!path || strlen(path)==0) && !vlun && size < ARK_VERBOSE_PLUN_SIZE_DEF)
@@ -870,7 +873,7 @@ int ark_create_verbose(char *path, ARK **arkret,
       rc = ENOMEM;
       KV_TRC_FFDC(pAT, "Out of memory allocating ARK control structure for %ld",
                 sizeof(_ARK));
-      goto ark_create_ark_err;
+      goto done;
   }
   memset(ark,0,am_sz);
 
@@ -894,7 +897,7 @@ int ark_create_verbose(char *path, ARK **arkret,
           {
               rc = EINVAL;
               KV_TRC_FFDC(pAT, "Bad path with VLUN %s", path);
-              goto ark_create_ark_err;
+              goto done;
           }
           ptr = dbuf = strdup(path);
           sprintf(dbuf,"%s",path);
@@ -942,7 +945,7 @@ int ark_create_verbose(char *path, ARK **arkret,
       else
       {
           KV_TRC_FFDC(pAT, "Persistence check failed: %d", rc);
-          goto ark_create_ark_err;
+          goto done;
       }
   }
   else
@@ -975,7 +978,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   {
       rc = ENOMEM;
       KV_TRC_FFDC(pAT, "Out of memory allocation of %ld bytes for scbs", am_sz);
-      goto ark_create_ark_err;
+      goto done;
   }
   memset(ark->poolthreads,0,am_sz);
 
@@ -985,7 +988,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   {
       rc = ENOMEM;
       KV_TRC_FFDC(pAT, "Out of memory bytes:%ld for pts", am_sz);
-      goto ark_create_ark_err;
+      goto done;
   }
   memset(ark->pts,0,am_sz);
 
@@ -994,7 +997,7 @@ int ark_create_verbose(char *path, ARK **arkret,
    *----------------------------------------------------------------------*/
   for (i=0; i<ark->nthrds; i++)
   {
-      if ((rc=ark_thd_init_res(ark,i)) != 0) {goto ark_create_ark_err;}
+      if ((rc=ark_thd_init_res(ark,i)) != 0) {goto done;}
   }
 
   /*------------------------------------------------------------------------
@@ -1005,7 +1008,7 @@ int ark_create_verbose(char *path, ARK **arkret,
   /*------------------------------------------------------------------------
    * create ark threads
    *----------------------------------------------------------------------*/
-  if ((rc=ark_thd_start_all(ark)) != 0) {goto ark_create_ark_err;}
+  if ((rc=ark_thd_start_all(ark)) != 0) {goto done;}
 
   *arkret   = (void *)ark;
   ark->pcmd = PT_RUN;
@@ -1018,15 +1021,13 @@ int ark_create_verbose(char *path, ARK **arkret,
 
   ark_log_stats(*arkret);
 
-  goto done;
-
-ark_create_ark_err:
-  KV_TRC_FFDC(pAT, "ark_create_ark_err ark:%p", ark);
-  ark_free_resources(ark);
-  KV_TRC_CLOSE(pAT);
-
 done:
-  KV_TRC_DBG(pAT, "free arkp->persist_orig");
+  if (rc)
+  {
+      KV_TRC_FFDC(pAT, "ark_create_ark_err ark:%p rc:%d", ark,rc);
+      ark_free_resources(ark);
+      KV_TRC_CLOSE(pAT);
+  }
   if (ark) {am_free(ark->persist_orig);}
 
   return rc;
@@ -1064,14 +1065,18 @@ int ark_thd_stop_all(_ARK *_arkp)
   for (i=0; i<_arkp->nthrds; i++)
   {
       scbp = &(_arkp->poolthreads[i]);
-      scbp->poolstate = PT_EXIT;
 
-      queue_lock  (scbp->reqQ);
-      queue_wakeup(scbp->reqQ);
-      queue_unlock(scbp->reqQ);
+      if (scbp->pooltid)
+      {
+          scbp->poolstate = PT_EXIT;
 
-      pthread_join(scbp->pooltid, NULL);
-      KV_TRC(pAT, "thread %d joined", i);
+          queue_lock  (scbp->reqQ);
+          queue_wakeup(scbp->reqQ);
+          queue_unlock(scbp->reqQ);
+
+          pthread_join(scbp->pooltid, NULL);
+          KV_TRC(pAT, "thread %d joined", i);
+      }
   }
 
   return rc;
@@ -1083,28 +1088,29 @@ int ark_thd_stop_all(_ARK *_arkp)
  ******************************************************************************/
 int ark_delete(ARK *ark)
 {
-  _ARK *_arkp = (_ARK *)ark;
-  int   rc    = 0;
+    _ARK *_arkp = (_ARK *)ark;
+    int   rc    = 0;
 
-  if (!ark)
-  {
-    rc = EINVAL;
-    KV_TRC_FFDC(pAT, "ERROR   Invalid ARK control block parameter: %d", rc);
-    goto ark_delete_ark_err;
-  }
+    if (!ark)
+    {
+        rc = EINVAL;
+        KV_TRC_FFDC(pAT, "ERROR   null ark* parm %d", rc);
+        goto done;
+    }
 
-  ark_thd_stop_all(_arkp);
-  ark_log_stats(ark);
+    KV_TRC_DBG(pAT, "stop all threads");
+    ark_thd_stop_all(_arkp);
+    ark_log_stats(ark);
 
-  if (_arkp->flags & ARK_KV_PERSIST_STORE) {rc=ark_persist(_arkp);}
+    if (_arkp->flags & ARK_KV_PERSIST_STORE) {rc=ark_persist(_arkp);}
 
-  KV_TRC_DBG(pAT, "free thread resources");
-  ark_free_resources(_arkp);
+    KV_TRC_DBG(pAT, "free thread resources");
+    ark_free_resources(_arkp);
 
-ark_delete_ark_err:
-  KV_TRC_FFDC(pAT, "ERROR   %p",ark);
-  KV_TRC_CLOSE(pAT);
-  return rc;
+done:
+    if (rc) {KV_TRC_FFDC(pAT, "ERROR   %p",ark);}
+    KV_TRC_CLOSE(pAT);
+    return rc;
 }
 
 /**

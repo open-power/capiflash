@@ -32,20 +32,20 @@ ALLOW_WARNINGS = yes
 ROOTPATH = ../..
 EXPFLAGS = -bexpall
 
-ifneq ($(TARGET_PLATFORM),x86_64)
-BTESTS = transport_test blk_test blk_eras pvtestauto xlate pblkread
-endif
-
 LCFLAGS = -D__FVT__ \
           -I$(ROOTPATH)/src/afu \
           -I$(ROOTPATH)/src/test
 
 ifneq ($(UNAME),AIX)
+ifneq ($(TARGET_PLATFORM),PPC64EL)
 ifneq ($(TARGET_PLATFORM),x86_64)
+BTESTS = transport_test blk_test blk_eras pvtestauto xlate pblkread
+
 MODULE    = afu
 OBJS      = afu.o capi_dev_nodes.o
 BTESTS   += cxl_afu_dump cxl_afu_status cxl_afu_inject flashgt_vpd_access \
 flashgt_temp flashgtp_vpd_dump flashgtp_vpd_write
+endif
 endif
 endif
 

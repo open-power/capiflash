@@ -28,7 +28,11 @@ UNAME=$(shell uname)
 .NOTPARALLEL:
 
 ifneq ($(UNAME),AIX)
+ifneq ($(TARGET_PLATFORM),PPC64EL)
+ifneq ($(TARGET_PLATFORM),x86_64)
 SUBDIRS = library.d tool.d
+endif
+endif
 endif
 
 include ${ROOTPATH}/config.mk

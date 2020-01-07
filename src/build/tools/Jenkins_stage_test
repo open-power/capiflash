@@ -1,5 +1,6 @@
 #!/bin/bash
 
+. env.bash
 fallocate -l 4g /tmp/testfile
 LD_LIBRARY_PATH=lib64 FVT_DEV=/tmp/testfile obj/tests/run_fvt
 

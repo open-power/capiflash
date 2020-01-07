@@ -22,12 +22,12 @@ pipeline {
                 stages {
                     stage('Build') {
                         steps {
-                            src/build/tools/Jenkins_stage_build
+                            sh 'src/build/tools/Jenkins_stage_build'
                         }
                     }
                     stage('Test') {
                         steps {
-                            src/build/tools/Jenkins_stage_test
+                            sh 'src/build/tools/Jenkins_stage_test'
                         }
                     }
                 }

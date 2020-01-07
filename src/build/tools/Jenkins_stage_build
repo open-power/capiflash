@@ -7,7 +7,11 @@ if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; f
 if [[ $(uname) = AIX ]];                                        then aix=1;    fi
 
 customrc=customrc.p8el
-if [[ $aix ]]; then customrc=customrc.p8be; fi
+if [[ $aix ]]
+then
+  customrc=customrc.p8be
+  export PATH=$PATH:/gsa/ausgsa/projects/a/aixtools/contrib/bin
+fi
 
 ln -s $customrc customrc
 

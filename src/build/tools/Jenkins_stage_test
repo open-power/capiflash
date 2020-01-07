@@ -1,6 +1,15 @@
 #!/bin/bash
 
+##################################
+# Determine distro
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(uname) = AIX ]];                                        then aix=1;    fi
+
+LIB_PATH=lib
+if [[ $redhat ]]; then LIB_PATH=lib64; fi
+
 . env.bash
 fallocate -l 4g /tmp/testfile.jenkins
-LD_LIBRARY_PATH=lib64 FVT_DEV=/tmp/testfile.jenkins obj/tests/run_fvt
+LD_LIBRARY_PATH=$LIB_PATH FVT_DEV=/tmp/testfile.jenkins obj/tests/run_fvt
 

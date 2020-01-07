@@ -1,0 +1,8 @@
+#!/bin/bash
+
+ln -s customrc.p8el customrc
+. env.bash
+make clean
+src/build/install/resources/gtest_add
+make buildall
+

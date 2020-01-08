@@ -1,6 +1,6 @@
 pipeline {
     parameters {
-        choice(name: 'PLATFORM_FILTER', choices: ['all', 'RHEL', 'Ubuntu', 'AIX'], description: 'Run on specific platform')
+        choice(name: 'PLATFORM_FILTER', choices: ['all', 'RHEL', 'Ubuntu'], description: 'Run on specific platform')
     }
     agent none
     stages {
@@ -16,18 +16,18 @@ pipeline {
                 axes {
                     axis {
                         name 'PLATFORM'
-                        values 'RHEL', 'Ubuntu', 'AIX'
+                        values 'RHEL', 'Ubuntu'
                     }
                 }
                 stages {
                     stage('Build') {
                         steps {
-                            src/build/tools/Jenkins_stage_build
+                            sh 'src/build/tools/Jenkins_stage_build'
                         }
                     }
                     stage('Test') {
                         steps {
-                            src/build/tools/Jenkins_stage_test
+                            sh 'src/build/tools/Jenkins_stage_test'
                         }
                     }
                 }

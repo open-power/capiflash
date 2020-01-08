@@ -1,8 +1,22 @@
 #!/bin/bash
 
-ln -s customrc.p8el customrc
+##################################
+# Determine distro
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Ubuntu ]];          then ubuntu=1; fi
+if [[ $(cat /etc/os-release 2>/dev/null) =~ Red ]];             then redhat=1; fi
+if [[ $(uname) = AIX ]];                                        then aix=1;    fi
+
+customrc=customrc.p8el
+if [[ $aix ]]
+then
+  customrc=customrc.p8be
+  export PATH=$PATH:/gsa/ausgsa/projects/a/aixtools/contrib/bin
+fi
+
+ln -s $customrc customrc
+
 . env.bash
-make clean
+${MAKECMD} clean
 src/build/install/resources/gtest_add
-make buildall
+${MAKECMD} buildall
 

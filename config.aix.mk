@@ -173,7 +173,7 @@ ifeq ($(USE_ADVANCED_TOOLCHAIN),yes)
 
 else
 	CC_RAW = cc 
-	CXX_RAW = xlC_r
+	CXX_RAW = /usr/vacpp/bin/xlC_r
 	CC = ${CC_RAW}
 	CXX = ${CXX_RAW}
 	LD = ld

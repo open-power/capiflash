@@ -1,6 +1,6 @@
 pipeline {
     parameters {
-        choice(name: 'PLATFORM_FILTER', choices: ['all', 'RHEL', 'Ubuntu'], description: 'Run on specific platform')
+        choice(name: 'PLATFORM_FILTER', choices: ['all', 'RHEL', 'Ubuntu', 'AIX'], description: 'Run on specific platform')
     }
     agent none
     stages {
@@ -16,7 +16,7 @@ pipeline {
                 axes {
                     axis {
                         name 'PLATFORM'
-                        values 'RHEL', 'Ubuntu'
+                        values 'RHEL', 'Ubuntu', 'AIX'
                     }
                 }
                 stages {
